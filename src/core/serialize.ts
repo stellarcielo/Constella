@@ -16,7 +16,17 @@ import {
 import { ifNameKey } from "./ifname";
 import { parseTopology, type YamlBase } from "./parse";
 import { endpointToString } from "./topology";
-import type { Device, Extra, Group, InterfaceInfo, Link, Meta, Topology } from "./types";
+import type {
+  Device,
+  Extra,
+  Group,
+  InterfaceInfo,
+  Issue,
+  Link,
+  Meta,
+  ModelCatalog,
+  Topology,
+} from "./types";
 
 export interface SerializeResult {
   text: string;
@@ -49,6 +59,46 @@ export function serializeTopology(topology: Topology, base?: YamlBase): Serializ
     text: doc.toString(STRINGIFY_OPTIONS),
     base: { doc, topology: structuredClone(topology), linkNodes: newLinkNodes },
   };
+}
+
+/**
+ * 保存した YAML を読み直して、次回の base とファイル由来の問題を作る。
+ * 保存処理が使う YAML の各部分は、開いたときのファイルの位置(range)を持ったままなので、
+ * 読み直して保存したファイルの位置にそろえる(問題パネルの行番号のため)。
+ * リンクには YAML 上の識別子が無いが、保存処理は並び順を変えない(削除と末尾への追加だけ)ので、
+ * 順番で対応付ける。対応が取れなければ undefined(呼び出し側は今までの base を使う)。
+ */
+export function rebaseOnSavedText(
+  text: string,
+  topology: Topology,
+  catalog: ModelCatalog,
+): { base: YamlBase; fileIssues: Issue[] } | undefined {
+  const parsed = parseTopology(text, { catalog });
+  if (!parsed.ok || parsed.topology.links.length !== topology.links.length) return undefined;
+  const ids = new Map<string, string>();
+  for (const [i, link] of parsed.topology.links.entries()) {
+    const own = topology.links[i];
+    if (linkKey(link) !== linkKey(own)) return undefined;
+    ids.set(link.id, own.id);
+  }
+  const linkNodes = new Map<string, YAMLMap>();
+  for (const [id, node] of parsed.base.linkNodes) {
+    const own = ids.get(id);
+    if (own !== undefined) linkNodes.set(own, node);
+  }
+  const fileIssues = parsed.issues.map((issue) =>
+    issue.target.kind === "link"
+      ? { ...issue, target: { ...issue.target, id: ids.get(issue.target.id) ?? issue.target.id } }
+      : issue,
+  );
+  return {
+    base: { doc: parsed.base.doc, topology: structuredClone(topology), linkNodes },
+    fileIssues,
+  };
+}
+
+function linkKey(link: Link): string {
+  return [link.a, link.b].map((ep) => (ep ? endpointToString(ep) : "?")).join(" ");
 }
 
 function emptyBase(): YamlBase {

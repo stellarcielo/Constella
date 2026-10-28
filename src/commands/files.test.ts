@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   changeModel,
+  lineColumn,
+  locateTarget,
   parseTopology,
   setDeviceLabel,
+  setDeviceRole,
   type Topology,
   updateInterface,
   updateLink,
@@ -191,6 +194,25 @@ describe("保存", () => {
     expect(env.errors[0]).toMatchObject({ title: "保存できませんでした" });
     expect(env.store.getState().dirty).toBe(true);
     expect(env.store.getState().filePath).toBeUndefined();
+  });
+
+  it("保存すると、問題の位置が保存したファイルの位置になり、直した問題は消える(1-9 Q1)", async () => {
+    const env = setup({
+      open: {
+        path: "/lab/a.constella.yaml",
+        text: "constella: 1\ndevices:\n  rt1:\n    role: toaster\n",
+      },
+    });
+    await env.commands.open();
+    expect(env.store.getState().issues.map((i) => i.code)).toEqual(["invalid-value"]);
+    env.store.getState().edit((t) => setDeviceRole(t, "rt1", "router", testCatalog));
+    env.store.getState().addDevice("generic-server-2", { x: 0, y: 0 });
+    await env.commands.save();
+    const s = env.store.getState();
+    expect(s.issues).toEqual([]);
+    expect(s.fileText).toBe(env.written[0].text);
+    const range = s.base && locateTarget(s.base, { kind: "device", id: "srv1" });
+    expect(range && lineColumn(env.written[0].text, range.start).line).toBe(5);
   });
 
   it("続けて保存すると、前回の保存結果に差分を当てる", async () => {

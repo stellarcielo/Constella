@@ -9,8 +9,13 @@ export const fileCommands = createFileCommands({
   platform,
   store: topologyStore,
   resetView(viewport) {
-    uiStore.getState().setMode("select");
-    uiStore.getState().requestView(viewport);
+    const ui = uiStore.getState();
+    ui.setMode("select");
+    ui.requestView({ viewport });
+    // 開いたファイルにエラーがあれば、問題パネルを開く(1-9 Q3)
+    if (topologyStore.getState().issues.some((i) => i.severity === "error")) {
+      ui.setProblemsOpen(true);
+    }
   },
   async askUnsaved(fileName) {
     const choice = await askDialog({

@@ -38,9 +38,12 @@ export interface UiState {
   view: ViewOptions;
   /**
    * 表示位置を合わせる要求。id が変わるたびにキャンバスが合わせる。
-   * viewport があればその位置に、無ければ全体が見えるようにする(Q6)
+   * viewport があればその位置に、focus があればそのデバイスが見えるように、
+   * どちらも無ければ全体が見えるようにする
    */
-  viewRequest: { id: number; viewport?: Viewport };
+  viewRequest: { id: number; viewport?: Viewport; focus?: string[] };
+  /** 問題パネルを開いているか */
+  problemsOpen: boolean;
 
   setMode(mode: Mode): void;
   toggleConnectMode(): void;
@@ -53,7 +56,8 @@ export interface UiState {
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
   clickPane(): void;
   setView(view: Partial<ViewOptions>): void;
-  requestView(viewport?: Viewport): void;
+  requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
+  setProblemsOpen(open: boolean): void;
 }
 
 /** 表示オプションを覚えておく場所。テストでは渡さない */
@@ -67,6 +71,7 @@ export function createUiStore(storage?: ViewStorage) {
     connect: IDLE,
     view: loadView(storage),
     viewRequest: { id: 0 },
+    problemsOpen: false,
 
     setMode(mode) {
       if (mode !== get().mode) set({ mode, connect: IDLE });
@@ -118,9 +123,12 @@ export function createUiStore(storage?: ViewStorage) {
       set({ view: { ...get().view, ...view } });
     },
 
-    requestView(viewport) {
-      const id = get().viewRequest.id + 1;
-      set({ viewRequest: viewport ? { id, viewport } : { id } });
+    requestView(request = {}) {
+      set({ viewRequest: { ...request, id: get().viewRequest.id + 1 } });
+    },
+
+    setProblemsOpen(problemsOpen) {
+      set({ problemsOpen });
     },
   }));
   if (storage) {

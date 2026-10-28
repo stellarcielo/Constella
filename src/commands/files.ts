@@ -1,7 +1,14 @@
 // ファイルの新規・開く・保存・別名で保存・閉じる(SPEC 10章)。
 // ファイル操作(platform)とダイアログは引数で受け取り、テストで差し替えられるようにする。
 
-import { type Issue, lineColumn, parseTopology, serializeTopology, type Viewport } from "../core";
+import {
+  type Issue,
+  lineColumn,
+  parseTopology,
+  rebaseOnSavedText,
+  serializeTopology,
+  type Viewport,
+} from "../core";
 import { basename, type Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 
@@ -49,7 +56,7 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
   const { platform, store } = deps;
 
   async function writeTo(path: string): Promise<boolean> {
-    const { topology, base } = store.getState();
+    const { topology, base, catalog } = store.getState();
     const result = serializeTopology(topology, base);
     try {
       await platform.writeTextFile(path, result.text);
@@ -59,7 +66,15 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
       ]);
       return false;
     }
-    store.getState().markSaved(path, result.base);
+    // 保存したファイルを読み直して、問題の位置とファイル由来の問題を最新にする
+    const rebased = rebaseOnSavedText(result.text, topology, catalog);
+    store.getState().markSaved({
+      filePath: path,
+      savedTopology: topology,
+      ...(rebased
+        ? { base: rebased.base, fileText: result.text, fileIssues: rebased.fileIssues }
+        : { base: result.base }),
+    });
     return true;
   }
 
@@ -115,6 +130,7 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
       topology: result.topology,
       base: result.base,
       filePath: file.path,
+      fileText: file.text,
       fileIssues: result.issues,
     });
     deps.resetView(result.topology.viewport);

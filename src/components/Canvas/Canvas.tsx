@@ -87,15 +87,26 @@ function CanvasInner() {
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
   const mode = useUi((s) => s.mode);
-  const { screenToFlowPosition, getNodes, fitView, setViewport } = useReactFlow();
+  const { screenToFlowPosition, getNodes, fitView, setViewport, getZoom } = useReactFlow();
 
-  // ファイルを開いたとき・新規のときの表示位置(_viewport が無ければ全体が見えるように)
+  // 表示位置の要求: ファイルを開いたとき・新規のとき(_viewport が無ければ全体が見えるように)と、
+  // 問題パネルで項目を選んだとき(そのデバイスが見えるように。今より拡大はしない)
   const viewRequest = useUi((s) => s.viewRequest);
   useEffect(() => {
     if (viewRequest.id === 0) return;
-    if (viewRequest.viewport) void setViewport(viewRequest.viewport);
-    else void fitView({ padding: 0.2, maxZoom: 1.5 });
-  }, [viewRequest, fitView, setViewport]);
+    if (viewRequest.viewport) {
+      void setViewport(viewRequest.viewport);
+    } else if (viewRequest.focus) {
+      void fitView({
+        nodes: viewRequest.focus.map((id) => ({ id })),
+        padding: 0.6,
+        maxZoom: Math.max(getZoom(), 1),
+        duration: 300,
+      });
+    } else {
+      void fitView({ padding: 0.2, maxZoom: 1.5 });
+    }
+  }, [viewRequest, fitView, setViewport, getZoom]);
 
   // 矢印キーで選択中の機器を動かす。React Flow 標準の矢印キー操作は機器にフォーカスがあるときしか
   // 効かないので止め(disableKeyboardA11y)、delete キーや C と同じくフォーカスの位置に関係なく効かせる

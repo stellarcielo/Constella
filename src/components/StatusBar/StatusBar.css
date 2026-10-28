@@ -25,6 +25,23 @@
   flex: 1;
 }
 
+.statusbar-problems {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusbar-problems:hover,
+.statusbar-problems[aria-expanded="true"] {
+  background: var(--hover);
+}
+
 .statusbar-errors {
   color: var(--error);
   font-weight: 600;

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
 import { parseTopology, type YamlBase } from "./parse";
-import { serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
+import { rebaseOnSavedText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
 import { specExample, testCatalog } from "./testFixtures";
-import { removeDevices, renameDevice } from "./edit";
+import { addDevice, addLink, removeDevices, renameDevice, setDeviceRole } from "./edit";
 import { createEmptyTopology, createLinkId } from "./topology";
-import type { Topology } from "./types";
+import type { SourceRange, Topology } from "./types";
+import { locateTarget } from "./validate";
 
 function load(text: string): { topology: Topology; base: YamlBase } {
   const result = parseTopology(text, { catalog: testCatalog });
@@ -365,5 +366,66 @@ layout:
     const { topology } = load(specExample);
     const { text } = serializeTopology(topology);
     expect(semantic(load(text).topology)).toEqual(semantic(topology));
+  });
+});
+
+describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
+  const slice = (text: string, range?: SourceRange) => range && text.slice(range.start, range.end);
+
+  it("保存前に追加したデバイスとリンクも、保存したファイル上の位置が分かる", () => {
+    const { topology, base } = load(specExample);
+    addDevice(topology, { model: "generic-server-2", position: { x: 0, y: 0 } }, testCatalog);
+    const id = addLink(
+      topology,
+      { device: "core-sw1", iface: "Fa0/2" },
+      { device: "srv2", iface: "eth0" },
+      testCatalog,
+    );
+    const { text } = serializeTopology(topology, base);
+    const rebased = rebaseOnSavedText(text, topology, testCatalog);
+    if (!rebased) throw new Error("rebase failed");
+    expect(slice(text, locateTarget(rebased.base, { kind: "device", id: "srv2" }))).toBe("srv2");
+    expect(slice(text, locateTarget(rebased.base, { kind: "link", id, end: "b" }))).toBe(
+      "srv2:eth0",
+    );
+    // 既存の要素の位置も、保存したファイルの位置になる
+    const rt1 = locateTarget(rebased.base, { kind: "device", id: "rt1" });
+    expect(slice(text, rt1)).toBe("rt1");
+  });
+
+  it("読み直した base で続けて保存しても、内容とコメントは変わらない", () => {
+    const { topology, base } = load(specExample);
+    topology.layout.set("srv1", { x: 1, y: 2 });
+    const first = serializeTopology(topology, base);
+    const rebased = rebaseOnSavedText(first.text, topology, testCatalog);
+    if (!rebased) throw new Error("rebase failed");
+    expect(serializeTopology(topology, rebased.base).text).toBe(first.text);
+    renameDevice(topology, "srv1", "web1");
+    const second = serializeTopology(topology, rebased.base).text;
+    expect(second).toContain("  web1:\n    model: generic-server-2\n  isp:");
+    expect(second).toContain("# 座標が無いデバイスは自動レイアウトで配置する");
+  });
+
+  it("GUI で直した値の問題は、保存すると消える", () => {
+    const { topology, base } = load("constella: 1\ndevices:\n  rt1:\n    role: toaster\n");
+    setDeviceRole(topology, "rt1", "router", testCatalog);
+    const { text } = serializeTopology(topology, base);
+    expect(rebaseOnSavedText(text, topology, testCatalog)?.fileIssues).toEqual([]);
+  });
+
+  it("リンクの問題は、今のトポロジのリンクID に付け替える", () => {
+    const { topology, base } = load(
+      "constella: 1\nlinks:\n  - a: x:1\n    b: y:2\n    color: red\n",
+    );
+    const { text } = serializeTopology(topology, base);
+    const issues = rebaseOnSavedText(text, topology, testCatalog)?.fileIssues ?? [];
+    expect(issues.map((i) => i.target)).toEqual([{ kind: "link", id: topology.links[0].id }]);
+  });
+
+  it("リンクの対応が取れなければ undefined", () => {
+    const { topology, base } = load(specExample);
+    const { text } = serializeTopology(topology, base);
+    topology.links.pop();
+    expect(rebaseOnSavedText(text, topology, testCatalog)).toBeUndefined();
   });
 });

@@ -66,13 +66,30 @@ body {
 }
 
 .app {
-  display: grid;
-  grid-template-rows: 40px 1fr 26px;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+}
+
+.app > .toolbar {
+  box-sizing: border-box;
+  flex: none;
+  height: 40px;
+}
+
+.app > .statusbar {
+  box-sizing: border-box;
+  flex: none;
+  height: 26px;
+}
+
+.app > .problems {
+  flex: none;
 }
 
 .app-main {
   display: grid;
+  flex: 1;
   grid-template-columns: 240px 1fr 300px;
   min-height: 0;
 }

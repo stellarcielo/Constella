@@ -36,6 +36,11 @@ export interface TopologyState {
   catalog: ModelCatalog;
   /** 開いているファイルのパス。新規(まだ保存していない)なら undefined */
   filePath?: string;
+  /**
+   * base の元になったファイルの中身(開いた、または保存した YAML)。
+   * 問題の位置(range)はこの中の位置なので、行番号を出すのに使う。位置が当てにならないときは undefined
+   */
+  fileText?: string;
   /** ファイルを読んだときの問題(未知のキー、不正な値など) */
   fileIssues: Issue[];
   /** 表示する問題 = ファイル由来の問題(対象が残っているもの) + 検証の問題 */
@@ -49,11 +54,21 @@ export interface TopologyState {
     topology: Topology;
     base?: YamlBase;
     filePath?: string;
+    fileText?: string;
     fileIssues?: Issue[];
   }): void;
   newDocument(): void;
-  /** 保存した。次回の保存は base に差分を当てる */
-  markSaved(filePath: string, base: YamlBase): void;
+  /**
+   * 保存した。次回の保存は base に差分を当てる。
+   * savedTopology は保存したときのトポロジ(保存中に編集されていたら未保存の印を残す)
+   */
+  markSaved(saved: {
+    filePath: string;
+    base: YamlBase;
+    savedTopology: Topology;
+    fileText?: string;
+    fileIssues?: Issue[];
+  }): void;
 
   /** すべての編集はここを通す */
   edit(recipe: (draft: Topology) => void): void;
@@ -83,11 +98,12 @@ export function createTopologyStore(catalog: ModelCatalog) {
     dirty: false,
     selection: EMPTY_SELECTION,
 
-    loadDocument({ topology, base, filePath, fileIssues = [] }) {
+    loadDocument({ topology, base, filePath, fileText, fileIssues = [] }) {
       set({
         topology,
         base,
         filePath,
+        fileText,
         fileIssues,
         issues: computeIssues(topology, get().catalog, base, fileIssues),
         dirty: false,
@@ -99,8 +115,17 @@ export function createTopologyStore(catalog: ModelCatalog) {
       get().loadDocument({ topology: createEmptyTopology() });
     },
 
-    markSaved(filePath, base) {
-      set({ filePath, base, dirty: false });
+    markSaved({ filePath, base, savedTopology, fileText, fileIssues }) {
+      const { topology, catalog } = get();
+      const issues = fileIssues ?? get().fileIssues;
+      set({
+        filePath,
+        base,
+        fileText,
+        fileIssues: issues,
+        issues: computeIssues(topology, catalog, base, issues),
+        dirty: topology !== savedTopology,
+      });
     },
 
     edit(recipe) {

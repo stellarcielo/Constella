@@ -171,10 +171,22 @@ describe("topologyStore", () => {
     store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
     const result = parseTopology("constella: 1\n");
     if (!result.ok) throw new Error();
-    store.getState().markSaved("/b.yaml", result.base);
+    const savedTopology = store.getState().topology;
+    store.getState().markSaved({ filePath: "/b.yaml", base: result.base, savedTopology });
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().filePath).toBe("/b.yaml");
     expect(store.getState().base).toBe(result.base);
+  });
+
+  it("保存中に編集されていたら、未保存の印は残す", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    const savedTopology = store.getState().topology;
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    const result = parseTopology("constella: 1\n");
+    if (!result.ok) throw new Error();
+    store.getState().markSaved({ filePath: "/b.yaml", base: result.base, savedTopology });
+    expect(store.getState().dirty).toBe(true);
   });
 
   it("新規にすると空の図になる", () => {
