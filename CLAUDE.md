@@ -20,7 +20,12 @@ Tauri 2 + React + TypeScript。詳細な仕様は `docs/SPEC.md` を必ず読む
 - Rust 側は最小限。ファイル操作は Tauri 公式プラグインを使う。
 - TypeScript は strict。`any` は使わない。
 
-## コマンド(雛形作成後に実際のものへ更新すること)
+## コマンド
 - 開発起動: `npm run tauri dev`
-- テスト: `npm test`
+- アプリのビルド: `npm run tauri build`
+- テスト: `npm test`(監視モード: `npm run test:watch`)
 - Lint: `npm run lint`
+- 型チェック: `npm run typecheck`
+- 整形: `npm run format`(確認のみ: `npm run format:check`)
+- Rust: `src-tauri/` で `cargo fmt` / `cargo clippy`
+- 作業の区切りでは `npm run typecheck && npm run lint && npm test && npm run format:check` を通すこと。

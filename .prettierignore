@@ -1,0 +1,8 @@
+dist
+coverage
+src-tauri/target
+src-tauri/gen
+package-lock.json
+
+# 仕様書は手書きのまま保つ
+*.md
