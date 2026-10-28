@@ -148,6 +148,13 @@ export interface DeviceModel {
 /** キー = モデルID */
 export type ModelCatalog = ReadonlyMap<string, DeviceModel>;
 
+/** モデル定義ファイルの問題 */
+export interface ModelIssue {
+  severity: Severity;
+  message: string;
+  range?: SourceRange;
+}
+
 // ---------------------------------------------------------------------------
 // 問題(エラー・警告)
 // ---------------------------------------------------------------------------

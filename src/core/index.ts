@@ -7,3 +7,5 @@ export * from "./topology";
 export { parseTopology, type ParseOptions, type ParseResult, type YamlBase } from "./parse";
 export { serializeTopology, type SerializeResult } from "./serialize";
 export { locateTarget, validateTopology } from "./validate";
+export { expandPortName, type ExpandResult } from "./portExpand";
+export { buildCatalog, type ModelParseResult, parseModelDefinition } from "./modelLibrary";

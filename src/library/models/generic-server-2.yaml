@@ -1,0 +1,8 @@
+id: generic-server-2
+vendor: Generic
+name: Server (2 ports)
+role: server
+ports:
+  - name: "eth{0-1}"
+    type: rj45
+    speed: 1G

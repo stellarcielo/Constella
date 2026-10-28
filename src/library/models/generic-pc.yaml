@@ -1,0 +1,8 @@
+id: generic-pc
+vendor: Generic
+name: PC
+role: pc
+ports:
+  - name: eth0
+    type: rj45
+    speed: 1G

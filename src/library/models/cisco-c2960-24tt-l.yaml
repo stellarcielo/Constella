@@ -1,0 +1,11 @@
+id: cisco-c2960-24tt-l
+vendor: Cisco
+name: Catalyst 2960-24TT-L
+role: l2switch
+ports:
+  - name: "FastEthernet0/{1-24}"
+    type: rj45
+    speed: 100M
+  - name: "GigabitEthernet0/{1-2}"
+    type: rj45
+    speed: 1G

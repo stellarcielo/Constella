@@ -1,0 +1,11 @@
+id: generic-l2switch-24
+vendor: Generic
+name: L2 Switch (24 ports)
+role: l2switch
+ports:
+  - name: "GigabitEthernet0/{1-24}"
+    type: rj45
+    speed: 1G
+  - name: "TenGigabitEthernet0/{25-28}"
+    type: sfp+
+    speed: 10G

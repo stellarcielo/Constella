@@ -1,0 +1,6 @@
+# 任意の IF 名を使える(インターネット、ISP、WAN などを表す)
+id: generic-cloud
+vendor: Generic
+name: Cloud
+role: cloud
+flexible: true

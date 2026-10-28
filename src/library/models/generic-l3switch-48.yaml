@@ -1,0 +1,11 @@
+id: generic-l3switch-48
+vendor: Generic
+name: L3 Switch (48 ports)
+role: l3switch
+ports:
+  - name: "GigabitEthernet1/0/{1-48}"
+    type: rj45
+    speed: 1G
+  - name: "TenGigabitEthernet1/1/{1-4}"
+    type: sfp+
+    speed: 10G

@@ -1,0 +1,8 @@
+id: generic-router-4
+vendor: Generic
+name: Router (4 ports)
+role: router
+ports:
+  - name: "GigabitEthernet0/{0-3}"
+    type: rj45
+    speed: 1G
