@@ -1,10 +1,11 @@
-// 文書まわりのアプリ全体の処理: ウィンドウタイトル、メニューバー、閉じる前の確認、
-// メニューバーが無い環境(ブラウザ)での保存などのショートカット。
+// 文書まわりのアプリ全体の処理: ウィンドウタイトル、メニューバー(最近使った項目を含む)、
+// 閉じる前の確認、メニューバーが無い環境(ブラウザ)での保存などのショートカット。
 
 import { useEffect } from "react";
 import { documentName, editCommands, exportCommands, fileCommands } from "../commands";
 import { platform } from "../platform";
-import { topologyStore, useTopology } from "../store";
+import { recentFilesStore, topologyStore, useTopology } from "../store";
+import { recentLabels } from "../store/recentFiles";
 
 export function useDocumentShell(): void {
   const filePath = useTopology((s) => s.filePath);
@@ -26,10 +27,24 @@ export function useDocumentShell(): void {
       redo: () => editCommands.redo(),
       exportSvg: () => void exportCommands.exportImage("svg"),
       exportPng: () => void exportCommands.exportImage("png"),
+      openRecent: (path) => void fileCommands.openRecent(path),
+      clearRecent: () => recentFilesStore.getState().clear(),
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,
       confirm: fileCommands.confirmClose,
+    });
+  }, []);
+
+  // メニューの「最近使った項目を開く」を、一覧が変わるたびに作り直す
+  useEffect(() => {
+    const update = (paths: string[]) => {
+      const labels = recentLabels(paths);
+      void platform.setRecentFiles(paths.map((path, i) => ({ path, label: labels[i] })));
+    };
+    update(recentFilesStore.getState().paths);
+    return recentFilesStore.subscribe((state, prev) => {
+      if (state.paths !== prev.paths) update(state.paths);
     });
   }, []);
 

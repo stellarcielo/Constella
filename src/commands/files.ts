@@ -8,8 +8,13 @@ import type { TopologyStore } from "../store/topologyStore";
 export type UnsavedChoice = "save" | "discard" | "cancel";
 
 export interface FileCommandDeps {
-  platform: Pick<Platform, "openTextFile" | "chooseSavePath" | "writeTextFile" | "closeWindow">;
+  platform: Pick<
+    Platform,
+    "openTextFile" | "readTextFile" | "chooseSavePath" | "writeTextFile" | "closeWindow"
+  >;
   store: TopologyStore;
+  /** 最近使ったファイルの一覧(開いた・保存したら先頭に入れる。フェーズ2-6 Q4) */
+  recent: { add(path: string): void; remove(path: string): void };
   /** 新規・開いたあとに、モードと表示位置を戻す(viewport が無ければ全体表示) */
   resetView(viewport?: Viewport): void;
   /** 未保存の変更があるときの確認(新規・開く・閉じるの前。Q5) */
@@ -22,6 +27,8 @@ export interface FileCommandDeps {
 export interface FileCommands {
   newFile(): Promise<void>;
   open(): Promise<void>;
+  /** 「最近使った項目を開く」で選んだファイルを開く */
+  openRecent(path: string): Promise<void>;
   /** 保存できたら true */
   save(): Promise<boolean>;
   saveAs(): Promise<boolean>;
@@ -62,6 +69,7 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
       return false;
     }
     store.getState().markSaved(path, text);
+    deps.recent.add(path);
     return true;
   }
 
@@ -111,15 +119,37 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
       await deps.showError("開けませんでした", "ファイルを読み込めませんでした。", [String(e)]);
       return;
     }
-    if (!file) return;
-    // 構文エラーがあっても開く。図は空のまま、エディタで直せる(フェーズ2-1 Q1)
-    store.getState().openText(file.text, file.path);
+    if (file) show(file.path, file.text);
+  }
+
+  async function openRecent(path: string): Promise<void> {
+    if (!(await resolveUnsaved())) return;
+    let text: string;
+    try {
+      text = await platform.readTextFile(path);
+    } catch (e) {
+      // 移動・削除されたファイルは、一覧から外す(フェーズ2-6 Q3)
+      deps.recent.remove(path);
+      await deps.showError(
+        "開けませんでした",
+        `${basename(path)} を読み込めませんでした。移動または削除された可能性があるため、「最近使った項目」から外しました。`,
+        [String(e)],
+      );
+      return;
+    }
+    show(path, text);
+  }
+
+  /** 読み込んだファイルを表示する。構文エラーがあっても開き、エディタで直せるようにする(フェーズ2-1 Q1) */
+  function show(path: string, text: string): void {
+    store.getState().openText(text, path);
     deps.resetView(store.getState().topology.viewport);
+    deps.recent.add(path);
   }
 
   async function quit(): Promise<void> {
     if (await resolveUnsaved()) await platform.closeWindow();
   }
 
-  return { newFile, open, save, saveAs, confirmClose: resolveUnsaved, quit };
+  return { newFile, open, openRecent, save, saveAs, confirmClose: resolveUnsaved, quit };
 }

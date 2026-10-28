@@ -14,6 +14,17 @@ export interface MenuCommands {
   /** 図を画像として書き出す */
   exportSvg(): void;
   exportPng(): void;
+  /** 「最近使った項目を開く」で選んだファイルを開く */
+  openRecent(path: string): void;
+  /** 「最近使った項目を開く」の「メニューを消去」 */
+  clearRecent(): void;
+}
+
+/** メニューの「最近使った項目を開く」に出すファイル */
+export interface RecentFileItem {
+  path: string;
+  /** メニューに出す名前 */
+  label: string;
 }
 
 /** 書き出す画像の形式 */
@@ -24,6 +35,8 @@ export interface Platform {
   readonly hasNativeMenu: boolean;
   /** ファイルを選んで読み込む。キャンセルなら null */
   openTextFile(): Promise<{ path: string; text: string } | null>;
+  /** パスを指定して読み込む(最近使った項目を開くとき) */
+  readTextFile(path: string): Promise<string>;
   /** 保存先を選ぶ。キャンセルなら null */
   chooseSavePath(defaultName: string): Promise<string | null>;
   writeTextFile(path: string, text: string): Promise<void>;
@@ -42,6 +55,8 @@ export interface Platform {
   /** 確認なしでウィンドウを閉じる */
   closeWindow(): Promise<void>;
   setupMenu(commands: MenuCommands): Promise<void>;
+  /** メニューの「最近使った項目を開く」の中身を入れ替える(新しく使った順) */
+  setRecentFiles(files: RecentFileItem[]): Promise<void>;
 }
 
 /** パスの最後の部分(ファイル名) */

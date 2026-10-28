@@ -3,6 +3,7 @@
 import { useStore } from "zustand";
 import { askDialog } from "../components/Dialog/dialogs";
 import { builtinCatalog } from "../library";
+import { createRecentFilesStore } from "./recentFiles";
 import { createTopologyStore, type TopologyState } from "./topologyStore";
 import { createUiStore, type UiState } from "./uiStore";
 
@@ -18,7 +19,8 @@ export const topologyStore = createTopologyStore(builtinCatalog(), {
     return choice === "overwrite";
   },
 });
-export const uiStore = createUiStore(viewStorage());
+export const uiStore = createUiStore(localStorageIfAvailable());
+export const recentFilesStore = createRecentFilesStore(localStorageIfAvailable());
 
 // 接続モードに入ったら選択を外す(接続モードでは選択できないため)
 uiStore.subscribe((state, prev) => {
@@ -38,8 +40,8 @@ export function useUi<T>(selector: (state: UiState) => T): T {
 export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";
 export type { ChosenPort, ConnectState, Mode, UiState, ViewOptions } from "./uiStore";
 
-/** 表示オプションの保存先。使えない環境では覚えておかない */
-function viewStorage(): Storage | undefined {
+/** 表示オプションと最近使ったファイルの保存先。使えない環境では覚えておかない */
+function localStorageIfAvailable(): Storage | undefined {
   try {
     return window.localStorage;
   } catch {

@@ -3,7 +3,7 @@
 import { askDialog } from "../components/Dialog/dialogs";
 import { keyPlace } from "../components/editKeys";
 import { platform } from "../platform";
-import { topologyStore, uiStore } from "../store";
+import { recentFilesStore, topologyStore, uiStore } from "../store";
 import { createEditCommands } from "./edit";
 import { createExportCommands } from "./export";
 import { createFileCommands } from "./files";
@@ -12,6 +12,10 @@ import { rasterizeSvg } from "./rasterize";
 export const fileCommands = createFileCommands({
   platform,
   store: topologyStore,
+  recent: {
+    add: (path) => recentFilesStore.getState().add(path),
+    remove: (path) => recentFilesStore.getState().remove(path),
+  },
   resetView(viewport) {
     const ui = uiStore.getState();
     const { issues, yamlErrors } = topologyStore.getState();

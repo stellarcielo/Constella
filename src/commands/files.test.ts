@@ -10,11 +10,14 @@ import {
   type Viewport,
 } from "../core";
 import { specExample, testCatalog } from "../core/testFixtures";
+import { createRecentFilesStore } from "../store/recentFiles";
 import { createTopologyStore } from "../store/topologyStore";
 import { createFileCommands, defaultFileName, documentName, type UnsavedChoice } from "./files";
 
 interface FakeState {
   open: { path: string; text: string } | null;
+  /** パスを指定して読めるファイル(最近使った項目を開くとき) */
+  disk: Record<string, string>;
   savePath: string | null;
   writeError?: Error;
   unsaved: UnsavedChoice;
@@ -24,12 +27,14 @@ interface FakeState {
 function setup(initial: Partial<FakeState> = {}) {
   const state: FakeState = {
     open: null,
+    disk: {},
     savePath: null,
     unsaved: "cancel",
     saveWithErrors: false,
     ...initial,
   };
   const store = createTopologyStore(testCatalog);
+  const recent = createRecentFilesStore();
   const written: { path: string; text: string }[] = [];
   const errors: { title: string; message: string; details?: string[] }[] = [];
   const asked: string[] = [];
@@ -37,6 +42,11 @@ function setup(initial: Partial<FakeState> = {}) {
   const views: (Viewport | undefined)[] = [];
   const platform = {
     openTextFile: vi.fn(async () => state.open),
+    readTextFile: vi.fn(async (path: string) => {
+      const text = state.disk[path];
+      if (text === undefined) throw new Error(`not found: ${path}`);
+      return text;
+    }),
     chooseSavePath: vi.fn<(name: string) => Promise<string | null>>(async () => state.savePath),
     writeTextFile: vi.fn(async (path: string, text: string) => {
       if (state.writeError) throw state.writeError;
@@ -47,6 +57,10 @@ function setup(initial: Partial<FakeState> = {}) {
   const commands = createFileCommands({
     platform,
     store,
+    recent: {
+      add: (path) => recent.getState().add(path),
+      remove: (path) => recent.getState().remove(path),
+    },
     resetView: (viewport) => views.push(viewport),
     askUnsaved: async (name) => {
       asked.push(name);
@@ -60,7 +74,18 @@ function setup(initial: Partial<FakeState> = {}) {
       errors.push({ title, message, details });
     },
   });
-  return { state, store, platform, commands, written, errors, asked, askedSaveWithErrors, views };
+  return {
+    state,
+    store,
+    recent,
+    platform,
+    commands,
+    written,
+    errors,
+    asked,
+    askedSaveWithErrors,
+    views,
+  };
 }
 
 /** 未保存の変更を作る */
@@ -338,5 +363,68 @@ describe("フェーズ1の完了条件", () => {
     expect(s().topology.layout).toEqual(layout);
     expect(s().issues).toEqual([]);
     expect(s().dirty).toBe(false);
+  });
+});
+
+describe("最近使ったファイル(フェーズ2-6)", () => {
+  const recentPaths = (env: ReturnType<typeof setup>) => env.recent.getState().paths;
+
+  it("開く・別名で保存・保存のたびに、一覧の先頭に入れる(Q4)", async () => {
+    const env = setup({
+      open: { path: "/lab/home.constella.yaml", text: specExample },
+      savePath: "/lab/copy.constella.yaml",
+    });
+    await env.commands.open();
+    expect(recentPaths(env)).toEqual(["/lab/home.constella.yaml"]);
+    await env.commands.saveAs();
+    expect(recentPaths(env)).toEqual(["/lab/copy.constella.yaml", "/lab/home.constella.yaml"]);
+    env.recent.getState().add("/other.yaml");
+    makeDirty(env);
+    await env.commands.save();
+    expect(recentPaths(env)).toEqual([
+      "/lab/copy.constella.yaml",
+      "/other.yaml",
+      "/lab/home.constella.yaml",
+    ]);
+  });
+
+  it("保存できなかったファイルは入れない", async () => {
+    const env = setup({ savePath: "/x.yaml", writeError: new Error("denied") });
+    await env.commands.saveAs();
+    expect(recentPaths(env)).toEqual([]);
+  });
+
+  it("最近使った項目から開くと、そのファイルを表示して一覧の先頭に移す", async () => {
+    const env = setup({ disk: { "/a.yaml": specExample } });
+    env.recent.getState().add("/a.yaml");
+    env.recent.getState().add("/b.yaml");
+    await env.commands.openRecent("/a.yaml");
+    const s = env.store.getState();
+    expect(env.platform.readTextFile).toHaveBeenCalledWith("/a.yaml");
+    expect(s.filePath).toBe("/a.yaml");
+    expect([...s.topology.devices.keys()]).toEqual(["rt1", "core-sw1", "srv1", "isp"]);
+    expect(s.dirty).toBe(false);
+    expect(env.views).toEqual([undefined]);
+    expect(recentPaths(env)).toEqual(["/a.yaml", "/b.yaml"]);
+  });
+
+  it("未保存の変更があれば先に確認し、キャンセルなら開かない", async () => {
+    const env = setup({ disk: { "/a.yaml": specExample }, unsaved: "cancel" });
+    makeDirty(env);
+    await env.commands.openRecent("/a.yaml");
+    expect(env.asked).toEqual(["無題"]);
+    expect(env.platform.readTextFile).not.toHaveBeenCalled();
+    expect(env.store.getState().filePath).toBeUndefined();
+  });
+
+  it("見つからないファイルは、エラーを出して一覧から外す(Q3)", async () => {
+    const env = setup();
+    env.recent.getState().add("/moved.yaml");
+    env.recent.getState().add("/b.yaml");
+    await env.commands.openRecent("/moved.yaml");
+    expect(env.errors.map((e) => e.title)).toEqual(["開けませんでした"]);
+    expect(env.errors[0].message).toContain("moved.yaml");
+    expect(recentPaths(env)).toEqual(["/b.yaml"]);
+    expect(env.store.getState().filePath).toBeUndefined();
   });
 });

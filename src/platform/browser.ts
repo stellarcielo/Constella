@@ -37,6 +37,11 @@ export const browserPlatform: Platform = {
     return file ? { path: file.name, text: await file.text() } : null;
   },
 
+  async readTextFile() {
+    // ブラウザではファイルの場所が分からないので、パスを指定して開けない(メニューも無い)
+    throw new Error("ブラウザ版では、パスを指定してファイルを開けません");
+  },
+
   async chooseSavePath(defaultName) {
     return window.prompt("保存するファイル名", defaultName);
   },
@@ -79,4 +84,6 @@ export const browserPlatform: Platform = {
   },
 
   async setupMenu() {},
+
+  async setRecentFiles() {},
 };

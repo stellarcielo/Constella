@@ -6,13 +6,51 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import type { ImageFormat, MenuCommands, Platform } from "./types";
+import type { ImageFormat, MenuCommands, Platform, RecentFileItem } from "./types";
 
 const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "yml"] }];
 const IMAGE_FILTERS: Record<ImageFormat, { name: string; extensions: string[] }[]> = {
   svg: [{ name: "SVG 画像", extensions: ["svg"] }],
   png: [{ name: "PNG 画像", extensions: ["png"] }],
 };
+
+// メニューの「最近使った項目を開く」(setupMenu で作り、setRecentFiles で中身を入れ替える)
+let recentMenu: Submenu | undefined;
+let recentCommands: Pick<MenuCommands, "openRecent" | "clearRecent"> | undefined;
+let recentFiles: RecentFileItem[] = [];
+/** 入れ替えは 1 回ずつ順に行う(続けて呼ばれても、新旧の項目が混ざらないように) */
+let recentUpdate: Promise<void> = Promise.resolve();
+
+function refreshRecentMenu(): Promise<void> {
+  recentUpdate = recentUpdate
+    .then(fillRecentMenu)
+    .catch((e: unknown) => console.error("「最近使った項目を開く」を更新できませんでした", e));
+  return recentUpdate;
+}
+
+async function fillRecentMenu(): Promise<void> {
+  const menu = recentMenu;
+  const commands = recentCommands;
+  if (!menu || !commands) return;
+  const files = recentFiles;
+  const items = [];
+  for (const file of files) {
+    items.push(
+      await MenuItem.new({ text: file.label, action: () => commands.openRecent(file.path) }),
+    );
+  }
+  if (files.length > 0) items.push(await PredefinedMenuItem.new({ item: "Separator" }));
+  // 一覧が空なら押せない(macOS の標準のアプリと同じ)
+  items.push(
+    await MenuItem.new({
+      text: "メニューを消去",
+      enabled: files.length > 0,
+      action: commands.clearRecent,
+    }),
+  );
+  for (const item of await menu.items()) await menu.remove(item);
+  await menu.append(items);
+}
 
 export const tauriPlatform: Platform = {
   hasNativeMenu: true,
@@ -21,6 +59,11 @@ export const tauriPlatform: Platform = {
     const path = await open({ multiple: false, directory: false, filters: FILTERS });
     if (typeof path !== "string") return null;
     return { path, text: await readTextFile(path) };
+  },
+
+  readTextFile(path) {
+    // 以前に選んだファイルの許可は、persisted-scope プラグインが再起動後も保っている
+    return readTextFile(path);
   },
 
   async chooseSavePath(defaultName) {
@@ -93,11 +136,14 @@ export const tauriPlatform: Platform = {
         await command("Constella を終了", "CmdOrCtrl+Q", commands.quit),
       ],
     });
+    recentMenu = await Submenu.new({ text: "最近使った項目を開く", items: [] });
+    recentCommands = commands;
     const file = await Submenu.new({
       text: "ファイル",
       items: [
         await command("新規", "CmdOrCtrl+N", commands.newFile),
         await command("開く…", "CmdOrCtrl+O", commands.open),
+        recentMenu,
         await separator(),
         await command("保存", "CmdOrCtrl+S", commands.save),
         await command("別名で保存…", "CmdOrCtrl+Shift+S", commands.saveAs),
@@ -145,5 +191,11 @@ export const tauriPlatform: Platform = {
     await menu.setAsAppMenu();
     await windowMenu.setAsWindowsMenuForNSApp();
     await help.setAsHelpMenuForNSApp();
+    await refreshRecentMenu();
+  },
+
+  setRecentFiles(files) {
+    recentFiles = files;
+    return refreshRecentMenu();
   },
 };
