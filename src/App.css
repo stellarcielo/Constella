@@ -1,24 +1,105 @@
 :root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --border: #d9dce1;
+  --hover: #e8eaee;
+  --text: #1f2328;
+  --text-muted: #646b75;
+  --label-bg: rgb(255 255 255 / 0.85);
+  --accent: #2f6fde;
+  --error: #d1242f;
+  --warning: #e0a800;
+  --warning-text: #9a6700;
+
+  /* role ごとのアイコンの色 */
+  --role-cloud: #6e7781;
+  --role-router: #2f6fde;
+  --role-firewall: #cf3d2e;
+  --role-l3switch: #8250df;
+  --role-l2switch: #1a7f37;
+  --role-server: #bf5b00;
+  --role-pc: #0a7d8c;
+  --role-ap: #b3368f;
+  --role-generic: #57606a;
+
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
-  color: #1f2328;
-  background-color: #ffffff;
+  font-size: 13px;
+  color: var(--text);
+  background-color: var(--bg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #e6edf3;
-    background-color: #0d1117;
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --hover: #21262d;
+    --text: #e6edf3;
+    --text-muted: #8d96a0;
+    --label-bg: rgb(22 27 34 / 0.85);
+    --accent: #4c8dff;
+    --error: #f85149;
+    --warning: #d29922;
+    --warning-text: #d29922;
+
+    --role-cloud: #8d96a0;
+    --role-router: #6ea8ff;
+    --role-firewall: #ff7b72;
+    --role-l3switch: #b392f0;
+    --role-l2switch: #56d364;
+    --role-server: #f0883e;
+    --role-pc: #39c5cf;
+    --role-ap: #f778ba;
+    --role-generic: #8d96a0;
   }
 }
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 40px 1fr 26px;
   height: 100vh;
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: 240px 1fr 300px;
+  min-height: 0;
+}
+
+.app-side {
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.role-icon.role-cloud {
+  color: var(--role-cloud);
+}
+.role-icon.role-router {
+  color: var(--role-router);
+}
+.role-icon.role-firewall {
+  color: var(--role-firewall);
+}
+.role-icon.role-l3switch {
+  color: var(--role-l3switch);
+}
+.role-icon.role-l2switch {
+  color: var(--role-l2switch);
+}
+.role-icon.role-server {
+  color: var(--role-server);
+}
+.role-icon.role-pc {
+  color: var(--role-pc);
+}
+.role-icon.role-ap {
+  color: var(--role-ap);
+}
+.role-icon.role-generic {
+  color: var(--role-generic);
 }
