@@ -19,7 +19,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Endpoint,
   findModel,
@@ -51,11 +51,6 @@ const PAN_BUTTONS = [1, 2];
 
 const onNodeDragStop = (_e: unknown, _node: Node, dragged: Node[]) =>
   topologyStore.getState().moveDevices(dragged.map((n) => [n.id, n.position]));
-const onSelectionChange = ({ nodes, edges }: OnSelectionChangeParams) =>
-  topologyStore.getState().setSelection({
-    devices: nodes.map((n) => n.id),
-    links: edges.map((e) => e.id),
-  });
 const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
   topologyStore.getState().deleteElements({
     devices: nodes.map((n) => n.id),
@@ -87,14 +82,19 @@ function CanvasInner() {
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
   const rejectedEdits = useTopology((s) => s.rejectedEdits);
+  const autoPositions = useTopology((s) => s.autoPositions);
+  const placing = useTopology((s) => s.placing);
   const mode = useUi((s) => s.mode);
   const { screenToFlowPosition, getNodes, fitView, setViewport, getZoom } = useReactFlow();
 
   // 表示位置の要求: ファイルを開いたとき・新規のとき(_viewport が無ければ全体が見えるように)と、
-  // 問題パネルで項目を選んだとき(そのデバイスが見えるように。今より拡大はしない)
+  // 問題パネルで項目を選んだとき(そのデバイスが見えるように。今より拡大はしない)。
+  // 座標の無いデバイスを並べている間は、並べ終わるまで待つ
   const viewRequest = useUi((s) => s.viewRequest);
+  const handledView = useRef(0);
   useEffect(() => {
-    if (viewRequest.id === 0) return;
+    if (viewRequest.id === handledView.current || placing) return;
+    handledView.current = viewRequest.id;
     if (viewRequest.viewport) {
       void setViewport(viewRequest.viewport);
     } else if (viewRequest.focus) {
@@ -107,7 +107,7 @@ function CanvasInner() {
     } else {
       void fitView({ padding: 0.2, maxZoom: 1.5 });
     }
-  }, [viewRequest, fitView, setViewport, getZoom]);
+  }, [viewRequest, placing, fitView, setViewport, getZoom]);
 
   // 矢印キーで選択中の機器を動かす。React Flow 標準の矢印キー操作は機器にフォーカスがあるときしか
   // 効かないので止め(disableKeyboardA11y)、delete キーや C と同じくフォーカスの位置に関係なく効かせる
@@ -135,10 +135,10 @@ function CanvasInner() {
 
   const derived = useMemo(
     () => ({
-      nodes: buildNodes(topology, catalog, selection, issues),
-      edges: buildEdges(topology, catalog, selection, issues),
+      nodes: buildNodes(topology, autoPositions, catalog, issues),
+      edges: buildEdges(topology, catalog, issues),
     }),
-    [topology, catalog, selection, issues],
+    [topology, autoPositions, catalog, issues],
   );
 
   // ストア側が変わったら作り直す。React Flow が測ったノードの大きさは引き継ぐ
@@ -147,12 +147,34 @@ function CanvasInner() {
   const [prevDerived, setPrevDerived] = useState(derived);
   // GUI の編集が取りやめになったとき(YAML の構文エラー中など)も、ストアの位置に戻す
   const [prevRejected, setPrevRejected] = useState(rejectedEdits);
+  // キャンバスで選んだ選択(React Flow の印が先に付いている)は、キャンバスに書き戻さない。
+  // 範囲選択の最中はノードとリンクの選択が別々に届くので、書き戻すと選択が行き来し続ける
+  const [canvasSelection, setCanvasSelection] = useState<Selection>();
+  const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => {
+    const next = { devices: nodes.map((n) => n.id), links: edges.map((e) => e.id) };
+    setCanvasSelection(next);
+    topologyStore.getState().setSelection(next);
+  }, []);
+  const [prevSelection, setPrevSelection] = useState(selection);
   if (derived !== prevDerived || rejectedEdits !== prevRejected) {
     setPrevDerived(derived);
     setPrevRejected(rejectedEdits);
+    setPrevSelection(selection);
     const measured = new Map(nodes.map((n) => [n.id, n.measured]));
-    setNodes(derived.nodes.map((n) => ({ ...n, measured: measured.get(n.id) })));
-    setEdges(derived.edges);
+    setNodes(
+      withSelection(
+        derived.nodes.map((n) => ({ ...n, measured: measured.get(n.id) })),
+        selection.devices,
+      ),
+    );
+    setEdges(withSelection(derived.edges, selection.links));
+  } else if (selection !== prevSelection) {
+    // 選択だけが変わったとき(インスペクタ・貼り付け・⌘A など)は、選択の印だけを合わせる
+    setPrevSelection(selection);
+    if (selection !== canvasSelection) {
+      setNodes((ns) => withSelection(ns, selection.devices));
+      setEdges((es) => withSelection(es, selection.links));
+    }
   }
 
   const onNodesChange = useCallback((changes: NodeChange<DeviceNodeType>[]) => {
@@ -239,48 +261,27 @@ function CanvasInner() {
 
 // ---------------------------------------------------------------------------
 
-const PLACEHOLDER_GAP_X = 140;
-const PLACEHOLDER_GAP_Y = 120;
-const PLACEHOLDER_COLUMNS = 6;
-
 /**
- * 座標の無いデバイスは、座標のあるデバイスの下に格子状に並べる。
- * この仮の位置は layout には書かない(動かしたときに初めて書く)。
+ * 座標の無いデバイスは、自動で並べた位置(autoPositions)に出す(SPEC 9章)。
+ * その位置は layout には書かない(動かしたときに初めて書く)。並べ終わるまでは隠しておく
  */
-function placeholderPositions(t: Topology): Map<string, Position> {
-  const result = new Map<string, Position>();
-  const missing = [...t.devices.keys()].filter((id) => !t.layout.has(id));
-  if (missing.length === 0) return result;
-  const placed = [...t.layout.values()];
-  const left = placed.length > 0 ? Math.min(...placed.map((p) => p.x)) : 0;
-  const top = placed.length > 0 ? Math.max(...placed.map((p) => p.y)) + PLACEHOLDER_GAP_Y * 1.5 : 0;
-  missing.forEach((id, i) => {
-    result.set(id, {
-      x: left + (i % PLACEHOLDER_COLUMNS) * PLACEHOLDER_GAP_X,
-      y: top + Math.floor(i / PLACEHOLDER_COLUMNS) * PLACEHOLDER_GAP_Y,
-    });
-  });
-  return result;
-}
-
 function buildNodes(
   t: Topology,
+  autoPositions: ReadonlyMap<string, Position>,
   catalog: ModelCatalog,
-  selection: Selection,
   issues: Issue[],
 ): DeviceNodeType[] {
-  const placeholders = placeholderPositions(t);
-  const selected = new Set(selection.devices);
   const problems = worstProblems(issues, (target) =>
     target.kind === "device" ? target.id : target.kind === "interface" ? target.device : undefined,
   );
   return [...t.devices.values()].map((device) => {
     const model = findModel(device, catalog);
+    const position = t.layout.get(device.id) ?? autoPositions.get(device.uid);
     return {
       id: device.id,
       type: "device",
-      position: t.layout.get(device.id) ?? placeholders.get(device.id) ?? { x: 0, y: 0 },
-      selected: selected.has(device.id),
+      position: position ?? { x: 0, y: 0 },
+      hidden: !position,
       data: {
         label: resolveLabel(device),
         role: resolveRole(device, catalog),
@@ -291,13 +292,7 @@ function buildNodes(
   });
 }
 
-function buildEdges(
-  t: Topology,
-  catalog: ModelCatalog,
-  selection: Selection,
-  issues: Issue[],
-): LinkEdgeType[] {
-  const selected = new Set(selection.links);
+function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): LinkEdgeType[] {
   const problems = worstProblems(issues, (target) =>
     target.kind === "link" ? target.id : undefined,
   );
@@ -320,7 +315,6 @@ function buildEdges(
       type: "link",
       source: a.device,
       target: b.device,
-      selected: selected.has(link.id),
       className: problem ? `media-${media} problem-${problem}` : `media-${media}`,
       data: {
         media,
@@ -346,4 +340,20 @@ function worstProblems(
     result.set(key, issue.severity);
   }
   return result;
+}
+
+/** 選択の印を ids に合わせる。変わらない要素や、何も変わらない配列はそのまま返す */
+function withSelection<T extends { id: string; selected?: boolean }>(
+  items: T[],
+  ids: string[],
+): T[] {
+  const selected = new Set(ids);
+  let changed = false;
+  const next = items.map((item) => {
+    const on = selected.has(item.id);
+    if (!!item.selected === on) return item;
+    changed = true;
+    return { ...item, selected: on };
+  });
+  return changed ? next : items;
 }

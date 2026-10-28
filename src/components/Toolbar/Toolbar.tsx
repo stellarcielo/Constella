@@ -1,7 +1,7 @@
 // 上端のツールバー。ボタンは各機能のタスクで追加する(SPEC 6章)。
 
 import { fileCommands } from "../../commands";
-import { type Mode, uiStore, useUi } from "../../store";
+import { type Mode, topologyStore, uiStore, useUi } from "../../store";
 import "./Toolbar.css";
 
 const FILE_BUTTONS = [
@@ -41,6 +41,21 @@ export function Toolbar() {
             {label}
           </button>
         ))}
+      </div>
+      <div className="toolbar-group" role="group" aria-label="レイアウト">
+        <button
+          type="button"
+          className="toolbar-button"
+          title="すべてのデバイスを並べ直す(⌘Z で戻せます)"
+          onClick={() =>
+            void topologyStore
+              .getState()
+              .autoArrange()
+              .then(() => uiStore.getState().requestView({}))
+          }
+        >
+          自動整列
+        </button>
       </div>
       <span className="toolbar-spacer" />
       <div className="toolbar-group" role="group" aria-label="YAML">

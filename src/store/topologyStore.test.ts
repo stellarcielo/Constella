@@ -438,3 +438,82 @@ describe("topologyStore: 取り消し・やり直し(SPEC 7.4)", () => {
     expect(count).toBe(200);
   });
 });
+
+describe("自動レイアウト", () => {
+  const noLayout = `constella: 1
+# 手書きのメモ
+devices:
+  srv1: { model: generic-server-2 }
+  rt1: { model: generic-router-4 }
+  isp: { role: cloud }
+links:
+  - { a: srv1:eth0, b: rt1:Gi0/1 }
+  - { a: rt1:Gi0/0, b: isp:wan }
+`;
+  const placed = async (store: ReturnType<typeof setup>) =>
+    vi.waitFor(() => expect(store.getState().placing).toBe(false));
+  const autoY = (store: ReturnType<typeof setup>, id: string) => {
+    const s = store.getState();
+    const uid = s.topology.devices.get(id)?.uid ?? "";
+    return s.autoPositions.get(uid)?.y ?? NaN;
+  };
+
+  it("座標の無いファイルを開くと並べるが、YAML は変えない", async () => {
+    const store = setup();
+    store.getState().openText(noLayout);
+    expect(store.getState().placing).toBe(true);
+    await placed(store);
+    expect(autoY(store, "isp")).toBeLessThan(autoY(store, "rt1"));
+    expect(autoY(store, "rt1")).toBeLessThan(autoY(store, "srv1"));
+    expect(store.getState().yamlText).toBe(noLayout);
+    expect(store.getState().dirty).toBe(false);
+  });
+
+  it("座標のあるデバイスは動かさず、無いデバイスだけを下に置く", async () => {
+    const store = setup();
+    store.getState().openText(specExample);
+    await placed(store);
+    const s = store.getState();
+    expect(s.topology.layout.get("rt1")).toEqual({ x: 300, y: 80 });
+    expect(s.autoPositions.size).toBe(2);
+    expect(autoY(store, "srv1")).toBeGreaterThan(240);
+  });
+
+  it("いちど決まった位置は、ほかの編集や ID の変更で変わらない", async () => {
+    const store = setup();
+    store.getState().openText(noLayout);
+    await placed(store);
+    const before = autoY(store, "srv1");
+    store.getState().renameDevice("srv1", "web1");
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    await placed(store);
+    expect(autoY(store, "web1")).toBe(before);
+  });
+
+  it("YAML エディタで書き足したデバイスも並べる", async () => {
+    const store = setup();
+    store.getState().openText(noLayout);
+    await placed(store);
+    store
+      .getState()
+      .setYamlDraft(noLayout.replace("devices:\n", "devices:\n  pc1: { role: pc }\n"));
+    store.getState().commitYamlDraft();
+    await placed(store);
+    expect(Number.isNaN(autoY(store, "pc1"))).toBe(false);
+  });
+
+  it("自動整列は全デバイスを layout に書き、1 回で取り消せる。コメントは残る", async () => {
+    const store = setup();
+    store.getState().openText(noLayout);
+    await placed(store);
+    await store.getState().autoArrange();
+    const s = store.getState();
+    expect([...s.topology.layout.keys()].sort()).toEqual(["isp", "rt1", "srv1"]);
+    expect(s.yamlText).toContain("# 手書きのメモ");
+    expect(s.yamlText).toContain("layout:");
+    expect(s.dirty).toBe(true);
+    store.getState().undo();
+    expect(store.getState().yamlText).toBe(noLayout);
+    expect(store.getState().topology.layout.size).toBe(0);
+  });
+});

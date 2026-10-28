@@ -4,6 +4,7 @@
 // - YAML エディタの内容は setYamlDraft() で受け取り、commitYamlDraft() で読み込む(エディタが 300ms 待ってから呼ぶ)
 // - YAML に構文エラーがある間、図は最後に正しく読めた状態のまま。その間の GUI の編集は確認してから当てる
 // - 取り消し・やり直し(SPEC 7.4): GUI の編集 1 回、エディタの内容の読み込み 1 回(300ms の区切り)が 1 ステップ
+// - 座標の無いデバイスは自動で並べる(SPEC 9章)。その位置は表示だけに使い、YAML には書かない(フェーズ2-3 Q1)
 
 import { enableMapSet, produce } from "immer";
 import { createStore } from "zustand/vanilla";
@@ -12,6 +13,7 @@ import {
   addLink,
   adoptIdentity,
   checkDeviceId,
+  computeLayout,
   createEmptyTopology,
   type Endpoint,
   ifNameKey,
@@ -19,6 +21,7 @@ import {
   type ModelCatalog,
   moveDevices,
   parseTopology,
+  placeMissing,
   type Position,
   rebaseOnText,
   removeDevices,
@@ -68,6 +71,13 @@ export interface TopologyState {
   rejectedEdits: number;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * 座標の無いデバイスを自動で並べた位置(キー = デバイスの uid。ID を変えても位置が変わらないように)。
+   * 表示だけに使い、YAML には書かない。そのデバイスを動かしたときに初めて layout に書く
+   */
+  autoPositions: ReadonlyMap<string, Position>;
+  /** 座標の無いデバイスを並べている最中か(並べ終わってから全体を表示するため) */
+  placing: boolean;
 
   /** ファイルを開いた(または新規)。構文エラーがあっても開き、エディタで直せるようにする */
   openText(text: string, filePath?: string): void;
@@ -97,6 +107,8 @@ export interface TopologyState {
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
+  /** 全デバイスを並べ直して layout に書く(SPEC 9章の「自動整列」。1 ステップで取り消せる) */
+  autoArrange(): Promise<void>;
 }
 
 export interface EditOptions {
@@ -136,7 +148,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
    */
   let validText: string | undefined = EMPTY_YAML;
 
-  return createStore<TopologyState>()((set, get) => {
+  const store = createStore<TopologyState>()((set, get) => {
     /** 今の(最後に正しく読めた)状態。正しく読めた状態がまだ無ければ undefined */
     const snapshot = (): Snapshot | undefined => {
       const { topology, base, yamlIssues } = get();
@@ -257,6 +269,8 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
       rejectedEdits: 0,
       canUndo: false,
       canRedo: false,
+      autoPositions: new Map(),
+      placing: false,
 
       openText(text, filePath) {
         // 前のファイルの図や識別子は引き継がない
@@ -267,6 +281,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
           filePath,
           savedText: text,
           selection: EMPTY_SELECTION,
+          autoPositions: new Map(),
         });
         resetHistory();
         validText = undefined;
@@ -422,8 +437,71 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
       setSelection(selection) {
         if (!sameSelection(get().selection, selection)) set({ selection });
       },
+
+      async autoArrange() {
+        get().commitYamlDraft();
+        const positions = await computeLayout(get().topology, catalog);
+        // 並べている間に消えたデバイスは飛ばす(moveDevices が無い ID を無視する)
+        get().moveDevices(positions);
+      },
     };
   });
+
+  // 座標の無いデバイスが現れたら並べる。並べている間にまた現れたら、終わってからもう一度並べる
+  let placingRun: Promise<void> | undefined;
+  let again = false;
+  const missingDevices = () => {
+    const { topology, autoPositions } = store.getState();
+    return [...topology.devices.values()].filter(
+      (d) => !topology.layout.has(d.id) && !autoPositions.has(d.uid),
+    );
+  };
+  const placeAll = async () => {
+    try {
+      do {
+        again = false;
+        const missing = missingDevices();
+        if (missing.length === 0) break;
+        const { topology, autoPositions } = store.getState();
+        const placed: Position[] = [];
+        for (const device of topology.devices.values()) {
+          const pos = topology.layout.get(device.id) ?? autoPositions.get(device.uid);
+          if (pos) placed.push(pos);
+        }
+        const laid = await placeMissing(
+          topology,
+          catalog,
+          missing.map((d) => d.id),
+          placed,
+        );
+        const next = new Map(store.getState().autoPositions);
+        for (const device of missing) {
+          const pos = laid.get(device.id);
+          if (pos) next.set(device.uid, pos);
+        }
+        store.setState({ autoPositions: next });
+      } while (again);
+    } finally {
+      store.setState({ placing: false });
+    }
+  };
+  const schedulePlacement = () => {
+    if (missingDevices().length === 0) return;
+    if (placingRun) {
+      again = true;
+      return;
+    }
+    store.setState({ placing: true });
+    placingRun = placeAll().finally(() => {
+      placingRun = undefined;
+    });
+  };
+  store.subscribe((state, prev) => {
+    if (state.topology !== prev.topology || state.autoPositions !== prev.autoPositions) {
+      schedulePlacement();
+    }
+  });
+  return store;
 }
 
 function computeIssues(

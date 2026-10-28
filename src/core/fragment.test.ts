@@ -74,7 +74,7 @@ describe("pasteFragment", () => {
     expect(pasted).toEqual({ devices: ["rt2"], links: [] });
   });
 
-  it("座標の無いデバイスは座標を付けない(仮の位置に並ぶ)", () => {
+  it("座標の無いデバイスは座標を付けない(自動で並べる)", () => {
     const t = load();
     const fragment = load("constella: 1\ndevices:\n  x: { role: cloud }\n");
     pasteFragment(t, fragment, testCatalog, { x: 40, y: 40 });
