@@ -11,7 +11,13 @@ export interface MenuCommands {
   /** 取り消す・やり直す(入力欄にフォーカスがあれば、その入力欄の取り消し) */
   undo(): void;
   redo(): void;
+  /** 図を画像として書き出す */
+  exportSvg(): void;
+  exportPng(): void;
 }
+
+/** 書き出す画像の形式 */
+export type ImageFormat = "svg" | "png";
 
 export interface Platform {
   /** メニューバー(OS のもの)でショートカットを扱うか。扱わないならアプリ側のキー操作で受ける */
@@ -21,6 +27,9 @@ export interface Platform {
   /** 保存先を選ぶ。キャンセルなら null */
   chooseSavePath(defaultName: string): Promise<string | null>;
   writeTextFile(path: string, text: string): Promise<void>;
+  /** 画像の書き出し先を選ぶ。キャンセルなら null */
+  chooseExportPath(defaultName: string, format: ImageFormat): Promise<string | null>;
+  writeBinaryFile(path: string, data: Uint8Array<ArrayBuffer>): Promise<void>;
   setTitle(title: string): void;
   /** システムのクリップボードの文字列 */
   readClipboardText(): Promise<string>;

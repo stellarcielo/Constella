@@ -2,7 +2,7 @@
 // メニューバーが無い環境(ブラウザ)での保存などのショートカット。
 
 import { useEffect } from "react";
-import { documentName, editCommands, fileCommands } from "../commands";
+import { documentName, editCommands, exportCommands, fileCommands } from "../commands";
 import { platform } from "../platform";
 import { topologyStore, useTopology } from "../store";
 
@@ -24,6 +24,8 @@ export function useDocumentShell(): void {
       quit: () => void fileCommands.quit(),
       undo: () => editCommands.undo(),
       redo: () => editCommands.redo(),
+      exportSvg: () => void exportCommands.exportImage("svg"),
+      exportPng: () => void exportCommands.exportImage("png"),
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,
@@ -42,6 +44,9 @@ export function useDocumentShell(): void {
       } else if (key === "o" && !e.shiftKey) {
         e.preventDefault();
         void fileCommands.open();
+      } else if (key === "e") {
+        e.preventDefault();
+        void exportCommands.exportImage(e.shiftKey ? "png" : "svg");
       }
     };
     window.addEventListener("keydown", onKeyDown);

@@ -16,3 +16,6 @@ export { lineColumn, yamlErrorMessage } from "./text";
 export { adoptIdentity } from "./identity";
 export * from "./fragment";
 export * from "./layout";
+export * from "./linkGeometry";
+export * from "./icons";
+export * from "./render";

@@ -5,10 +5,14 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import type { MenuCommands, Platform } from "./types";
+import { readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import type { ImageFormat, MenuCommands, Platform } from "./types";
 
 const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "yml"] }];
+const IMAGE_FILTERS: Record<ImageFormat, { name: string; extensions: string[] }[]> = {
+  svg: [{ name: "SVG 画像", extensions: ["svg"] }],
+  png: [{ name: "PNG 画像", extensions: ["png"] }],
+};
 
 export const tauriPlatform: Platform = {
   hasNativeMenu: true,
@@ -25,6 +29,14 @@ export const tauriPlatform: Platform = {
 
   async writeTextFile(path, text) {
     await writeTextFile(path, text);
+  },
+
+  async chooseExportPath(defaultName, format) {
+    return save({ defaultPath: defaultName, filters: IMAGE_FILTERS[format] });
+  },
+
+  async writeBinaryFile(path, data) {
+    await writeFile(path, data);
   },
 
   setTitle(title) {
@@ -89,6 +101,9 @@ export const tauriPlatform: Platform = {
         await separator(),
         await command("保存", "CmdOrCtrl+S", commands.save),
         await command("別名で保存…", "CmdOrCtrl+Shift+S", commands.saveAs),
+        await separator(),
+        await command("SVG として書き出す…", "CmdOrCtrl+E", commands.exportSvg),
+        await command("PNG として書き出す…", "CmdOrCtrl+Shift+E", commands.exportPng),
         await separator(),
         // ウィンドウを閉じる要求になるので、guardClose の確認が働く
         await PredefinedMenuItem.new({ item: "CloseWindow", text: "閉じる" }),

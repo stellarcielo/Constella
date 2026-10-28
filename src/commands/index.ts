@@ -1,11 +1,13 @@
-// アプリ全体で使うファイル操作・編集操作。platform・ストア・ダイアログをつなぐ。
+// アプリ全体で使うファイル操作・編集操作・書き出し。platform・ストア・ダイアログをつなぐ。
 
 import { askDialog } from "../components/Dialog/dialogs";
 import { keyPlace } from "../components/editKeys";
 import { platform } from "../platform";
 import { topologyStore, uiStore } from "../store";
 import { createEditCommands } from "./edit";
+import { createExportCommands } from "./export";
 import { createFileCommands } from "./files";
+import { rasterizeSvg } from "./rasterize";
 
 export const fileCommands = createFileCommands({
   platform,
@@ -40,16 +42,18 @@ export const fileCommands = createFileCommands({
     });
     return choice === "save";
   },
-  async showError(title, message, details) {
-    await askDialog({
-      title,
-      message,
-      details,
-      actions: [{ value: "ok", label: "OK", primary: true }],
-      cancelLabel: null,
-    });
-  },
+  showError,
 });
+
+async function showError(title: string, message: string, details?: string[]): Promise<void> {
+  await askDialog({
+    title,
+    message,
+    details,
+    actions: [{ value: "ok", label: "OK", primary: true }],
+    cancelLabel: null,
+  });
+}
 
 export const editCommands = createEditCommands({
   store: topologyStore,
@@ -59,6 +63,14 @@ export const editCommands = createEditCommands({
     // メニューの「取り消す」をアプリの操作に置き換えたので、入力欄の取り消しはここから行う
     document.execCommand(command);
   },
+});
+
+export const exportCommands = createExportCommands({
+  platform,
+  store: topologyStore,
+  view: () => uiStore.getState().view,
+  rasterize: rasterizeSvg,
+  showError,
 });
 
 export { documentName } from "./files";

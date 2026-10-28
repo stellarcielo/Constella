@@ -1,5 +1,5 @@
 // ブラウザで開いたとき用の簡易版(開発中の動作確認用)。
-// 開く = ファイル選択、保存 = ダウンロード。メニューバーは無いので、ショートカットはアプリ側で受ける。
+// 開く = ファイル選択、保存・書き出し = ダウンロード。メニューバーは無いので、ショートカットはアプリ側で受ける。
 
 import type { Platform } from "./types";
 
@@ -12,6 +12,21 @@ function pickFile(): Promise<File | null> {
     input.addEventListener("cancel", () => resolve(null), { once: true });
     input.click();
   });
+}
+
+function fileType(path: string): string {
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".png")) return "image/png";
+  return "application/yaml";
+}
+
+function download(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export const browserPlatform: Platform = {
@@ -27,12 +42,15 @@ export const browserPlatform: Platform = {
   },
 
   async writeTextFile(path, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: "application/yaml" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = path;
-    a.click();
-    URL.revokeObjectURL(url);
+    download(path, new Blob([text], { type: fileType(path) }));
+  },
+
+  async chooseExportPath(defaultName) {
+    return window.prompt("書き出すファイル名", defaultName);
+  },
+
+  async writeBinaryFile(path, data) {
+    download(path, new Blob([data], { type: fileType(path) }));
   },
 
   setTitle(title) {

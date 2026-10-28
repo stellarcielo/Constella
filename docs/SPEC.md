@@ -342,7 +342,7 @@ ports:
 - [x] YAML エディタ(CodeMirror)とのリアルタイム双方向同期(コメント保持)
 - [x] Undo/Redo、コピー&ペースト
 - [x] elkjs による自動レイアウト
-- [ ] SVG / PNG エクスポート
+- [x] SVG / PNG エクスポート
 - [ ] JSON Schema と examples の整備
 - [ ] 最近使ったファイル(最大10件)をメニューに表示
 - [x] 問題パネルの項目から YAML エディタの該当行へジャンプ

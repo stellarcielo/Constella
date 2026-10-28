@@ -27,6 +27,7 @@ import {
   type IssueTarget,
   linkMedia,
   type ModelCatalog,
+  parallelSlots,
   type Position,
   resolveLabel,
   resolveRole,
@@ -39,7 +40,6 @@ import { isTyping, releaseInputFocus } from "../shortcuts";
 import { ConnectOverlay } from "./ConnectOverlay";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
-import { parallelSlots } from "./linkGeometry";
 import "./Canvas.css";
 
 const nodeTypes: NodeTypes = { device: DeviceNode };

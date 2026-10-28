@@ -10,17 +10,18 @@ import {
   useInternalNode,
 } from "@xyflow/react";
 import type { ReactNode } from "react";
-import { expandIfName, type Media } from "../../core";
-import { useUi } from "../../store";
-import { iconCenter } from "./geometry";
 import {
   endLabelPositions,
+  expandIfName,
+  type Media,
   midpoint,
   offsetLine,
   type Point,
   selfLoop,
   slotOffset,
-} from "./linkGeometry";
+} from "../../core";
+import { useUi } from "../../store";
+import { iconCenter } from "./geometry";
 
 export type LinkEdgeData = {
   media: Media;
