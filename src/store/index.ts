@@ -1,11 +1,23 @@
 // アプリ全体で使うストアのインスタンスと React 用のフック。
 
 import { useStore } from "zustand";
+import { askDialog } from "../components/Dialog/dialogs";
 import { builtinCatalog } from "../library";
 import { createTopologyStore, type TopologyState } from "./topologyStore";
 import { createUiStore, type UiState } from "./uiStore";
 
-export const topologyStore = createTopologyStore(builtinCatalog());
+export const topologyStore = createTopologyStore(builtinCatalog(), {
+  // YAML に構文エラーがある間に GUI で編集しようとしたとき(SPEC 8.3)
+  async confirmOverwrite() {
+    const choice = await askDialog({
+      title: "YAML にエラーがあります",
+      message:
+        "GUI の内容で上書きしますか? エディタの内容は、最後に正しく読み込めた状態に戻ってから、この操作が反映されます。",
+      actions: [{ value: "overwrite", label: "上書きする", primary: true, danger: true }],
+    });
+    return choice === "overwrite";
+  },
+});
 export const uiStore = createUiStore(viewStorage());
 
 // 接続モードに入ったら選択を外す(接続モードでは選択できないため)
@@ -23,7 +35,7 @@ export function useUi<T>(selector: (state: UiState) => T): T {
   return useStore(uiStore, selector);
 }
 
-export type { Selection, TopologyState } from "./topologyStore";
+export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";
 export type { ChosenPort, ConnectState, Mode, UiState, ViewOptions } from "./uiStore";
 
 /** 表示オプションの保存先。使えない環境では覚えておかない */

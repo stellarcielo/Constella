@@ -89,7 +89,7 @@ describe("uiStore: 表示オプション", () => {
 
   it("既定は IF 名ラベルを短い形で表示", () => {
     expect(createUiStore().getState().view).toEqual(DEFAULT_VIEW);
-    expect(DEFAULT_VIEW).toEqual({ showIfLabels: true, longIfNames: false });
+    expect(DEFAULT_VIEW).toEqual({ showIfLabels: true, longIfNames: false, showYaml: true });
   });
 
   it("変更すると保存し、次に作ったときに読み込む(Q4)", () => {
@@ -98,10 +98,12 @@ describe("uiStore: 表示オプション", () => {
     expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual({
       showIfLabels: true,
       longIfNames: true,
+      showYaml: true,
     });
     expect(createUiStore(storage).getState().view).toEqual({
       showIfLabels: true,
       longIfNames: true,
+      showYaml: true,
     });
   });
 

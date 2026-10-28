@@ -43,6 +43,17 @@ export function Toolbar() {
         ))}
       </div>
       <span className="toolbar-spacer" />
+      <div className="toolbar-group" role="group" aria-label="YAML">
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-pressed={view.showYaml}
+          title="YAML エディタを表示する"
+          onClick={() => uiStore.getState().setView({ showYaml: !view.showYaml })}
+        >
+          YAML
+        </button>
+      </div>
       <div className="toolbar-group" role="group" aria-label="表示">
         <button
           type="button"

@@ -1,7 +1,7 @@
 // 画面の状態(モード、作りかけの接続、表示オプション)。トポロジとは分けて持ち、Undo の対象にしない。
 
 import { createStore } from "zustand/vanilla";
-import type { Endpoint, PortType, Viewport } from "../core";
+import type { Endpoint, PortType, SourceRange, Viewport } from "../core";
 
 export type Mode = "select" | "connect";
 
@@ -27,9 +27,11 @@ export interface ViewOptions {
   showIfLabels: boolean;
   /** IF 名を長い形(GigabitEthernet0/1)で表示する */
   longIfNames: boolean;
+  /** YAML エディタを表示する */
+  showYaml: boolean;
 }
 
-export const DEFAULT_VIEW: ViewOptions = { showIfLabels: true, longIfNames: false };
+export const DEFAULT_VIEW: ViewOptions = { showIfLabels: true, longIfNames: false, showYaml: true };
 const VIEW_STORAGE_KEY = "constella.view";
 
 export interface UiState {
@@ -44,6 +46,8 @@ export interface UiState {
   viewRequest: { id: number; viewport?: Viewport; focus?: string[] };
   /** 問題パネルを開いているか */
   problemsOpen: boolean;
+  /** YAML エディタで、この範囲までスクロールして選択する要求(id が変わるたび) */
+  editorJump: { id: number; range?: SourceRange };
 
   setMode(mode: Mode): void;
   toggleConnectMode(): void;
@@ -58,6 +62,7 @@ export interface UiState {
   setView(view: Partial<ViewOptions>): void;
   requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
   setProblemsOpen(open: boolean): void;
+  jumpToYaml(range: SourceRange): void;
 }
 
 /** 表示オプションを覚えておく場所。テストでは渡さない */
@@ -72,6 +77,7 @@ export function createUiStore(storage?: ViewStorage) {
     view: loadView(storage),
     viewRequest: { id: 0 },
     problemsOpen: false,
+    editorJump: { id: 0 },
 
     setMode(mode) {
       if (mode !== get().mode) set({ mode, connect: IDLE });
@@ -130,6 +136,10 @@ export function createUiStore(storage?: ViewStorage) {
     setProblemsOpen(problemsOpen) {
       set({ problemsOpen });
     },
+
+    jumpToYaml(range) {
+      set({ editorJump: { id: get().editorJump.id + 1, range } });
+    },
   }));
   if (storage) {
     store.subscribe((state, prev) => {
@@ -148,10 +158,11 @@ function loadView(storage?: ViewStorage): ViewOptions {
   try {
     const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
     if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
-    const { showIfLabels, longIfNames } = saved as Record<string, unknown>;
+    const { showIfLabels, longIfNames, showYaml } = saved as Record<string, unknown>;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
+      showYaml: typeof showYaml === "boolean" ? showYaml : DEFAULT_VIEW.showYaml,
     };
   } catch {
     return DEFAULT_VIEW;

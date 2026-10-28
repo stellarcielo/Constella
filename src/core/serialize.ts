@@ -62,13 +62,13 @@ export function serializeTopology(topology: Topology, base?: YamlBase): Serializ
 }
 
 /**
- * 保存した YAML を読み直して、次回の base とファイル由来の問題を作る。
- * 保存処理が使う YAML の各部分は、開いたときのファイルの位置(range)を持ったままなので、
- * 読み直して保存したファイルの位置にそろえる(問題パネルの行番号のため)。
+ * 書き出した YAML を読み直して、次回の base と YAML 由来の問題を作る(GUI で編集した後・保存した後)。
+ * 書き出しに使った YAML の各部分は、読み込んだときの位置(range)を持ったままなので、
+ * 読み直して今の文字列の位置にそろえる(エディタの下線や問題パネルの行番号のため)。
  * リンクには YAML 上の識別子が無いが、保存処理は並び順を変えない(削除と末尾への追加だけ)ので、
  * 順番で対応付ける。対応が取れなければ undefined(呼び出し側は今までの base を使う)。
  */
-export function rebaseOnSavedText(
+export function rebaseOnText(
   text: string,
   topology: Topology,
   catalog: ModelCatalog,

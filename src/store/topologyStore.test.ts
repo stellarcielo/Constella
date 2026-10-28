@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseTopology } from "../core";
-import { testCatalog } from "../core/testFixtures";
+import { describe, expect, it, vi } from "vitest";
+import { specExample, testCatalog } from "../core/testFixtures";
 import { createTopologyStore } from "./topologyStore";
 
 function setup() {
@@ -132,35 +131,25 @@ describe("topologyStore", () => {
     expect(store.getState().topology).toBe(before);
   });
 
-  it("開いたファイルを読み込むと、未保存の印と選択が消え、ファイル由来の問題も出す", () => {
+  it("開いたファイルを読み込むと、未保存の印と選択が消え、YAML 由来の問題も出す", () => {
     const store = setup();
     store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
     store.getState().setSelection({ devices: ["rt1"], links: [] });
-    const result = parseTopology(
-      "constella: 1\nowner: me\ndevices:\n  rt1:\n    vendor: acme\nlayout:\n  ghost: here\n",
-      { catalog: testCatalog },
-    );
-    if (!result.ok) throw new Error();
-    store.getState().loadDocument({
-      topology: result.topology,
-      base: result.base,
-      filePath: "/a.yaml",
-      fileIssues: result.issues,
-    });
+    const text =
+      "constella: 1\nowner: me\ndevices:\n  rt1:\n    vendor: acme\nlayout:\n  ghost: here\n";
+    store.getState().openText(text, "/a.yaml");
     const s = store.getState();
     expect(s.filePath).toBe("/a.yaml");
+    expect(s.yamlText).toBe(text);
+    expect(s.yamlOrigin).toBe("file");
     expect(s.dirty).toBe(false);
     expect(s.selection).toEqual({ devices: [], links: [] });
     expect(s.issues.map((i) => i.code)).toEqual(["unknown-key", "unknown-key", "invalid-value"]);
   });
 
-  it("GUI で削除したデバイスの、ファイル由来の問題は出さない", () => {
+  it("GUI で削除したデバイスの、YAML 由来の問題は消える", () => {
     const store = setup();
-    const result = parseTopology("constella: 1\ndevices:\n  rt1:\n    vendor: acme\n  rt2: {}\n", {
-      catalog: testCatalog,
-    });
-    if (!result.ok) throw new Error();
-    store.getState().loadDocument({ topology: result.topology, fileIssues: result.issues });
+    store.getState().openText("constella: 1\ndevices:\n  rt1:\n    vendor: acme\n  rt2: {}\n");
     expect(store.getState().issues).toHaveLength(1);
     store.getState().deleteDevices(["rt1"]);
     expect(store.getState().issues).toEqual([]);
@@ -169,23 +158,17 @@ describe("topologyStore", () => {
   it("保存したら未保存の印を消し、ファイルのパスを覚える", () => {
     const store = setup();
     store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
-    const result = parseTopology("constella: 1\n");
-    if (!result.ok) throw new Error();
-    const savedTopology = store.getState().topology;
-    store.getState().markSaved({ filePath: "/b.yaml", base: result.base, savedTopology });
+    store.getState().markSaved("/b.yaml", store.getState().yamlText);
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().filePath).toBe("/b.yaml");
-    expect(store.getState().base).toBe(result.base);
   });
 
   it("保存中に編集されていたら、未保存の印は残す", () => {
     const store = setup();
     store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
-    const savedTopology = store.getState().topology;
+    const saving = store.getState().yamlText;
     store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
-    const result = parseTopology("constella: 1\n");
-    if (!result.ok) throw new Error();
-    store.getState().markSaved({ filePath: "/b.yaml", base: result.base, savedTopology });
+    store.getState().markSaved("/b.yaml", saving);
     expect(store.getState().dirty).toBe(true);
   });
 
@@ -195,6 +178,116 @@ describe("topologyStore", () => {
     store.getState().newDocument();
     expect(store.getState().topology.devices.size).toBe(0);
     expect(store.getState().filePath).toBeUndefined();
+    expect(store.getState().yamlText).toBe("constella: 1\n");
     expect(store.getState().dirty).toBe(false);
+  });
+});
+
+describe("topologyStore: YAML との同期(SPEC 8章)", () => {
+  it("GUI で編集すると YAML を作り直し、コメントは残る", () => {
+    const store = setup();
+    store.getState().openText(specExample, "/lab.yaml");
+    store.getState().moveDevices([["srv1", { x: 10, y: 20 }]]);
+    const s = store.getState();
+    expect(s.yamlOrigin).toBe("gui");
+    expect(s.yamlText).toContain("srv1: { x: 10, y: 20 }");
+    expect(s.yamlText).toContain("# model 省略 = フレキシブル");
+    expect(s.dirty).toBe(true);
+  });
+
+  it("問題の位置は、作り直した YAML の位置", () => {
+    const store = setup();
+    store.getState().addDevice("no-such-model", { x: 0, y: 0 });
+    const s = store.getState();
+    const range = s.issues[0].range;
+    expect(s.issues[0].code).toBe("unknown-model");
+    expect(range && s.yamlText.slice(range.start, range.end)).toBe("dev1");
+  });
+
+  it("エディタの内容は読み込むまで図に反映せず、読み込むと識別子を引き継いで反映する", () => {
+    const store = setup();
+    store.getState().openText(specExample);
+    const linkIds = store.getState().topology.links.map((l) => l.id);
+    store.getState().setSelection({ devices: ["rt1"], links: [linkIds[2]] });
+    const edited = specExample.replace("label: Edge Router", "label: Core Router");
+    store.getState().setYamlDraft(edited);
+    expect(store.getState().topology.devices.get("rt1")?.label).toBe("Edge Router");
+    store.getState().commitYamlDraft();
+    const s = store.getState();
+    expect(s.topology.devices.get("rt1")?.label).toBe("Core Router");
+    expect(s.yamlText).toBe(edited);
+    expect(s.yamlOrigin).toBe("yaml");
+    expect(s.topology.links.map((l) => l.id)).toEqual(linkIds);
+    expect(s.selection).toEqual({ devices: ["rt1"], links: [linkIds[2]] });
+    expect(s.dirty).toBe(true);
+  });
+
+  it("書き換えて元に戻せば、未保存の印は消える", () => {
+    const store = setup();
+    store.getState().openText(specExample);
+    store.getState().setYamlDraft(specExample + "# memo\n");
+    store.getState().commitYamlDraft();
+    expect(store.getState().dirty).toBe(true);
+    store.getState().setYamlDraft(specExample);
+    store.getState().commitYamlDraft();
+    expect(store.getState().dirty).toBe(false);
+  });
+
+  it("構文エラーなら図は最後に正しく読めた状態のまま(SPEC 8.3)", () => {
+    const store = setup();
+    store.getState().openText(specExample);
+    const before = store.getState().topology;
+    store.getState().setYamlDraft("constella: 1\ndevices: [\n");
+    store.getState().commitYamlDraft();
+    const s = store.getState();
+    expect(s.topology).toBe(before);
+    expect(s.yamlErrors.map((i) => i.code)).toEqual(["yaml-syntax"]);
+    expect(s.issues[0].code).toBe("yaml-syntax");
+    expect(s.yamlText).toBe("constella: 1\ndevices: [\n");
+  });
+
+  it("構文エラーの間の GUI の編集は確認し、上書きを選べば最後に正しかった状態から当てる", async () => {
+    let answer = true;
+    const confirm = vi.fn(async () => answer);
+    const store = createTopologyStore(testCatalog, { confirmOverwrite: confirm });
+    store.getState().openText(specExample);
+    store.getState().setYamlDraft("constella: 1\ndevices: [\n");
+    store.getState().commitYamlDraft();
+
+    answer = false;
+    store.getState().moveDevices([["rt1", { x: 1, y: 1 }]]);
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(store.getState().yamlErrors).toHaveLength(1);
+    expect(store.getState().rejectedEdits).toBe(1);
+
+    answer = true;
+    store.getState().moveDevices([["rt1", { x: 1, y: 1 }]]);
+    await vi.waitFor(() => expect(store.getState().yamlErrors).toEqual([]));
+    const s = store.getState();
+    expect(s.topology.layout.get("rt1")).toEqual({ x: 1, y: 1 });
+    expect(s.yamlText).toContain("rt1: { x: 1, y: 1 }");
+    expect(s.yamlText).toContain("# 座標が無いデバイスは自動レイアウトで配置する");
+  });
+
+  it("打ち込み中の内容は、GUI の編集の前に読み込む(消えない)", () => {
+    const store = setup();
+    store.getState().openText(specExample);
+    store.getState().setYamlDraft(specExample.replace("label: mgmt", "label: management"));
+    store.getState().moveDevices([["rt1", { x: 5, y: 5 }]]);
+    const s = store.getState();
+    expect(s.yamlText).toContain("label: management");
+    expect(s.yamlText).toContain("rt1: { x: 5, y: 5 }");
+    expect(s.yamlDraft).toBeUndefined();
+  });
+
+  it("構文エラーのあるファイルも開ける(図は空)", () => {
+    const store = setup();
+    store.getState().openText("constella: 1\ndevices: [\n", "/broken.yaml");
+    const s = store.getState();
+    expect(s.topology.devices.size).toBe(0);
+    expect(s.yamlErrors).toHaveLength(1);
+    expect(s.filePath).toBe("/broken.yaml");
+    expect(s.dirty).toBe(false);
   });
 });

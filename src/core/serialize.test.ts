@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
 import { parseTopology, type YamlBase } from "./parse";
-import { rebaseOnSavedText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
+import { rebaseOnText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
 import { specExample, testCatalog } from "./testFixtures";
 import { addDevice, addLink, removeDevices, renameDevice, setDeviceRole } from "./edit";
 import { createEmptyTopology, createLinkId } from "./topology";
@@ -369,7 +369,7 @@ layout:
   });
 });
 
-describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
+describe("rebaseOnText: 保存した YAML の読み直し", () => {
   const slice = (text: string, range?: SourceRange) => range && text.slice(range.start, range.end);
 
   it("保存前に追加したデバイスとリンクも、保存したファイル上の位置が分かる", () => {
@@ -382,7 +382,7 @@ describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
       testCatalog,
     );
     const { text } = serializeTopology(topology, base);
-    const rebased = rebaseOnSavedText(text, topology, testCatalog);
+    const rebased = rebaseOnText(text, topology, testCatalog);
     if (!rebased) throw new Error("rebase failed");
     expect(slice(text, locateTarget(rebased.base, { kind: "device", id: "srv2" }))).toBe("srv2");
     expect(slice(text, locateTarget(rebased.base, { kind: "link", id, end: "b" }))).toBe(
@@ -397,7 +397,7 @@ describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
     const { topology, base } = load(specExample);
     topology.layout.set("srv1", { x: 1, y: 2 });
     const first = serializeTopology(topology, base);
-    const rebased = rebaseOnSavedText(first.text, topology, testCatalog);
+    const rebased = rebaseOnText(first.text, topology, testCatalog);
     if (!rebased) throw new Error("rebase failed");
     expect(serializeTopology(topology, rebased.base).text).toBe(first.text);
     renameDevice(topology, "srv1", "web1");
@@ -410,7 +410,7 @@ describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
     const { topology, base } = load("constella: 1\ndevices:\n  rt1:\n    role: toaster\n");
     setDeviceRole(topology, "rt1", "router", testCatalog);
     const { text } = serializeTopology(topology, base);
-    expect(rebaseOnSavedText(text, topology, testCatalog)?.fileIssues).toEqual([]);
+    expect(rebaseOnText(text, topology, testCatalog)?.fileIssues).toEqual([]);
   });
 
   it("リンクの問題は、今のトポロジのリンクID に付け替える", () => {
@@ -418,7 +418,7 @@ describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
       "constella: 1\nlinks:\n  - a: x:1\n    b: y:2\n    color: red\n",
     );
     const { text } = serializeTopology(topology, base);
-    const issues = rebaseOnSavedText(text, topology, testCatalog)?.fileIssues ?? [];
+    const issues = rebaseOnText(text, topology, testCatalog)?.fileIssues ?? [];
     expect(issues.map((i) => i.target)).toEqual([{ kind: "link", id: topology.links[0].id }]);
   });
 
@@ -426,6 +426,6 @@ describe("rebaseOnSavedText: 保存した YAML の読み直し", () => {
     const { topology, base } = load(specExample);
     const { text } = serializeTopology(topology, base);
     topology.links.pop();
-    expect(rebaseOnSavedText(text, topology, testCatalog)).toBeUndefined();
+    expect(rebaseOnText(text, topology, testCatalog)).toBeUndefined();
   });
 });

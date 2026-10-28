@@ -1,8 +1,8 @@
-// 問題パネル(SPEC 4.5・6章)。エラーを先、警告を後に並べ、項目をクリックすると対象を選んで表示を合わせる。
-// YAML の該当行へのジャンプは、YAML エディタと一緒にフェーズ2で入れる。
+// 問題パネル(SPEC 4.5・6章)。エラーを先、警告を後に並べ、項目をクリックすると対象を選んで表示を合わせ、
+// YAML エディタの該当箇所にも移る。
 
 import { type Issue, lineColumn } from "../../core";
-import { topologyStore, uiStore, useTopology } from "../../store";
+import { topologyStore, uiStore, useTopology, useUi } from "../../store";
 import { useIfNameFormatter } from "../ifNames";
 import { describeTarget, issueFocus } from "./targets";
 import "./ProblemsPanel.css";
@@ -10,13 +10,15 @@ import "./ProblemsPanel.css";
 export function ProblemsPanel() {
   const issues = useTopology((s) => s.issues);
   const topology = useTopology((s) => s.topology);
-  const fileText = useTopology((s) => s.fileText);
+  const yamlText = useTopology((s) => s.yamlText);
+  const showYaml = useUi((s) => s.view.showYaml);
   const show = useIfNameFormatter();
 
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
 
   const select = (issue: Issue) => {
+    if (issue.range && showYaml) uiStore.getState().jumpToYaml(issue.range);
     const focus = issueFocus(issue.target, topology);
     if (!focus) return;
     uiStore.getState().setMode("select");
@@ -46,11 +48,8 @@ export function ProblemsPanel() {
       ) : (
         <ul className="problems-list">
           {[...errors, ...warnings].map((issue, i) => {
-            // 行番号は、保存済み(または開いた)ファイル上の位置
-            const line =
-              fileText !== undefined && issue.range
-                ? lineColumn(fileText, issue.range.start).line
-                : undefined;
+            // 行番号は、今の YAML(エディタの内容)の位置
+            const line = issue.range ? lineColumn(yamlText, issue.range.start).line : undefined;
             return (
               <li key={i}>
                 <button
@@ -69,7 +68,7 @@ export function ProblemsPanel() {
                     {describeTarget(issue.target, topology, show)}
                   </span>
                   {line !== undefined && (
-                    <span className="problem-line" title="保存済みのファイル上の行">
+                    <span className="problem-line" title="YAML の行">
                       {line} 行目
                     </span>
                   )}

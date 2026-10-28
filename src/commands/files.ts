@@ -1,14 +1,7 @@
 // ファイルの新規・開く・保存・別名で保存・閉じる(SPEC 10章)。
 // ファイル操作(platform)とダイアログは引数で受け取り、テストで差し替えられるようにする。
 
-import {
-  type Issue,
-  lineColumn,
-  parseTopology,
-  rebaseOnSavedText,
-  serializeTopology,
-  type Viewport,
-} from "../core";
+import type { Viewport } from "../core";
 import { basename, type Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 
@@ -21,6 +14,8 @@ export interface FileCommandDeps {
   resetView(viewport?: Viewport): void;
   /** 未保存の変更があるときの確認(新規・開く・閉じるの前。Q5) */
   askUnsaved(fileName: string): Promise<UnsavedChoice>;
+  /** YAML に構文エラーがあるまま保存してよいか(フェーズ2-1 Q2) */
+  confirmSaveWithErrors(): Promise<boolean>;
   showError(title: string, message: string, details?: string[]): Promise<void>;
 }
 
@@ -55,43 +50,45 @@ export function defaultFileName(title?: string, filePath?: string): string {
 export function createFileCommands(deps: FileCommandDeps): FileCommands {
   const { platform, store } = deps;
 
+  /** 今の YAML 文字列(エディタの内容)をそのまま書き込む */
   async function writeTo(path: string): Promise<boolean> {
-    const { topology, base, catalog } = store.getState();
-    const result = serializeTopology(topology, base);
+    const text = store.getState().yamlText;
     try {
-      await platform.writeTextFile(path, result.text);
+      await platform.writeTextFile(path, text);
     } catch (e) {
       await deps.showError("保存できませんでした", `${basename(path)} に書き込めませんでした。`, [
         String(e),
       ]);
       return false;
     }
-    // 保存したファイルを読み直して、問題の位置とファイル由来の問題を最新にする
-    const rebased = rebaseOnSavedText(result.text, topology, catalog);
-    store.getState().markSaved({
-      filePath: path,
-      savedTopology: topology,
-      ...(rebased
-        ? { base: rebased.base, fileText: result.text, fileIssues: rebased.fileIssues }
-        : { base: result.base }),
-    });
+    store.getState().markSaved(path, text);
     return true;
   }
 
+  /** 保存の前に、打ち込み中の内容を読み込み、構文エラーがあれば確認する */
+  async function readyToSave(): Promise<boolean> {
+    store.getState().commitYamlDraft();
+    return store.getState().yamlErrors.length === 0 || deps.confirmSaveWithErrors();
+  }
+
   async function saveAs(): Promise<boolean> {
+    if (!(await readyToSave())) return false;
     const { topology, filePath } = store.getState();
     const path = await platform.chooseSavePath(defaultFileName(topology.meta.title, filePath));
     return path ? writeTo(path) : false;
   }
 
   async function save(): Promise<boolean> {
+    store.getState().commitYamlDraft();
     const { filePath, dirty } = store.getState();
     if (!filePath) return saveAs();
-    return dirty ? writeTo(filePath) : true;
+    if (!dirty) return true;
+    return (await readyToSave()) && writeTo(filePath);
   }
 
   /** 未保存の変更があれば確認する。続けてよければ true */
   async function resolveUnsaved(): Promise<boolean> {
+    store.getState().commitYamlDraft();
     const { dirty, filePath } = store.getState();
     if (!dirty) return true;
     const choice = await deps.askUnsaved(documentName(filePath));
@@ -115,25 +112,9 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
       return;
     }
     if (!file) return;
-    const result = parseTopology(file.text, { catalog: store.getState().catalog });
-    if (!result.ok) {
-      // 構文エラーは今は画面で直せないので、知らせて今の図を残す(Q3)
-      const text = file.text;
-      await deps.showError(
-        `${basename(file.path)} を開けませんでした`,
-        "YAML に次のエラーがあります。修正してから開いてください。",
-        result.issues.map((issue) => describeIssue(text, issue)),
-      );
-      return;
-    }
-    store.getState().loadDocument({
-      topology: result.topology,
-      base: result.base,
-      filePath: file.path,
-      fileText: file.text,
-      fileIssues: result.issues,
-    });
-    deps.resetView(result.topology.viewport);
+    // 構文エラーがあっても開く。図は空のまま、エディタで直せる(フェーズ2-1 Q1)
+    store.getState().openText(file.text, file.path);
+    deps.resetView(store.getState().topology.viewport);
   }
 
   async function quit(): Promise<void> {
@@ -141,10 +122,4 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
   }
 
   return { newFile, open, save, saveAs, confirmClose: resolveUnsaved, quit };
-}
-
-function describeIssue(text: string, issue: Issue): string {
-  if (!issue.range) return issue.message;
-  const { line, column } = lineColumn(text, issue.range.start);
-  return `${line} 行目 ${column} 文字目: ${issue.message}`;
 }

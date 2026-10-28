@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   changeModel,
-  lineColumn,
-  locateTarget,
   parseTopology,
   setDeviceLabel,
-  setDeviceRole,
   type Topology,
   updateInterface,
   updateLink,
@@ -21,14 +18,22 @@ interface FakeState {
   savePath: string | null;
   writeError?: Error;
   unsaved: UnsavedChoice;
+  saveWithErrors: boolean;
 }
 
 function setup(initial: Partial<FakeState> = {}) {
-  const state: FakeState = { open: null, savePath: null, unsaved: "cancel", ...initial };
+  const state: FakeState = {
+    open: null,
+    savePath: null,
+    unsaved: "cancel",
+    saveWithErrors: false,
+    ...initial,
+  };
   const store = createTopologyStore(testCatalog);
   const written: { path: string; text: string }[] = [];
   const errors: { title: string; message: string; details?: string[] }[] = [];
   const asked: string[] = [];
+  const askedSaveWithErrors: number[] = [];
   const views: (Viewport | undefined)[] = [];
   const platform = {
     openTextFile: vi.fn(async () => state.open),
@@ -47,11 +52,15 @@ function setup(initial: Partial<FakeState> = {}) {
       asked.push(name);
       return state.unsaved;
     },
+    confirmSaveWithErrors: async () => {
+      askedSaveWithErrors.push(1);
+      return state.saveWithErrors;
+    },
     showError: async (title, message, details) => {
       errors.push({ title, message, details });
     },
   });
-  return { state, store, platform, commands, written, errors, asked, views };
+  return { state, store, platform, commands, written, errors, asked, askedSaveWithErrors, views };
 }
 
 /** 未保存の変更を作る */
@@ -93,19 +102,18 @@ describe("開く", () => {
     ]);
   });
 
-  it("構文エラーなら行番号付きで知らせ、今の図は残す(Q3)", async () => {
+  it("構文エラーのあるファイルも開き、図は空のままエディタで直せるようにする(2-1 Q1)", async () => {
     const env = setup({
       open: { path: "/x/broken.yaml", text: "constella: 1\ndevices:\n  rt1: [\n" },
     });
-    makeDirty(env);
-    env.state.unsaved = "discard";
-    const before = env.store.getState().topology;
     await env.commands.open();
-    expect(env.errors).toHaveLength(1);
-    expect(env.errors[0].title).toBe("broken.yaml を開けませんでした");
-    expect(env.errors[0].details?.[0]).toMatch(/^\d+ 行目 \d+ 文字目: YAML の構文エラー/);
-    expect(env.store.getState().topology).toBe(before);
-    expect(env.store.getState().filePath).toBeUndefined();
+    const s = env.store.getState();
+    expect(env.errors).toEqual([]);
+    expect(s.filePath).toBe("/x/broken.yaml");
+    expect(s.topology.devices.size).toBe(0);
+    expect(s.yamlText).toBe("constella: 1\ndevices:\n  rt1: [\n");
+    expect(s.yamlErrors.map((i) => i.code)).toEqual(["yaml-syntax"]);
+    expect(s.dirty).toBe(false);
   });
 
   it("キャンセルなら何もしない", async () => {
@@ -196,23 +204,27 @@ describe("保存", () => {
     expect(env.store.getState().filePath).toBeUndefined();
   });
 
-  it("保存すると、問題の位置が保存したファイルの位置になり、直した問題は消える(1-9 Q1)", async () => {
-    const env = setup({
-      open: {
-        path: "/lab/a.constella.yaml",
-        text: "constella: 1\ndevices:\n  rt1:\n    role: toaster\n",
-      },
-    });
+  it("保存するのはエディタの今の内容で、打ち込み中の内容も含む", async () => {
+    const env = setup({ open: { path: "/lab/a.constella.yaml", text: specExample } });
     await env.commands.open();
-    expect(env.store.getState().issues.map((i) => i.code)).toEqual(["invalid-value"]);
-    env.store.getState().edit((t) => setDeviceRole(t, "rt1", "router", testCatalog));
-    env.store.getState().addDevice("generic-server-2", { x: 0, y: 0 });
-    await env.commands.save();
-    const s = env.store.getState();
-    expect(s.issues).toEqual([]);
-    expect(s.fileText).toBe(env.written[0].text);
-    const range = s.base && locateTarget(s.base, { kind: "device", id: "srv1" });
-    expect(range && lineColumn(env.written[0].text, range.start).line).toBe(5);
+    const edited = specExample.replace("label: mgmt", "label: management");
+    env.store.getState().setYamlDraft(edited);
+    expect(await env.commands.save()).toBe(true);
+    expect(env.written[0].text).toBe(edited);
+    expect(env.store.getState().dirty).toBe(false);
+  });
+
+  it("構文エラーがあれば確認し、選ばれたら書いたとおりに保存する(2-1 Q2)", async () => {
+    const env = setup({ open: { path: "/lab/a.constella.yaml", text: specExample } });
+    await env.commands.open();
+    env.store.getState().setYamlDraft("constella: 1\ndevices: [\n");
+    expect(await env.commands.save()).toBe(false);
+    expect(env.askedSaveWithErrors).toHaveLength(1);
+    expect(env.written).toEqual([]);
+    env.state.saveWithErrors = true;
+    expect(await env.commands.save()).toBe(true);
+    expect(env.written[0].text).toBe("constella: 1\ndevices: [\n");
+    expect(env.store.getState().dirty).toBe(false);
   });
 
   it("続けて保存すると、前回の保存結果に差分を当てる", async () => {

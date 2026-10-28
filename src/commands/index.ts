@@ -10,12 +10,13 @@ export const fileCommands = createFileCommands({
   store: topologyStore,
   resetView(viewport) {
     const ui = uiStore.getState();
+    const { issues, yamlErrors } = topologyStore.getState();
     ui.setMode("select");
     ui.requestView({ viewport });
     // 開いたファイルにエラーがあれば、問題パネルを開く(1-9 Q3)
-    if (topologyStore.getState().issues.some((i) => i.severity === "error")) {
-      ui.setProblemsOpen(true);
-    }
+    if (issues.some((i) => i.severity === "error")) ui.setProblemsOpen(true);
+    // 構文エラーはエディタでしか直せないので、エディタを表示する
+    if (yamlErrors.length > 0) ui.setView({ showYaml: true });
   },
   async askUnsaved(fileName) {
     const choice = await askDialog({
@@ -27,6 +28,15 @@ export const fileCommands = createFileCommands({
       ],
     });
     return choice ?? "cancel";
+  },
+  async confirmSaveWithErrors() {
+    const choice = await askDialog({
+      title: "YAML にエラーがあります",
+      message:
+        "このまま保存しますか? 書いたとおりの内容で保存します。次に開いたとき、エディタで直せます。",
+      actions: [{ value: "save", label: "このまま保存", primary: true }],
+    });
+    return choice === "save";
   },
   async showError(title, message, details) {
     await askDialog({

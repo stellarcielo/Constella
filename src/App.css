@@ -10,6 +10,16 @@
   --media-copper: #8c959f;
   --media-fiber: #e8822a;
   --media-dac: #3d7be0;
+
+  /* YAML エディタ */
+  --yaml-key: #0550ae;
+  --yaml-string: #0a3069;
+  --yaml-number: #953800;
+  --yaml-comment: #6e7781;
+  --yaml-meta: #8250df;
+  --active-line: rgb(0 0 0 / 0.04);
+  --selection: rgb(47 111 222 / 0.22);
+  --search-match: rgb(224 168 0 / 0.3);
   --error: #d1242f;
   --warning: #e0a800;
   --warning-text: #9a6700;
@@ -44,6 +54,15 @@
     --media-copper: #7d8590;
     --media-fiber: #f0883e;
     --media-dac: #58a6ff;
+
+    --yaml-key: #79c0ff;
+    --yaml-string: #a5d6ff;
+    --yaml-number: #ffa657;
+    --yaml-comment: #8b949e;
+    --yaml-meta: #d2a8ff;
+    --active-line: rgb(255 255 255 / 0.04);
+    --selection: rgb(76 141 255 / 0.3);
+    --search-match: rgb(210 153 34 / 0.35);
     --error: #f85149;
     --warning: #d29922;
     --warning-text: #d29922;
@@ -94,11 +113,33 @@ body {
   min-height: 0;
 }
 
+/* YAML エディタを表示している間は右側を広げる(フェーズ2-1 Q5) */
+.app-main.with-yaml {
+  grid-template-columns: 240px 1fr 380px;
+}
+
 .app-side {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
   border-left: 1px solid var(--border);
   background: var(--panel);
+}
+
+.app-side-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.with-yaml .app-side-inspector {
+  flex: 0 0 45%;
+}
+
+.app-side-yaml {
+  flex: 1 1 55%;
+  min-height: 0;
+  border-top: 1px solid var(--border);
 }
 
 .role-icon.role-cloud {

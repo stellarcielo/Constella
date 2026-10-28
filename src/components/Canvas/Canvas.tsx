@@ -86,6 +86,7 @@ function CanvasInner() {
   const catalog = useTopology((s) => s.catalog);
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
+  const rejectedEdits = useTopology((s) => s.rejectedEdits);
   const mode = useUi((s) => s.mode);
   const { screenToFlowPosition, getNodes, fitView, setViewport, getZoom } = useReactFlow();
 
@@ -142,8 +143,11 @@ function CanvasInner() {
   const [nodes, setNodes] = useState<DeviceNodeType[]>(derived.nodes);
   const [edges, setEdges] = useState<LinkEdgeType[]>(derived.edges);
   const [prevDerived, setPrevDerived] = useState(derived);
-  if (derived !== prevDerived) {
+  // GUI の編集が取りやめになったとき(YAML の構文エラー中など)も、ストアの位置に戻す
+  const [prevRejected, setPrevRejected] = useState(rejectedEdits);
+  if (derived !== prevDerived || rejectedEdits !== prevRejected) {
     setPrevDerived(derived);
+    setPrevRejected(rejectedEdits);
     const measured = new Map(nodes.map((n) => [n.id, n.measured]));
     setNodes(derived.nodes.map((n) => ({ ...n, measured: measured.get(n.id) })));
     setEdges(derived.edges);
