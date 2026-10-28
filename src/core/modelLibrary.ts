@@ -3,6 +3,7 @@
 import { isMap, isScalar, isSeq, type Node, parseDocument, type YAMLMap } from "yaml";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { expandPortName } from "./portExpand";
+import { yamlErrorMessage } from "./text";
 import {
   type DeviceModel,
   type ModelCatalog,
@@ -41,7 +42,7 @@ export function parseModelDefinition(text: string): ModelParseResult {
     for (const e of doc.errors) {
       issues.push({
         severity: "error",
-        message: `YAML の構文エラー: ${e.message.split("\n")[0]}`,
+        message: yamlErrorMessage(e.message),
         range: { start: e.pos[0], end: e.pos[1] },
       });
     }

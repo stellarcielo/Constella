@@ -1,7 +1,14 @@
 // 上端のツールバー。ボタンは各機能のタスクで追加する(SPEC 6章)。
 
+import { fileCommands } from "../../commands";
 import { type Mode, uiStore, useUi } from "../../store";
 import "./Toolbar.css";
+
+const FILE_BUTTONS = [
+  { label: "新規", title: "新規(⌘N)", run: () => void fileCommands.newFile() },
+  { label: "開く", title: "開く(⌘O)", run: () => void fileCommands.open() },
+  { label: "保存", title: "保存(⌘S)", run: () => void fileCommands.save() },
+];
 
 const MODES: { mode: Mode; label: string; title: string }[] = [
   { mode: "select", label: "選択", title: "選択モード" },
@@ -14,6 +21,13 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <span className="toolbar-title">Constella</span>
+      <div className="toolbar-group" role="group" aria-label="ファイル">
+        {FILE_BUTTONS.map(({ label, title, run }) => (
+          <button key={label} type="button" className="toolbar-button" title={title} onClick={run}>
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="toolbar-group" role="group" aria-label="モード">
         {MODES.map(({ mode, label, title }) => (
           <button

@@ -12,6 +12,7 @@ import {
   type YAMLMap,
 } from "yaml";
 import { ifNameKey, normalizeIfName } from "./ifname";
+import { yamlErrorMessage } from "./text";
 import { createLinkId, createUid, DEVICE_ID_PATTERN, parseEndpoint } from "./topology";
 import {
   type Device,
@@ -63,7 +64,7 @@ export function parseTopology(text: string, options: ParseOptions = {}): ParseRe
       issues: doc.errors.map((e) => ({
         severity: "error",
         code: "yaml-syntax",
-        message: `YAML の構文エラー: ${e.message.split("\n")[0]}`,
+        message: yamlErrorMessage(e.message),
         target: { kind: "document" },
         range: { start: e.pos[0], end: e.pos[1] },
       })),

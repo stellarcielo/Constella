@@ -9,6 +9,18 @@
   color: var(--text-muted);
 }
 
+.statusbar-file {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar-dirty {
+  flex: none;
+  color: var(--accent);
+}
+
 .statusbar-spacer {
   flex: 1;
 }

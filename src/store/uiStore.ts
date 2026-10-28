@@ -1,7 +1,7 @@
 // 画面の状態(モード、作りかけの接続、表示オプション)。トポロジとは分けて持ち、Undo の対象にしない。
 
 import { createStore } from "zustand/vanilla";
-import type { Endpoint, PortType } from "../core";
+import type { Endpoint, PortType, Viewport } from "../core";
 
 export type Mode = "select" | "connect";
 
@@ -36,6 +36,11 @@ export interface UiState {
   mode: Mode;
   connect: ConnectState;
   view: ViewOptions;
+  /**
+   * 表示位置を合わせる要求。id が変わるたびにキャンバスが合わせる。
+   * viewport があればその位置に、無ければ全体が見えるようにする(Q6)
+   */
+  viewRequest: { id: number; viewport?: Viewport };
 
   setMode(mode: Mode): void;
   toggleConnectMode(): void;
@@ -48,6 +53,7 @@ export interface UiState {
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
   clickPane(): void;
   setView(view: Partial<ViewOptions>): void;
+  requestView(viewport?: Viewport): void;
 }
 
 /** 表示オプションを覚えておく場所。テストでは渡さない */
@@ -60,6 +66,7 @@ export function createUiStore(storage?: ViewStorage) {
     mode: "select",
     connect: IDLE,
     view: loadView(storage),
+    viewRequest: { id: 0 },
 
     setMode(mode) {
       if (mode !== get().mode) set({ mode, connect: IDLE });
@@ -109,6 +116,11 @@ export function createUiStore(storage?: ViewStorage) {
 
     setView(view) {
       set({ view: { ...get().view, ...view } });
+    },
+
+    requestView(viewport) {
+      const id = get().viewRequest.id + 1;
+      set({ viewRequest: viewport ? { id, viewport } : { id } });
     },
   }));
   if (storage) {

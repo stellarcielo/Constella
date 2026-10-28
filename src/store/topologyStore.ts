@@ -9,6 +9,7 @@ import {
   checkDeviceId,
   createEmptyTopology,
   type Endpoint,
+  ifNameKey,
   type Issue,
   type ModelCatalog,
   moveDevices,
@@ -33,10 +34,26 @@ export interface TopologyState {
   /** 開いた(または最後に保存した)YAML。保存時にコメントを残すために使う */
   base?: YamlBase;
   catalog: ModelCatalog;
+  /** 開いているファイルのパス。新規(まだ保存していない)なら undefined */
+  filePath?: string;
+  /** ファイルを読んだときの問題(未知のキー、不正な値など) */
+  fileIssues: Issue[];
+  /** 表示する問題 = ファイル由来の問題(対象が残っているもの) + 検証の問題 */
   issues: Issue[];
   /** 未保存の変更があるか */
   dirty: boolean;
   selection: Selection;
+
+  /** ファイルを開いた(または新規)。未保存の印と選択を消す */
+  loadDocument(doc: {
+    topology: Topology;
+    base?: YamlBase;
+    filePath?: string;
+    fileIssues?: Issue[];
+  }): void;
+  newDocument(): void;
+  /** 保存した。次回の保存は base に差分を当てる */
+  markSaved(filePath: string, base: YamlBase): void;
 
   /** すべての編集はここを通す */
   edit(recipe: (draft: Topology) => void): void;
@@ -61,12 +78,33 @@ export function createTopologyStore(catalog: ModelCatalog) {
   return createStore<TopologyState>()((set, get) => ({
     topology: initial,
     catalog,
+    fileIssues: [],
     issues: validateTopology(initial, catalog),
     dirty: false,
     selection: EMPTY_SELECTION,
 
+    loadDocument({ topology, base, filePath, fileIssues = [] }) {
+      set({
+        topology,
+        base,
+        filePath,
+        fileIssues,
+        issues: computeIssues(topology, get().catalog, base, fileIssues),
+        dirty: false,
+        selection: EMPTY_SELECTION,
+      });
+    },
+
+    newDocument() {
+      get().loadDocument({ topology: createEmptyTopology() });
+    },
+
+    markSaved(filePath, base) {
+      set({ filePath, base, dirty: false });
+    },
+
     edit(recipe) {
-      const { topology, catalog, base } = get();
+      const { topology, catalog, base, fileIssues } = get();
       const next = produce(topology, recipe);
       if (next === topology) return;
       // 消えた要素を選択から外す
@@ -75,7 +113,7 @@ export function createTopologyStore(catalog: ModelCatalog) {
       const links = selection.links.filter((id) => next.links.some((l) => l.id === id));
       set({
         topology: next,
-        issues: validateTopology(next, catalog, base),
+        issues: computeIssues(next, catalog, base, fileIssues),
         dirty: true,
         selection: sameSelection(selection, { devices, links }) ? selection : { devices, links },
       });
@@ -143,6 +181,40 @@ export function createTopologyStore(catalog: ModelCatalog) {
       if (!sameSelection(get().selection, selection)) set({ selection });
     },
   }));
+}
+
+function computeIssues(
+  t: Topology,
+  catalog: ModelCatalog,
+  base: YamlBase | undefined,
+  fileIssues: Issue[],
+): Issue[] {
+  return [...fileIssues.filter((i) => targetExists(i, t)), ...validateTopology(t, catalog, base)];
+}
+
+/**
+ * 問題の対象がまだあるか。GUI で削除したデバイスやリンクの、ファイル由来の問題は出さない。
+ * (GUI で値を直した項目の問題は、保存したファイルを開き直すまで残る)
+ */
+function targetExists(issue: Issue, t: Topology): boolean {
+  const target = issue.target;
+  switch (target.kind) {
+    // layout の不正な値は、デバイスを消しても YAML に残る(保存処理は解釈できた座標しか消さない)
+    case "document":
+    case "layout":
+      return true;
+    case "device":
+      return t.devices.has(target.id);
+    case "interface": {
+      const device = t.devices.get(target.device);
+      const key = ifNameKey(target.name);
+      return !!device && [...device.interfaces.keys()].some((name) => ifNameKey(name) === key);
+    }
+    case "link":
+      return t.links.some((l) => l.id === target.id);
+    case "group":
+      return target.index < t.groups.length;
+  }
 }
 
 function sameSelection(a: Selection, b: Selection): boolean {

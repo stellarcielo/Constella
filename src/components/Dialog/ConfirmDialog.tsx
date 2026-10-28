@@ -17,6 +17,8 @@ export interface ConfirmDialogProps<T extends string> {
   title: string;
   children: ReactNode;
   actions: DialogAction<T>[];
+  /** キャンセルボタンの文字。null ならボタンを出さない(Esc と背景のクリックではキャンセルになる) */
+  cancelLabel?: string | null;
   onAction(value: T): void;
   onCancel(): void;
 }
@@ -25,6 +27,7 @@ export function ConfirmDialog<T extends string>({
   title,
   children,
   actions,
+  cancelLabel = "キャンセル",
   onAction,
   onCancel,
 }: ConfirmDialogProps<T>) {
@@ -53,9 +56,11 @@ export function ConfirmDialog<T extends string>({
         </h2>
         <div className="dialog-body">{children}</div>
         <div className="dialog-actions">
-          <button type="button" className="dialog-button" onClick={onCancel}>
-            キャンセル
-          </button>
+          {cancelLabel !== null && (
+            <button type="button" className="dialog-button" onClick={onCancel}>
+              {cancelLabel}
+            </button>
+          )}
           {actions.map((action) => (
             <button
               key={action.value}

@@ -87,7 +87,15 @@ function CanvasInner() {
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
   const mode = useUi((s) => s.mode);
-  const { screenToFlowPosition, getNodes } = useReactFlow();
+  const { screenToFlowPosition, getNodes, fitView, setViewport } = useReactFlow();
+
+  // ファイルを開いたとき・新規のときの表示位置(_viewport が無ければ全体が見えるように)
+  const viewRequest = useUi((s) => s.viewRequest);
+  useEffect(() => {
+    if (viewRequest.id === 0) return;
+    if (viewRequest.viewport) void setViewport(viewRequest.viewport);
+    else void fitView({ padding: 0.2, maxZoom: 1.5 });
+  }, [viewRequest, fitView, setViewport]);
 
   // 矢印キーで選択中の機器を動かす。React Flow 標準の矢印キー操作は機器にフォーカスがあるときしか
   // 効かないので止め(disableKeyboardA11y)、delete キーや C と同じくフォーカスの位置に関係なく効かせる

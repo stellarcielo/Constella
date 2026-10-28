@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseTopology } from "../core";
 import { testCatalog } from "../core/testFixtures";
 import { createTopologyStore } from "./topologyStore";
 
@@ -129,5 +130,59 @@ describe("topologyStore", () => {
     const before = store.getState().topology;
     expect(store.getState().renameDevice("rt1", "rt2")).toBe("「rt2」は既に使われています");
     expect(store.getState().topology).toBe(before);
+  });
+
+  it("開いたファイルを読み込むと、未保存の印と選択が消え、ファイル由来の問題も出す", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    store.getState().setSelection({ devices: ["rt1"], links: [] });
+    const result = parseTopology(
+      "constella: 1\nowner: me\ndevices:\n  rt1:\n    vendor: acme\nlayout:\n  ghost: here\n",
+      { catalog: testCatalog },
+    );
+    if (!result.ok) throw new Error();
+    store.getState().loadDocument({
+      topology: result.topology,
+      base: result.base,
+      filePath: "/a.yaml",
+      fileIssues: result.issues,
+    });
+    const s = store.getState();
+    expect(s.filePath).toBe("/a.yaml");
+    expect(s.dirty).toBe(false);
+    expect(s.selection).toEqual({ devices: [], links: [] });
+    expect(s.issues.map((i) => i.code)).toEqual(["unknown-key", "unknown-key", "invalid-value"]);
+  });
+
+  it("GUI で削除したデバイスの、ファイル由来の問題は出さない", () => {
+    const store = setup();
+    const result = parseTopology("constella: 1\ndevices:\n  rt1:\n    vendor: acme\n  rt2: {}\n", {
+      catalog: testCatalog,
+    });
+    if (!result.ok) throw new Error();
+    store.getState().loadDocument({ topology: result.topology, fileIssues: result.issues });
+    expect(store.getState().issues).toHaveLength(1);
+    store.getState().deleteDevices(["rt1"]);
+    expect(store.getState().issues).toEqual([]);
+  });
+
+  it("保存したら未保存の印を消し、ファイルのパスを覚える", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    const result = parseTopology("constella: 1\n");
+    if (!result.ok) throw new Error();
+    store.getState().markSaved("/b.yaml", result.base);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().filePath).toBe("/b.yaml");
+    expect(store.getState().base).toBe(result.base);
+  });
+
+  it("新規にすると空の図になる", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    store.getState().newDocument();
+    expect(store.getState().topology.devices.size).toBe(0);
+    expect(store.getState().filePath).toBeUndefined();
+    expect(store.getState().dirty).toBe(false);
   });
 });
