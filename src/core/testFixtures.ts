@@ -31,7 +31,7 @@ const models: DeviceModel[] = [
 export const testCatalog: ModelCatalog = new Map(models.map((m) => [m.id, m]));
 
 /** SPEC 4.2 の例 */
-export const specExample = `# yaml-language-server: $schema=https://example.invalid/constella.schema.json
+export const specExample = `# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
 constella: 1
 
 meta:

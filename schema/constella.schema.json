@@ -1,0 +1,212 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json",
+  "title": "Constella トポロジ",
+  "description": "Constella(ネットワークトポロジ図エディタ)のトポロジ YAML(*.constella.yaml)。機器(devices)と接続(links)だけを書けば図になる。座標(layout)は省略でき、開くと自動で配置される。仕様: https://github.com/stellarcielo/Constella/blob/main/docs/SPEC.md",
+  "type": "object",
+  "required": ["constella"],
+  "additionalProperties": false,
+  "properties": {
+    "constella": {
+      "description": "形式バージョン。今は 1 だけ。ファイルの先頭に書く",
+      "const": 1
+    },
+    "meta": {
+      "description": "図の情報",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "図のタイトル",
+          "type": ["string", "number", "boolean"]
+        },
+        "description": {
+          "description": "図の説明",
+          "type": ["string", "number", "boolean"]
+        }
+      }
+    },
+    "devices": {
+      "description": "機器の一覧。キーはデバイスID(英数字で始まり、英数字と . _ - だけ)",
+      "type": ["object", "null"],
+      "propertyNames": { "$ref": "#/definitions/deviceId" },
+      "additionalProperties": { "$ref": "#/definitions/device" }
+    },
+    "links": {
+      "description": "接続の一覧。1 本ごとに両端(a と b)の「デバイスID:IF名」を書く",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/definitions/link" }
+    },
+    "layout": {
+      "description": "機器の座標(キー = デバイスID)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
+      "type": ["object", "null"],
+      "properties": {
+        "_viewport": { "$ref": "#/definitions/viewport" }
+      },
+      "patternProperties": {
+        "^[A-Za-z0-9][A-Za-z0-9._-]*$": { "$ref": "#/definitions/position" }
+      },
+      "additionalProperties": false
+    },
+    "groups": {
+      "description": "機器のまとまり(拠点・ラック・VLAN など)。図への表示はフェーズ3で対応する",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/definitions/group" }
+    }
+  },
+  "definitions": {
+    "deviceId": {
+      "description": "デバイスID。英数字で始まり、英数字と . _ - だけを使える(: は使えない)",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "examples": ["rt1", "core-sw1", "srv.web01"]
+    },
+    "device": {
+      "description": "機器。何も書かなければ、どんな IF 名も使える汎用の機器になる",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "description": "モデル(機種)の ID。省略するとフレキシブル(どんな IF 名も使える)。組み込み: generic-router-4 / generic-l2switch-24 / generic-l3switch-48 / generic-firewall-8 / generic-server-2 / generic-pc / generic-ap / generic-cloud / cisco-c2960-24tt-l",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["generic-router-4", "generic-l2switch-24", "cisco-c2960-24tt-l"]
+        },
+        "role": { "$ref": "#/definitions/role" },
+        "label": {
+          "description": "図に表示する名前。省略するとデバイスID",
+          "type": ["string", "number", "boolean"]
+        },
+        "interfaces": {
+          "description": "IF ごとの追加情報(キー = IF 名。GigabitEthernet0/1 と Gi0/1 のように長い名前・短い名前のどちらでも書ける)",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/definitions/interface" }
+        }
+      }
+    },
+    "role": {
+      "description": "機器の役割。図のアイコンと、自動配置の段(上から cloud → router・firewall → l3switch → l2switch・generic → server・pc・ap)を決める。省略するとモデルの役割、モデルも無ければ generic",
+      "type": "string",
+      "enum": [
+        "router",
+        "l2switch",
+        "l3switch",
+        "firewall",
+        "server",
+        "pc",
+        "ap",
+        "cloud",
+        "generic"
+      ]
+    },
+    "interface": {
+      "description": "IF の追加情報",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "IF の説明",
+          "type": ["string", "number", "boolean"]
+        },
+        "ip": {
+          "description": "IP アドレス(プレフィックス長付き)の配列",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "examples": [["192.0.2.1/30", "2001:db8::1/64"]]
+        },
+        "mode": { "$ref": "#/definitions/interfaceMode" },
+        "vlan": {
+          "description": "access のときの VLAN ID(1〜4094)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4094
+        },
+        "vlans": {
+          "description": "trunk のときに通す VLAN(カンマ区切り・範囲指定)",
+          "type": ["string", "number", "boolean"],
+          "examples": ["10,20,100-110"]
+        }
+      }
+    },
+    "interfaceMode": {
+      "description": "IF のモード: access(1 つの VLAN)/ trunk(複数の VLAN)/ routed(L3)",
+      "type": "string",
+      "enum": ["access", "trunk", "routed"]
+    },
+    "endpoint": {
+      "description": "リンクの端「デバイスID:IF名」。最初の : でデバイスIDと IF 名に分ける。IF 名は長い名前・短い名前のどちらでも書ける",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*:\\s*\\S",
+      "examples": ["rt1:Gi0/1", "core-sw1:GigabitEthernet0/1", "isp:wan"]
+    },
+    "link": {
+      "description": "接続。a と b の順序に意味はない",
+      "type": "object",
+      "required": ["a", "b"],
+      "additionalProperties": false,
+      "properties": {
+        "a": { "$ref": "#/definitions/endpoint" },
+        "b": { "$ref": "#/definitions/endpoint" },
+        "media": { "$ref": "#/definitions/media" },
+        "label": {
+          "description": "リンクの中央に表示する文字",
+          "type": ["string", "number", "boolean"]
+        }
+      }
+    },
+    "media": {
+      "description": "線の種類: copper(メタル)/ fiber(光)/ dac(ダイレクトアタッチケーブル)/ wireless(無線)/ virtual(仮想)。省略するとポートの種類から推定する",
+      "type": "string",
+      "enum": ["copper", "fiber", "dac", "wireless", "virtual"]
+    },
+    "position": {
+      "description": "機器の左上の座標",
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "viewport": {
+      "description": "開いたときの表示位置と拡大率",
+      "type": "object",
+      "required": ["x", "y", "zoom"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "zoom": { "type": "number" }
+      }
+    },
+    "group": {
+      "description": "機器のまとまり",
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "グループの ID",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": { "$ref": "#/definitions/groupKind" },
+        "label": {
+          "description": "図に表示する名前",
+          "type": ["string", "number", "boolean"]
+        },
+        "members": {
+          "description": "含める機器のデバイスID",
+          "type": "array",
+          "items": { "$ref": "#/definitions/deviceId" }
+        }
+      }
+    },
+    "groupKind": {
+      "description": "グループの種類: site(拠点)/ rack(ラック)/ vlan / subnet / as / custom",
+      "type": "string",
+      "enum": ["site", "rack", "vlan", "subnet", "as", "custom"]
+    }
+  }
+}

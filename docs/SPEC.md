@@ -5,7 +5,7 @@
 > 人や AI が書ける YAML 定義を双方向に同期する。
 
 - バージョン: 0.1(MVP 設計)
-- 最終更新: 2026-10-28
+- 最終更新: 2026-10-29
 
 ---
 
@@ -72,7 +72,7 @@
 ### 4.2 例
 
 ```yaml
-# yaml-language-server: $schema=https://example.invalid/constella.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
 constella: 1
 
 meta:
@@ -312,12 +312,15 @@ ports:
 - 新規 / 開く / 保存 / 名前を付けて保存。
 - 未保存の変更がある場合はタイトルとステータスバーに表示し、閉じる・新規・開く操作の前に確認する。
 - 最近使ったファイル(最大10件)をメニューに表示。
+- 新規作成したファイルの先頭には、JSON Schema のコメント行(11章)を入れる。
 - ファイルを外部で変更された場合の検知はフェーズ2以降。
 
 ---
 
 ## 11. AI・外部ツール向け
 - `schema/constella.schema.json`(JSON Schema)をリポジトリに置き、トポロジ YAML の仕様を機械可読にする。
+  - 公開 URL: `https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json`
+  - ファイルの先頭に `# yaml-language-server: $schema=<公開 URL>` を書くと、対応エディタ(VS Code の YAML 拡張機能など)で補完と検証が効く。
 - `examples/` にサンプルトポロジを数個置く(小規模ラボ、2層スイッチ網、冗長構成+LAG)。
 - 将来: CLI(`constella validate <file>` / `constella render <file> -o out.svg`)と MCP サーバーを提供し、AI から直接検証・描画できるようにする。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
 
@@ -343,7 +346,7 @@ ports:
 - [x] Undo/Redo、コピー&ペースト
 - [x] elkjs による自動レイアウト
 - [x] SVG / PNG エクスポート
-- [ ] JSON Schema と examples の整備
+- [x] JSON Schema と examples の整備
 - [ ] 最近使ったファイル(最大10件)をメニューに表示
 - [x] 問題パネルの項目から YAML エディタの該当行へジャンプ
 

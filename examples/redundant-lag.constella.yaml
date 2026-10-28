@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
+# 冗長構成 + LAG: 回線・ファイアウォール・コア・アクセスをすべて 2 系統にする。
+# コアの間は 10G × 2 本を束ねた LAG(Po1)。アクセスは両方のコアに、サーバーは両方のアクセスにつなぐ。
+constella: 1
+
+meta:
+  title: 冗長構成 + LAG
+  description: どの 1 台・1 本が止まっても通信が続く構成
+
+devices:
+  isp1:
+    role: cloud
+    label: 回線 A
+  isp2:
+    role: cloud
+    label: 回線 B
+  fw1:
+    model: generic-firewall-8
+  fw2:
+    model: generic-firewall-8
+  core1:
+    model: generic-l3switch-48
+    interfaces:
+      Te1/1/3: { description: Po1 メンバー }
+      Te1/1/4: { description: Po1 メンバー }
+  core2:
+    model: generic-l3switch-48
+    interfaces:
+      Te1/1/3: { description: Po1 メンバー }
+      Te1/1/4: { description: Po1 メンバー }
+  acc1:
+    model: generic-l2switch-24
+  acc2:
+    model: generic-l2switch-24
+  srv1:
+    model: generic-server-2
+  srv2:
+    model: generic-server-2
+
+links:
+  - a: isp1:wan
+    b: fw1:port1
+  - a: isp2:wan
+    b: fw2:port1
+  # ファイアウォールどうしの冗長化(HA)用の線
+  - a: fw1:port3
+    b: fw2:port3
+    label: HA
+  - a: fw1:port2
+    b: core1:Gi1/0/1
+  - a: fw2:port2
+    b: core2:Gi1/0/1
+  # LAG は、束ねる線を同じ 2 台の間の並列リンクとして書き、label に LAG の名前を付ける
+  - a: core1:Te1/1/3
+    b: core2:Te1/1/3
+    media: dac
+    label: Po1
+  - a: core1:Te1/1/4
+    b: core2:Te1/1/4
+    media: dac
+    label: Po1
+  # アクセスは両方のコアにつなぐ
+  - a: core1:Te1/1/1
+    b: acc1:Te0/25
+  - a: core2:Te1/1/1
+    b: acc1:Te0/26
+  - a: core1:Te1/1/2
+    b: acc2:Te0/25
+  - a: core2:Te1/1/2
+    b: acc2:Te0/26
+  # サーバーは 2 枚の NIC を両方のアクセスにつなぐ
+  - a: acc1:Gi0/1
+    b: srv1:eth0
+  - a: acc2:Gi0/1
+    b: srv1:eth1
+  - a: acc1:Gi0/2
+    b: srv2:eth0
+  - a: acc2:Gi0/2
+    b: srv2:eth1

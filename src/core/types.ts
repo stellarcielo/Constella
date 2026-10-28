@@ -2,6 +2,13 @@
 
 export const FORMAT_VERSION = 1;
 
+/** トポロジ YAML の JSON Schema(schema/constella.schema.json)の公開 URL(SPEC 11章) */
+export const SCHEMA_URL =
+  "https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json";
+
+/** ファイルの先頭に書くと、対応エディタで補完と検証が効くコメント行 */
+export const SCHEMA_COMMENT = `# yaml-language-server: $schema=${SCHEMA_URL}`;
+
 export const ROLES = [
   "router",
   "l2switch",

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { specExample, testCatalog } from "../core/testFixtures";
-import { createTopologyStore } from "./topologyStore";
+import { createTopologyStore, EMPTY_YAML } from "./topologyStore";
 
 function setup() {
   return createTopologyStore(testCatalog);
@@ -178,8 +178,17 @@ describe("topologyStore", () => {
     store.getState().newDocument();
     expect(store.getState().topology.devices.size).toBe(0);
     expect(store.getState().filePath).toBeUndefined();
-    expect(store.getState().yamlText).toBe("constella: 1\n");
+    expect(store.getState().yamlText).toBe(EMPTY_YAML);
     expect(store.getState().dirty).toBe(false);
+  });
+
+  it("新規のファイルは先頭に JSON Schema のコメントがあり、編集しても残る", () => {
+    const store = setup();
+    expect(EMPTY_YAML).toBe(
+      "# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json\nconstella: 1\n",
+    );
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    expect(store.getState().yamlText.startsWith(`${EMPTY_YAML}\ndevices:\n  rt1:`)).toBe(true);
   });
 });
 

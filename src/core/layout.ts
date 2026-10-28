@@ -43,27 +43,37 @@ export async function computeLayout(
 ): Promise<Map<string, Position>> {
   const ids = options.devices ? new Set(options.devices) : new Set(t.devices.keys());
   const size = options.nodeSize ?? DEFAULT_NODE_SIZE;
+  const tiers = new Map<string, number>();
   const children: ElkNode[] = [];
   for (const device of t.devices.values()) {
     if (!ids.has(device.id)) continue;
+    const tier = ROLE_TIER[resolveRole(device, catalog)];
+    tiers.set(device.id, tier);
     children.push({
       id: device.id,
       ...size,
-      layoutOptions: {
-        "elk.partitioning.partition": String(ROLE_TIER[resolveRole(device, catalog)]),
-      },
+      layoutOptions: { "elk.partitioning.partition": String(tier) },
     });
   }
   if (children.length === 0) return new Map();
 
-  // 並列リンクは 1 本、自分自身へのリンクは除く(並べ方には関係しない)
+  // 並列リンクは 1 本、自分自身へのリンクは除く(並べ方には関係しない)。
+  // 同じ段の機器どうしのリンク(HA・LAG など)も除く。あると ELK がその 2 台を別の段に分け、
+  // 冗長化したペアが横に並ばなくなる(線はキャンバスで描くので消えない)
   const edges = new Map<string, { id: string; sources: string[]; targets: string[] }>();
   for (const link of t.links) {
     const a = link.a?.device;
     const b = link.b?.device;
-    if (!a || !b || a === b || !ids.has(a) || !ids.has(b)) continue;
+    if (!a || !b || a === b) continue;
+    const ta = tiers.get(a);
+    const tb = tiers.get(b);
+    if (ta === undefined || tb === undefined || ta === tb) continue;
     const key = a < b ? `${a}\n${b}` : `${b}\n${a}`;
-    if (!edges.has(key)) edges.set(key, { id: `e${edges.size}`, sources: [a], targets: [b] });
+    // 上の段から下の段への向きにする
+    const [upper, lower] = ta < tb ? [a, b] : [b, a];
+    if (!edges.has(key)) {
+      edges.set(key, { id: `e${edges.size}`, sources: [upper], targets: [lower] });
+    }
   }
 
   const result = await elk.layout({
@@ -74,8 +84,13 @@ export async function computeLayout(
       "elk.partitioning.activate": "true",
       // つながっていない部分も同じ段にそろえる
       "elk.separateConnectedComponents": "false",
-      "elk.spacing.nodeNode": "60",
+      // 横に並んだ機器どうしの線(HA・LAG など)の、両端の IF 名と中央のラベルが重ならない間隔
+      "elk.spacing.nodeNode": "100",
       "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+      // 同じ段の中は、YAML に書いた順に左から並べる
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      // 上の段の機器を、下につながる機器の中央寄りに置く
+      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
       "elk.padding": "[top=0,left=0,bottom=0,right=0]",
     },
     children,

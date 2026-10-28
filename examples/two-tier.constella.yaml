@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
+# 2層スイッチ網: コア層(L3 スイッチ)とアクセス層(L2 スイッチ 3 台)を 10G でつなぐ。
+# VLAN 10 = 事務、20 = 無線、30 = サーバー。アップリンクは trunk、端末のポートは access。
+constella: 1
+
+meta:
+  title: 2層スイッチ網
+  description: コア 1 台・アクセス 3 台の構成
+
+devices:
+  isp:
+    role: cloud
+    label: インターネット
+  rt1:
+    model: generic-router-4
+    interfaces:
+      Gi0/1:
+        ip:
+          - 10.0.0.1/30
+  core1:
+    model: generic-l3switch-48
+    label: コアスイッチ
+    interfaces:
+      Gi1/0/1:
+        mode: routed
+        ip:
+          - 10.0.0.2/30
+      Te1/1/1: { mode: trunk, vlans: "10,20,30" }
+      Te1/1/2: { mode: trunk, vlans: "10,20,30" }
+      Te1/1/3: { mode: trunk, vlans: "10,20,30" }
+  acc1:
+    model: generic-l2switch-24
+    label: アクセス 1
+    interfaces:
+      Te0/25: { mode: trunk, vlans: "10,20,30" }
+      Gi0/1: { mode: access, vlan: 10 }
+      Gi0/2: { mode: access, vlan: 10 }
+  acc2:
+    model: generic-l2switch-24
+    label: アクセス 2
+    interfaces:
+      Te0/25: { mode: trunk, vlans: "10,20,30" }
+      Gi0/1: { mode: access, vlan: 10 }
+      Gi0/2: { mode: access, vlan: 20 }
+  acc3:
+    model: generic-l2switch-24
+    label: アクセス 3
+    interfaces:
+      Te0/25: { mode: trunk, vlans: "10,20,30" }
+      Gi0/1: { mode: access, vlan: 30 }
+      Gi0/2: { mode: access, vlan: 30 }
+  pc1:
+    model: generic-pc
+  pc2:
+    model: generic-pc
+  pc3:
+    model: generic-pc
+  ap1:
+    model: generic-ap
+  srv1:
+    model: generic-server-2
+  srv2:
+    model: generic-server-2
+
+links:
+  - a: isp:wan
+    b: rt1:Gi0/0
+  - a: rt1:Gi0/1
+    b: core1:Gi1/0/1
+  # アップリンク(10G)。media を省略すると、ポートの種類(sfp+)から光(fiber)と推定する
+  - a: core1:Te1/1/1
+    b: acc1:Te0/25
+  - a: core1:Te1/1/2
+    b: acc2:Te0/25
+  - a: core1:Te1/1/3
+    b: acc3:Te0/25
+  - a: acc1:Gi0/1
+    b: pc1:eth0
+  - a: acc1:Gi0/2
+    b: pc2:eth0
+  - a: acc2:Gi0/1
+    b: pc3:eth0
+  - a: acc2:Gi0/2
+    b: ap1:eth0
+  - a: acc3:Gi0/1
+    b: srv1:eth0
+  - a: acc3:Gi0/2
+    b: srv2:eth0

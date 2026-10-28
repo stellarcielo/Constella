@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
+# 小規模ラボ: インターネット → ルーター → スイッチ → サーバー・PC・無線 AP。
+# 座標(layout)は書いていないので、開くと自動で配置される。
+constella: 1
+
+meta:
+  title: 小規模ラボ
+  description: ルーター 1 台とスイッチ 1 台の小さな検証環境
+
+devices:
+  # model を書かない機器はフレキシブル(どんな IF 名も使える)。見た目は role で決める
+  isp:
+    role: cloud
+    label: インターネット
+  rt1:
+    model: generic-router-4
+    label: ルーター
+    interfaces:
+      Gi0/0:
+        description: WAN
+      Gi0/1:
+        description: LAN
+        ip:
+          - 192.168.10.1/24
+  sw1:
+    model: generic-l2switch-24
+    label: スイッチ
+  srv1:
+    model: generic-server-2
+    label: ファイルサーバー
+    interfaces:
+      eth0:
+        ip:
+          - 192.168.10.10/24
+  srv2:
+    model: generic-server-2
+    label: Web サーバー
+    interfaces:
+      eth0:
+        ip:
+          - 192.168.10.11/24
+  pc1:
+    model: generic-pc
+  ap1:
+    model: generic-ap
+    label: 無線 AP
+
+# 両端を「デバイスID:IF名」で書く。IF 名は Gi0/1 のような短い名前でも、
+# GigabitEthernet0/1 のような長い名前でもよい
+links:
+  - a: isp:wan
+    b: rt1:Gi0/0
+  - a: rt1:Gi0/1
+    b: sw1:Gi0/1
+  - a: sw1:Gi0/2
+    b: srv1:eth0
+  - a: sw1:Gi0/3
+    b: srv2:eth0
+  - a: sw1:Gi0/4
+    b: pc1:eth0
+  - a: sw1:Gi0/5
+    b: ap1:eth0

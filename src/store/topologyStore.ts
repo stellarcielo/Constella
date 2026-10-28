@@ -27,6 +27,7 @@ import {
   removeDevices,
   removeLinks,
   renameDevice,
+  SCHEMA_COMMENT,
   serializeTopology,
   type Topology,
   validateTopology,
@@ -123,7 +124,8 @@ export interface TopologyStoreOptions {
 export type TopologyStore = ReturnType<typeof createTopologyStore>;
 
 const EMPTY_SELECTION: Selection = { devices: [], links: [] };
-export const EMPTY_YAML = "constella: 1\n";
+/** 新規のファイルの内容。先頭に JSON Schema のコメントを入れ、エディタで補完と検証が効くようにする(フェーズ2-5 Q4) */
+export const EMPTY_YAML = `${SCHEMA_COMMENT}\nconstella: 1\n`;
 /** 取り消せるステップの数 */
 const HISTORY_LIMIT = 200;
 /** この時間内に同じ種類の編集が続いたら、取り消しの 1 ステップにまとめる */
