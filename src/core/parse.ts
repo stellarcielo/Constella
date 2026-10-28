@@ -12,7 +12,7 @@ import {
   type YAMLMap,
 } from "yaml";
 import { ifNameKey, normalizeIfName } from "./ifname";
-import { createLinkId, DEVICE_ID_PATTERN, parseEndpoint } from "./topology";
+import { createLinkId, createUid, DEVICE_ID_PATTERN, parseEndpoint } from "./topology";
 import {
   type Device,
   type Endpoint,
@@ -229,7 +229,7 @@ class Parser {
   }
 
   private device(id: string, node: Node | null, ctx: Ctx): Device {
-    const device: Device = { id, interfaces: new Map(), extra: {} };
+    const device: Device = { id, uid: createUid(), interfaces: new Map(), extra: {} };
     if (!this.mapOrNull(node, ctx)) return device;
     for (const [key, value, keyNode] of this.entries(node, ctx)) {
       switch (key) {

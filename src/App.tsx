@@ -1,4 +1,5 @@
 import { Canvas } from "./components/Canvas/Canvas";
+import { Inspector } from "./components/Inspector/Inspector";
 import { Palette } from "./components/Palette/Palette";
 import { useShortcuts } from "./components/shortcuts";
 import { StatusBar } from "./components/StatusBar/StatusBar";
@@ -13,8 +14,10 @@ function App() {
       <div className="app-main">
         <Palette />
         <Canvas />
-        {/* インスペクタ(上)と YAML エディタ(下)は後のタスクで入れる */}
-        <aside className="app-side" />
+        {/* YAML エディタ(下段)はフェーズ2で入れる */}
+        <aside className="app-side">
+          <Inspector />
+        </aside>
       </div>
       <StatusBar />
     </div>

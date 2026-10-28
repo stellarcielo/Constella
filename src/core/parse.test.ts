@@ -94,7 +94,12 @@ describe("parseTopology: 最小構成と既定値", () => {
   it("中身が空のデバイスを許す", () => {
     const { topology, issues } = parseOk("constella: 1\ndevices:\n  pc1:\n");
     expect(issues).toEqual([]);
-    expect(topology.devices.get("pc1")).toEqual({ id: "pc1", interfaces: new Map(), extra: {} });
+    expect(topology.devices.get("pc1")).toEqual({
+      id: "pc1",
+      uid: expect.any(String),
+      interfaces: new Map(),
+      extra: {},
+    });
   });
 
   it("_viewport", () => {

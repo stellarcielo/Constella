@@ -68,6 +68,8 @@ export interface Meta {
 
 export interface Device {
   id: string;
+  /** メモリ上だけの識別子。YAML には書き出さず、ID を変えても変わらない */
+  uid: string;
   /** 省略時はフレキシブルデバイス */
   model?: string;
   role?: Role;

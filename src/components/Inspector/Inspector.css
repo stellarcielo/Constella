@@ -1,0 +1,325 @@
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.inspector-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.inspector-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.inspector-heading {
+  min-width: 0;
+}
+
+.inspector-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-subtitle {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inspector-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.inspector-section h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.inspector-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inspector-button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.inspector-button.danger {
+  color: var(--error);
+}
+
+.inspector-stats {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 4px 6px;
+  margin: 0;
+}
+
+.inspector-stats dt {
+  color: var(--text-muted);
+}
+
+.inspector-stats dd {
+  margin: 0;
+}
+
+/* 入力欄 */
+.field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px;
+  align-items: start;
+}
+
+.field-label {
+  padding-top: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.field-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea.field-input {
+  resize: vertical;
+}
+
+.field-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.muted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 問題の一覧 */
+.issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issue {
+  display: flex;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.issue-error {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}
+
+.issue-warning {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.issue-icon {
+  flex: none;
+  font-weight: 700;
+}
+
+.issue-error .issue-icon {
+  color: var(--error);
+}
+
+.issue-warning .issue-icon {
+  color: var(--warning-text);
+}
+
+/* リンクの端 */
+.endpoint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding-top: 4px;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* IF 一覧 */
+.if-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.if-used-only {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.if-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.if-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.if-row.open {
+  background: var(--hover);
+}
+
+.if-row-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.if-row-toggle {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 5px 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.if-name {
+  flex: none;
+}
+
+.if-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.if-desc {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.if-unknown {
+  flex: none;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.if-row.unknown .if-name {
+  color: var(--error);
+}
+
+.if-peer {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.if-peer:hover {
+  background: var(--hover);
+}
+
+.if-free {
+  flex: none;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.if-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 10px;
+}

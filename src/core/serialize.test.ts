@@ -3,6 +3,7 @@ import { parseDocument } from "yaml";
 import { parseTopology, type YamlBase } from "./parse";
 import { serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
 import { specExample, testCatalog } from "./testFixtures";
+import { removeDevices, renameDevice } from "./edit";
 import { createEmptyTopology, createLinkId } from "./topology";
 import type { Topology } from "./types";
 
@@ -12,13 +13,17 @@ function load(text: string): { topology: Topology; base: YamlBase } {
   return result;
 }
 
-/** リンクID を除いて比較できる形にする */
+/** メモリ上だけの識別子(デバイスの uid とリンクID)を除いて比較できる形にする */
 function semantic(t: Topology): unknown {
   return JSON.parse(
     JSON.stringify(
       {
         ...t,
-        devices: [...t.devices.values()].map((d) => ({ ...d, interfaces: [...d.interfaces] })),
+        devices: [...t.devices.values()].map((d) => ({
+          ...d,
+          uid: undefined,
+          interfaces: [...d.interfaces],
+        })),
         links: t.links.map((l) => ({ ...l, id: undefined })),
         layout: [...t.layout],
       },
@@ -90,6 +95,7 @@ describe("serializeTopology: GUI での編集", () => {
     const { topology, base } = load(specExample);
     topology.devices.set("pc1", {
       id: "pc1",
+      uid: "new-pc1",
       model: "generic-pc",
       interfaces: new Map(),
       extra: {},
@@ -152,6 +158,72 @@ describe("serializeTopology: GUI での編集", () => {
     expect(text).toContain("rt1: { x: 3, y: 4 }");
     expect(text).not.toContain("isp:wan");
     expect(text).toContain("rt1:Gi0/1");
+  });
+});
+
+describe("serializeTopology: デバイスID の変更(Q1)", () => {
+  it("位置とコメントを保ったまま、キー名と参照だけを書き換える", () => {
+    const { topology, base } = load(specExample);
+    renameDevice(topology, "core-sw1", "dist-sw1");
+    const { text } = serializeTopology(topology, base);
+    const expected = parseDocument(specExample)
+      .toString(STRINGIFY_OPTIONS)
+      .split("core-sw1")
+      .join("dist-sw1");
+    expect(text).toBe(expected);
+  });
+
+  it("キーの上のコメントも残る", () => {
+    const { topology, base } = load(`constella: 1
+devices:
+  # 上流ルーター
+  rt1:
+    model: generic-router-4 # 2 台目を追加予定
+  sw1: {}
+layout:
+  # 手で調整した位置
+  rt1: { x: 1, y: 2 }
+`);
+    renameDevice(topology, "rt1", "edge1");
+    const { text } = serializeTopology(topology, base);
+    expect(text).toContain(
+      "  # 上流ルーター\n  edge1:\n    model: generic-router-4 # 2 台目を追加予定\n  sw1:",
+    );
+    expect(text).toContain("  # 手で調整した位置\n  edge1: { x: 1, y: 2 }");
+  });
+
+  it("2 台の ID を入れ替えても、中身は正しいデバイスに付いたまま", () => {
+    const { topology, base } = load(`constella: 1
+devices:
+  a:
+    label: first
+  b:
+    label: second
+`);
+    renameDevice(topology, "a", "tmp");
+    renameDevice(topology, "b", "a");
+    renameDevice(topology, "tmp", "b");
+    const { text } = serializeTopology(topology, base);
+    expect(text).toBe("constella: 1\ndevices:\n  b:\n    label: first\n  a:\n    label: second\n");
+  });
+
+  it("削除したデバイスの ID に別のデバイスを改名しても重複しない", () => {
+    const { topology, base } = load(`constella: 1
+devices:
+  a:
+    label: keep
+  b:
+    label: gone
+layout:
+  a: { x: 1, y: 1 }
+  b: { x: 2, y: 2 }
+`);
+    removeDevices(topology, ["b"]);
+    renameDevice(topology, "a", "b");
+    const { text } = serializeTopology(topology, base);
+    expect(text).toBe(
+      "constella: 1\ndevices:\n  b:\n    label: keep\nlayout:\n  b: { x: 1, y: 1 }\n",
+    );
   });
 });
 
@@ -219,12 +291,14 @@ describe("serializeTopology: 新規作成", () => {
     t.meta.title = "テスト";
     t.devices.set("rt1", {
       id: "rt1",
+      uid: "u-rt1",
       model: "generic-router-4",
       interfaces: new Map(),
       extra: {},
     });
     t.devices.set("sw1", {
       id: "sw1",
+      uid: "u-sw1",
       model: "generic-l2switch-24",
       label: "Access SW",
       interfaces: new Map([
@@ -232,7 +306,7 @@ describe("serializeTopology: 新規作成", () => {
       ]),
       extra: {},
     });
-    t.devices.set("1", { id: "1", role: "cloud", interfaces: new Map(), extra: {} });
+    t.devices.set("1", { id: "1", uid: "u-1", role: "cloud", interfaces: new Map(), extra: {} });
     t.links.push(
       {
         id: createLinkId(),

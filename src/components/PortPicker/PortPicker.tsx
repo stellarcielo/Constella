@@ -16,20 +16,8 @@ import {
   portTypesCompatible,
 } from "../../core";
 import { type ChosenPort, useTopology } from "../../store";
+import { PORT_TYPE_LABELS } from "../portTypes";
 import "./PortPicker.css";
-
-const TYPE_LABELS: Record<PortType, string> = {
-  rj45: "RJ45",
-  sfp: "SFP",
-  "sfp+": "SFP+",
-  sfp28: "SFP28",
-  "qsfp+": "QSFP+",
-  qsfp28: "QSFP28",
-  console: "コンソール",
-  serial: "シリアル",
-  wireless: "無線",
-  virtual: "仮想",
-};
 
 const WIDTH = 280;
 const MAX_HEIGHT = 420;
@@ -155,7 +143,7 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
         {exact?.use && <p className="port-picker-error">「{exact.name}」は使用中です</p>}
         {groups.map(({ type, entries: group }) => (
           <section key={type ?? "none"}>
-            <h4 className="port-picker-group">{type ? TYPE_LABELS[type] : "種別なし"}</h4>
+            <h4 className="port-picker-group">{type ? PORT_TYPE_LABELS[type] : "種別なし"}</h4>
             {group.map((entry) => {
               const option = options.find((o) => o.kind === "port" && o.entry === entry);
               const mismatch =
@@ -177,7 +165,7 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
                   {mismatch && (
                     <span
                       className="port-picker-warning"
-                      title={`接続元のポート種別(${TYPE_LABELS[peer.type as PortType]})と合いません`}
+                      title={`接続元のポート種別(${PORT_TYPE_LABELS[peer.type as PortType]})と合いません`}
                     >
                       ⚠
                     </span>

@@ -104,4 +104,30 @@ describe("topologyStore", () => {
     expect(store.getState().topology.devices.size).toBe(2);
     expect(store.getState().selection.links).toEqual([]);
   });
+
+  it("デバイスID を変えると、リンクの参照と選択も付け替える(Immer の中でも順序を保つ)", () => {
+    const store = setup();
+    const { addDevice } = store.getState();
+    addDevice("generic-router-4", { x: 0, y: 0 });
+    addDevice("generic-server-2", { x: 0, y: 0 });
+    addDevice("generic-l2switch-24", { x: 0, y: 0 });
+    store.getState().addLink({ device: "rt1", iface: "Gi0/0" }, { device: "srv1", iface: "eth0" });
+    store.getState().setSelection({ devices: ["srv1"], links: [] });
+    expect(store.getState().renameDevice("srv1", "web1")).toBeUndefined();
+    const s = store.getState();
+    expect([...s.topology.devices.keys()]).toEqual(["rt1", "web1", "sw1"]);
+    expect(s.topology.devices.get("web1")?.id).toBe("web1");
+    expect(s.topology.layout.has("web1")).toBe(true);
+    expect(s.topology.links[0].b).toEqual({ device: "web1", iface: "eth0" });
+    expect(s.selection.devices).toEqual(["web1"]);
+  });
+
+  it("使えない ID なら理由を返して何も変えない", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    const before = store.getState().topology;
+    expect(store.getState().renameDevice("rt1", "rt2")).toBe("「rt2」は既に使われています");
+    expect(store.getState().topology).toBe(before);
+  });
 });

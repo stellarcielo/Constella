@@ -6,6 +6,7 @@ import { createStore } from "zustand/vanilla";
 import {
   addDevice,
   addLink,
+  checkDeviceId,
   createEmptyTopology,
   type Endpoint,
   type Issue,
@@ -14,6 +15,7 @@ import {
   type Position,
   removeDevices,
   removeLinks,
+  renameDevice,
   type Topology,
   validateTopology,
   type YamlBase,
@@ -42,6 +44,8 @@ export interface TopologyState {
   moveDevices(positions: Iterable<[string, Position]>): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
+  /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
+  renameDevice(oldId: string, newId: string): string | undefined;
   /** 指定したデバイスとリンクを削除する(デバイスにつながるリンクも消える) */
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
@@ -108,6 +112,19 @@ export function createTopologyStore(catalog: ModelCatalog) {
         id = addLink(t, a, b, get().catalog);
       });
       return id;
+    },
+
+    renameDevice(oldId, newId) {
+      if (oldId === newId) return undefined;
+      const error = checkDeviceId(get().topology, newId, oldId);
+      if (error) return error;
+      const wasSelected = get().selection.devices.includes(oldId);
+      get().edit((t) => renameDevice(t, oldId, newId));
+      if (wasSelected) {
+        const { selection } = get();
+        get().setSelection({ ...selection, devices: [...selection.devices, newId] });
+      }
+      return undefined;
     },
 
     deleteElements({ devices = [], links = [] }) {

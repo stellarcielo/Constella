@@ -78,6 +78,8 @@ body {
 }
 
 .app-side {
+  min-height: 0;
+  overflow-y: auto;
   border-left: 1px solid var(--border);
   background: var(--panel);
 }

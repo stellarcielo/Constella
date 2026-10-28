@@ -15,8 +15,13 @@ export function createEmptyTopology(): Topology {
   };
 }
 
-export function createLinkId(): string {
+/** メモリ上だけで使う識別子(YAML には書き出さない) */
+export function createUid(): string {
   return globalThis.crypto.randomUUID();
+}
+
+export function createLinkId(): string {
+  return createUid();
 }
 
 /** `デバイスID:IF名` を最初の `:` で分割する。どちらかが空なら undefined。 */

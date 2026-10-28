@@ -19,7 +19,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { type DragEvent, useCallback, useMemo, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   type Endpoint,
   findModel,
@@ -35,6 +35,7 @@ import {
 } from "../../core";
 import { type Selection, topologyStore, uiStore, useTopology, useUi } from "../../store";
 import { MODEL_DRAG_TYPE } from "../dnd";
+import { isTyping, releaseInputFocus } from "../shortcuts";
 import { ConnectOverlay } from "./ConnectOverlay";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
@@ -61,6 +62,15 @@ const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
     links: edges.map((e) => e.id),
   });
 const onNodeClick: NodeMouseHandler = (_e, node) => uiStore.getState().clickDevice(node.id);
+
+/** 矢印キーで選択中の機器を動かす量(⇧キーを押していれば 4 倍) */
+const ARROW_STEP = 5;
+const ARROWS: Record<string, Position> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 const onPaneClick = () => uiStore.getState().clickPane();
 
 export function Canvas() {
@@ -77,7 +87,29 @@ function CanvasInner() {
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
   const mode = useUi((s) => s.mode);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getNodes } = useReactFlow();
+
+  // 矢印キーで選択中の機器を動かす。React Flow 標準の矢印キー操作は機器にフォーカスがあるときしか
+  // 効かないので止め(disableKeyboardA11y)、delete キーや C と同じくフォーカスの位置に関係なく効かせる
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const dir = ARROWS[e.key];
+      if (!dir || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (e.target instanceof Element && e.target.closest("[aria-modal]")) return;
+      if (uiStore.getState().mode !== "select") return;
+      const selected = new Set(topologyStore.getState().selection.devices);
+      if (selected.size === 0) return;
+      e.preventDefault();
+      const step = ARROW_STEP * (e.shiftKey ? 4 : 1);
+      topologyStore.getState().moveDevices(
+        getNodes()
+          .filter((n) => selected.has(n.id))
+          .map((n) => [n.id, { x: n.position.x + dir.x * step, y: n.position.y + dir.y * step }]),
+      );
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [getNodes]);
 
   const derived = useMemo(
     () => ({
@@ -100,6 +132,14 @@ function CanvasInner() {
 
   const onNodesChange = useCallback((changes: NodeChange<DeviceNodeType>[]) => {
     setNodes((ns) => applyNodeChanges(changes, ns));
+    // ドラッグを終えたときは dragging: false の位置の変化が届く(onNodeDragStop と同じ内容。保存は 1 回だけになる)
+    const moved: [string, Position][] = [];
+    for (const change of changes) {
+      if (change.type === "position" && change.dragging === false && change.position) {
+        moved.push([change.id, change.position]);
+      }
+    }
+    if (moved.length > 0) topologyStore.getState().moveDevices(moved);
   }, []);
   const onEdgesChange = useCallback((changes: EdgeChange<LinkEdgeType>[]) => {
     setEdges((es) => applyEdgeChanges(changes, es));
@@ -130,7 +170,13 @@ function CanvasInner() {
 
   const selecting = mode === "select";
   return (
-    <div className={`canvas mode-${mode}`} onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className={`canvas mode-${mode}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      // キャンバスを触ったら、インスペクタなどの入力欄からフォーカスを外す(キー操作をキャンバスに効かせる)
+      onPointerDownCapture={(e) => releaseInputFocus(e.currentTarget)}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -144,6 +190,7 @@ function CanvasInner() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         deleteKeyCode={DELETE_KEYS}
+        disableKeyboardA11y
         multiSelectionKeyCode={MULTI_SELECT_KEYS}
         // 接続モードでは、うっかり動かしたり選択したりしないように止める
         nodesDraggable={selecting}

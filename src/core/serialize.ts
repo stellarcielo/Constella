@@ -76,11 +76,33 @@ class Writer {
   private readonly doc: Document;
   private readonly before: Topology;
   private readonly after: Topology;
+  /** 書き出し前のデバイスID → 今の ID(削除されたなら undefined)。内部の識別子(uid)で対応を取る */
+  private readonly idAfter = new Map<string, string | undefined>();
 
   constructor(doc: Document, before: Topology, after: Topology) {
     this.doc = doc;
     this.before = before;
     this.after = after;
+    const afterByUid = new Map([...after.devices.values()].map((d) => [d.uid, d.id]));
+    for (const device of before.devices.values()) {
+      this.idAfter.set(device.id, afterByUid.get(device.uid));
+    }
+  }
+
+  /**
+   * デバイスID の変更に合わせて、マップのキー名だけをその場で書き換える(位置とコメントを保つ)。
+   * 同じキーが重複している場合(エラー)は最初のものだけを書き換える。
+   */
+  private renameKeys(map: YAMLMap): void {
+    const done = new Set<string>();
+    for (const pair of map.items) {
+      const key = keyText(pair.key);
+      const next = this.idAfter.get(key);
+      if (next === undefined || next === key || done.has(key)) continue;
+      done.add(key);
+      if (isScalar(pair.key)) pair.key.value = next;
+      else pair.key = this.doc.createNode(next);
+    }
   }
 
   meta(root: YAMLMap, meta: Meta): void {
@@ -104,11 +126,12 @@ class Writer {
     else if (devices.size === 0) return;
     else map = this.setSection(root, "devices", new YAMLMap());
 
-    // 削除されたデバイス
+    // 削除されたデバイス(パースできなかった要素は前のトポロジに無いので触らない)
     map.items = map.items.filter((pair) => {
       const id = keyText(pair.key);
-      return devices.has(id) || !this.before.devices.has(id);
+      return !this.idAfter.has(id) || this.idAfter.get(id) !== undefined;
     });
+    this.renameKeys(map);
 
     for (const device of devices.values()) {
       const pair = map.items.find((p) => keyText(p.key) === device.id);
@@ -196,11 +219,14 @@ class Writer {
     else if (layout.size === 0 && !viewport) return;
     else map = this.setSection(root, "layout", new YAMLMap());
 
+    // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)
     map.items = map.items.filter((pair) => {
       const key = keyText(pair.key);
       if (key === "_viewport") return viewport !== undefined || this.before.viewport === undefined;
-      return layout.has(key) || !this.before.layout.has(key);
+      const id = this.idAfter.has(key) ? this.idAfter.get(key) : key;
+      return (id !== undefined && layout.has(id)) || !this.before.layout.has(key);
     });
+    this.renameKeys(map);
 
     const entries: [string, Fields][] = [...layout].map(([id, pos]) => [
       id,
