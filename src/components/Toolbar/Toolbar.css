@@ -1,5 +1,6 @@
 .toolbar {
   display: flex;
+  gap: 16px;
   align-items: center;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
@@ -8,4 +9,29 @@
 
 .toolbar-title {
   font-weight: 600;
+}
+
+.toolbar-group {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.toolbar-button {
+  padding: 3px 12px;
+  border: none;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.toolbar-button + .toolbar-button {
+  border-left: 1px solid var(--border);
+}
+
+.toolbar-button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
 }

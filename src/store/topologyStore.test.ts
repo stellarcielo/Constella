@@ -78,4 +78,30 @@ describe("topologyStore", () => {
     store.getState().setSelection({ devices: ["b", "a"], links: [] });
     expect(store.getState().selection).toBe(sel);
   });
+
+  it("リンクを追加すると検証し直す", () => {
+    const store = setup();
+    const { addDevice } = store.getState();
+    addDevice("generic-router-4", { x: 0, y: 0 });
+    addDevice("generic-l2switch-24", { x: 0, y: 0 });
+    store.getState().addLink({ device: "rt1", iface: "Gi0/0" }, { device: "sw1", iface: "Te0/25" });
+    const s = store.getState();
+    expect(s.topology.links).toHaveLength(1);
+    expect(s.issues.map((i) => i.code)).toEqual(["port-type-mismatch"]);
+  });
+
+  it("リンクを選択して削除する", () => {
+    const store = setup();
+    const { addDevice } = store.getState();
+    addDevice("generic-router-4", { x: 0, y: 0 });
+    addDevice("generic-router-4", { x: 0, y: 0 });
+    const id = store
+      .getState()
+      .addLink({ device: "rt1", iface: "Gi0/0" }, { device: "rt2", iface: "Gi0/0" });
+    store.getState().setSelection({ devices: [], links: [id] });
+    store.getState().deleteSelection();
+    expect(store.getState().topology.links).toEqual([]);
+    expect(store.getState().topology.devices.size).toBe(2);
+    expect(store.getState().selection.links).toEqual([]);
+  });
 });

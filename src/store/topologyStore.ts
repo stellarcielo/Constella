@@ -5,7 +5,9 @@ import { enableMapSet, produce } from "immer";
 import { createStore } from "zustand/vanilla";
 import {
   addDevice,
+  addLink,
   createEmptyTopology,
+  type Endpoint,
   type Issue,
   type ModelCatalog,
   moveDevices,
@@ -39,6 +41,9 @@ export interface TopologyState {
   addDevice(modelId: string, position: Position): string;
   moveDevices(positions: Iterable<[string, Position]>): void;
   deleteDevices(ids: string[]): void;
+  addLink(a: Endpoint, b: Endpoint): string;
+  /** 指定したデバイスとリンクを削除する(デバイスにつながるリンクも消える) */
+  deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
 }
@@ -97,13 +102,24 @@ export function createTopologyStore(catalog: ModelCatalog) {
       get().edit((t) => removeDevices(t, ids));
     },
 
-    deleteSelection() {
-      const { devices, links } = get().selection;
+    addLink(a, b) {
+      let id = "";
+      get().edit((t) => {
+        id = addLink(t, a, b, get().catalog);
+      });
+      return id;
+    },
+
+    deleteElements({ devices = [], links = [] }) {
       if (devices.length === 0 && links.length === 0) return;
       get().edit((t) => {
         removeLinks(t, links);
         removeDevices(t, devices);
       });
+    },
+
+    deleteSelection() {
+      get().deleteElements(get().selection);
     },
 
     setSelection(selection) {

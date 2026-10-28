@@ -2,15 +2,18 @@
 // ドラッグ中の位置だけは画面側で持って、ドロップしたときに 1 回ストアへ書き込む(SPEC 8.2)。
 
 import {
+  applyEdgeChanges,
   applyNodeChanges,
   Background,
   BackgroundVariant,
   Controls,
-  type Edge,
+  type EdgeChange,
+  type EdgeTypes,
   type Node,
   type NodeChange,
-  type OnSelectionChangeParams,
+  type NodeMouseHandler,
   type NodeTypes,
+  type OnSelectionChangeParams,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -20,6 +23,7 @@ import { type DragEvent, useCallback, useMemo, useState } from "react";
 import {
   findModel,
   type Issue,
+  type IssueTarget,
   type ModelCatalog,
   type Position,
   resolveLabel,
@@ -27,24 +31,34 @@ import {
   type Severity,
   type Topology,
 } from "../../core";
-import { topologyStore, useTopology, type Selection } from "../../store";
+import { type Selection, topologyStore, uiStore, useTopology, useUi } from "../../store";
 import { MODEL_DRAG_TYPE } from "../dnd";
+import { ConnectOverlay } from "./ConnectOverlay";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
+import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
 import "./Canvas.css";
 
 const nodeTypes: NodeTypes = { device: DeviceNode };
+const edgeTypes: EdgeTypes = { link: LinkEdge };
 // 描画のたびに新しい配列を渡すと React Flow が更新を繰り返すので定数にする
-const NO_EDGES: Edge[] = [];
 const DELETE_KEYS = ["Backspace", "Delete"];
 const MULTI_SELECT_KEYS = ["Shift", "Meta"];
 const PAN_BUTTONS = [1, 2];
 
 const onNodeDragStop = (_e: unknown, _node: Node, dragged: Node[]) =>
   topologyStore.getState().moveDevices(dragged.map((n) => [n.id, n.position]));
-const onSelectionChange = ({ nodes }: OnSelectionChangeParams) =>
-  topologyStore.getState().setSelection({ devices: nodes.map((n) => n.id), links: [] });
-const onDelete = ({ nodes }: { nodes: Node[] }) =>
-  topologyStore.getState().deleteDevices(nodes.map((n) => n.id));
+const onSelectionChange = ({ nodes, edges }: OnSelectionChangeParams) =>
+  topologyStore.getState().setSelection({
+    devices: nodes.map((n) => n.id),
+    links: edges.map((e) => e.id),
+  });
+const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
+  topologyStore.getState().deleteElements({
+    devices: nodes.map((n) => n.id),
+    links: edges.map((e) => e.id),
+  });
+const onNodeClick: NodeMouseHandler = (_e, node) => uiStore.getState().clickDevice(node.id);
+const onPaneClick = () => uiStore.getState().clickPane();
 
 export function Canvas() {
   return (
@@ -59,24 +73,33 @@ function CanvasInner() {
   const catalog = useTopology((s) => s.catalog);
   const selection = useTopology((s) => s.selection);
   const issues = useTopology((s) => s.issues);
+  const mode = useUi((s) => s.mode);
   const { screenToFlowPosition } = useReactFlow();
 
   const derived = useMemo(
-    () => buildNodes(topology, catalog, selection, issues),
+    () => ({
+      nodes: buildNodes(topology, catalog, selection, issues),
+      edges: buildEdges(topology, selection, issues),
+    }),
     [topology, catalog, selection, issues],
   );
 
   // ストア側が変わったら作り直す。React Flow が測ったノードの大きさは引き継ぐ
-  const [nodes, setNodes] = useState<DeviceNodeType[]>(derived);
+  const [nodes, setNodes] = useState<DeviceNodeType[]>(derived.nodes);
+  const [edges, setEdges] = useState<LinkEdgeType[]>(derived.edges);
   const [prevDerived, setPrevDerived] = useState(derived);
   if (derived !== prevDerived) {
     setPrevDerived(derived);
     const measured = new Map(nodes.map((n) => [n.id, n.measured]));
-    setNodes(derived.map((n) => ({ ...n, measured: measured.get(n.id) })));
+    setNodes(derived.nodes.map((n) => ({ ...n, measured: measured.get(n.id) })));
+    setEdges(derived.edges);
   }
 
   const onNodesChange = useCallback((changes: NodeChange<DeviceNodeType>[]) => {
     setNodes((ns) => applyNodeChanges(changes, ns));
+  }, []);
+  const onEdgesChange = useCallback((changes: EdgeChange<LinkEdgeType>[]) => {
+    setEdges((es) => applyEdgeChanges(changes, es));
   }, []);
 
   const onDragOver = useCallback((e: DragEvent) => {
@@ -97,25 +120,34 @@ function CanvasInner() {
         x: p.x - DEVICE_NODE_WIDTH / 2,
         y: p.y - DEVICE_ICON_BOX / 2,
       });
-      store.setSelection({ devices: [id], links: [] });
+      if (uiStore.getState().mode === "select") store.setSelection({ devices: [id], links: [] });
     },
     [screenToFlowPosition],
   );
 
+  const selecting = mode === "select";
   return (
-    <div className="canvas" onDragOver={onDragOver} onDrop={onDrop}>
+    <div className={`canvas mode-${mode}`} onDragOver={onDragOver} onDrop={onDrop}>
       <ReactFlow
         nodes={nodes}
-        edges={NO_EDGES}
+        edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onSelectionChange={onSelectionChange}
         onDelete={onDelete}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         deleteKeyCode={DELETE_KEYS}
         multiSelectionKeyCode={MULTI_SELECT_KEYS}
+        // 接続モードでは、うっかり動かしたり選択したりしないように止める
+        nodesDraggable={selecting}
+        elementsSelectable={selecting}
+        nodesConnectable={false}
         // 空いている所のドラッグは範囲選択。移動はトラックパッドのスクロールか中ボタン/右ボタンのドラッグ
-        selectionOnDrag
+        selectionOnDrag={selecting}
         panOnDrag={PAN_BUTTONS}
         panOnScroll
         colorMode="system"
@@ -124,6 +156,7 @@ function CanvasInner() {
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls showInteractive={false} />
+        <ConnectOverlay />
       </ReactFlow>
     </div>
   );
@@ -163,7 +196,9 @@ function buildNodes(
 ): DeviceNodeType[] {
   const placeholders = placeholderPositions(t);
   const selected = new Set(selection.devices);
-  const problems = deviceProblems(issues);
+  const problems = worstProblems(issues, (target) =>
+    target.kind === "device" ? target.id : target.kind === "interface" ? target.device : undefined,
+  );
   return [...t.devices.values()].map((device) => {
     const model = findModel(device, catalog);
     return {
@@ -181,14 +216,40 @@ function buildNodes(
   });
 }
 
-/** デバイスごとに、いちばん重い問題を求める(赤 = エラー、黄 = 警告) */
-function deviceProblems(issues: Issue[]): Map<string, Severity> {
+function buildEdges(t: Topology, selection: Selection, issues: Issue[]): LinkEdgeType[] {
+  const selected = new Set(selection.links);
+  const problems = worstProblems(issues, (target) =>
+    target.kind === "link" ? target.id : undefined,
+  );
+  const edges: LinkEdgeType[] = [];
+  for (const link of t.links) {
+    // 端が不正なリンクや、存在しないデバイスへのリンクは描けない(問題パネルに出る)
+    if (!link.a || !link.b || !t.devices.has(link.a.device) || !t.devices.has(link.b.device)) {
+      continue;
+    }
+    const problem = problems.get(link.id);
+    edges.push({
+      id: link.id,
+      type: "link",
+      source: link.a.device,
+      target: link.b.device,
+      selected: selected.has(link.id),
+      className: problem ? `problem-${problem}` : undefined,
+    });
+  }
+  return edges;
+}
+
+/** 対象ごとに、いちばん重い問題を求める(赤 = エラー、黄 = 警告) */
+function worstProblems(
+  issues: Issue[],
+  keyOf: (target: IssueTarget) => string | undefined,
+): Map<string, Severity> {
   const result = new Map<string, Severity>();
   for (const issue of issues) {
-    const t = issue.target;
-    const id = t.kind === "device" ? t.id : t.kind === "interface" ? t.device : undefined;
-    if (id === undefined || result.get(id) === "error") continue;
-    result.set(id, issue.severity);
+    const key = keyOf(issue.target);
+    if (key === undefined || result.get(key) === "error") continue;
+    result.set(key, issue.severity);
   }
   return result;
 }

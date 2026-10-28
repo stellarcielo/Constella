@@ -1,6 +1,6 @@
 // キャンバス上のデバイス(アイコン + ラベル)。ポートが多いため接続点のハンドルは表示しない(SPEC 7.3)。
 
-import type { Node, NodeProps } from "@xyflow/react";
+import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import type { Role, Severity } from "../../core";
 import { RoleIcon } from "../../icons/RoleIcon";
 
@@ -34,6 +34,19 @@ export function DeviceNode({ id, data, selected }: NodeProps<DeviceNodeType>) {
         <RoleIcon role={data.role} size={34} />
       </div>
       <div className="device-node-label">{data.label}</div>
+      {/* React Flow は線を描くのにハンドルが必要。線は中心同士を結ぶので見えないようにしておく */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={false}
+        className="device-handle"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        className="device-handle"
+      />
     </div>
   );
 }

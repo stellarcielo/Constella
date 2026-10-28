@@ -1,8 +1,9 @@
 // トポロジの編集操作(SPEC 7章)。
 // 引数のトポロジを直接書き換える。ストアでは Immer の produce の中で呼ぶ。
 
-import { findModel } from "./topology";
-import type { Device, ModelCatalog, Position, Role, Topology } from "./types";
+import { canonicalIfName } from "./ports";
+import { createLinkId, findModel } from "./topology";
+import type { Device, Endpoint, Link, ModelCatalog, Position, Role, Topology } from "./types";
 
 /** デバイスIDの自動採番に使う role ごとのプレフィックス(SPEC 7.1) */
 export const ROLE_ID_PREFIX: Record<Role, string> = {
@@ -76,6 +77,21 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
       group.members = group.members.filter((m) => !removed.has(m));
     }
   }
+}
+
+/**
+ * リンクを追加し、その ID を返す。IF 名はモデルや既存の IF の表記にそろえる。
+ * 使用中のポートかどうかはここでは確かめない(ポート選択画面で選べなくしている。YAML で書かれた場合は検証でエラーになる)。
+ */
+export function addLink(t: Topology, a: Endpoint, b: Endpoint, catalog: ModelCatalog): string {
+  const link: Link = {
+    id: createLinkId(),
+    a: { device: a.device, iface: canonicalIfName(t, a.device, a.iface, catalog) },
+    b: { device: b.device, iface: canonicalIfName(t, b.device, b.iface, catalog) },
+    extra: {},
+  };
+  t.links.push(link);
+  return link.id;
 }
 
 export function removeLinks(t: Topology, ids: Iterable<string>): void {

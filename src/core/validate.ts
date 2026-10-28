@@ -3,6 +3,7 @@
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
+import { portTypesCompatible } from "./ports";
 import { endpointToString, findModel, isFlexibleDevice } from "./topology";
 import type {
   Device,
@@ -17,20 +18,6 @@ import type {
   SourceRange,
   Topology,
 } from "./types";
-
-/** 物理的に挿せる組み合わせを同じグループにする(SFP+ ポートに SFP を挿す等は警告しない) */
-const PORT_FAMILY: Record<PortType, string> = {
-  rj45: "rj45",
-  sfp: "sfp",
-  "sfp+": "sfp",
-  sfp28: "sfp",
-  "qsfp+": "qsfp",
-  qsfp28: "qsfp",
-  console: "console",
-  serial: "serial",
-  wireless: "wireless",
-  virtual: "virtual",
-};
 
 /**
  * トポロジを検証する。base を渡すと、問題に YAML 上の位置を付ける。
@@ -124,7 +111,7 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       });
     }
     const [ta, tb] = types;
-    if (ta && tb && PORT_FAMILY[ta] !== PORT_FAMILY[tb] && link.a && link.b) {
+    if (ta && tb && !portTypesCompatible(ta, tb) && link.a && link.b) {
       add(
         "warning",
         "port-type-mismatch",

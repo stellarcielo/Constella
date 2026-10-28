@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDevice, moveDevices, nextDeviceId, removeDevices, removeLinks } from "./edit";
+import { addDevice, addLink, moveDevices, nextDeviceId, removeDevices, removeLinks } from "./edit";
 import { parseTopology } from "./parse";
 import { specExample, testCatalog } from "./testFixtures";
 import { createEmptyTopology } from "./topology";
@@ -131,5 +131,28 @@ describe("removeLinks", () => {
     const [first, ...rest] = t.links;
     removeLinks(t, [first.id]);
     expect(t.links).toEqual(rest);
+  });
+});
+
+describe("addLink", () => {
+  it("末尾に追加し、IF 名の表記をそろえる", () => {
+    const t = example();
+    const id = addLink(
+      t,
+      { device: "core-sw1", iface: "FastEthernet0/2" },
+      { device: "isp", iface: "WAN2" },
+      testCatalog,
+    );
+    const link = t.links[t.links.length - 1];
+    expect(link.id).toBe(id);
+    expect(link.a).toEqual({ device: "core-sw1", iface: "Fa0/2" });
+    expect(link.b).toEqual({ device: "isp", iface: "WAN2" });
+    expect(link.media).toBeUndefined();
+  });
+
+  it("フレキシブルデバイスの既存の IF は、その表記に合わせる", () => {
+    const t = example();
+    addLink(t, { device: "rt1", iface: "Gi0/2" }, { device: "isp", iface: "WAN" }, testCatalog);
+    expect(t.links[t.links.length - 1].b).toEqual({ device: "isp", iface: "wan" });
   });
 });

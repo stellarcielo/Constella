@@ -1,0 +1,141 @@
+.port-picker {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+
+.port-picker-header {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 8px 10px 4px;
+}
+
+.port-picker-side {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.port-picker-device {
+  font-weight: 600;
+}
+
+.port-picker-model {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-picker-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.port-picker-search {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.port-picker-next {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.port-picker-next:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.port-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+}
+
+.port-picker-group {
+  margin: 8px 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.port-picker-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.port-picker-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.port-picker-item:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.port-picker-item.new {
+  font-weight: 600;
+}
+
+.port-picker-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.port-picker-speed {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.port-picker-warning {
+  color: var(--warning);
+}
+
+.port-picker-use {
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-picker-error,
+.port-picker-empty {
+  margin: 6px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.port-picker-error {
+  color: var(--error);
+}
