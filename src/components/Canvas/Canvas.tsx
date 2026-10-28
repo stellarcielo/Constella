@@ -125,6 +125,8 @@ function CanvasInner() {
         getNodes()
           .filter((n) => selected.has(n.id))
           .map((n) => [n.id, { x: n.position.x + dir.x * step, y: n.position.y + dir.y * step }]),
+        // 同じ機器を続けて動かしたら、取り消しは 1 回で戻るようにまとめる
+        { coalesce: `arrow:${[...selected].sort().join(",")}` },
       );
     };
     window.addEventListener("keydown", onKeyDown);

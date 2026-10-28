@@ -39,6 +39,14 @@ export const browserPlatform: Platform = {
     document.title = title;
   },
 
+  readClipboardText() {
+    return navigator.clipboard.readText();
+  },
+
+  writeClipboardText(text) {
+    return navigator.clipboard.writeText(text);
+  },
+
   guardClose({ isDirty }) {
     // ブラウザでは独自の確認画面を出せないので、ブラウザ標準の確認を使う
     const onBeforeUnload = (e: BeforeUnloadEvent) => {

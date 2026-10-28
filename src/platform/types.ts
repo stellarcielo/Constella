@@ -8,6 +8,9 @@ export interface MenuCommands {
   saveAs(): void;
   /** アプリの終了(未保存なら確認する) */
   quit(): void;
+  /** 取り消す・やり直す(入力欄にフォーカスがあれば、その入力欄の取り消し) */
+  undo(): void;
+  redo(): void;
 }
 
 export interface Platform {
@@ -19,6 +22,9 @@ export interface Platform {
   chooseSavePath(defaultName: string): Promise<string | null>;
   writeTextFile(path: string, text: string): Promise<void>;
   setTitle(title: string): void;
+  /** システムのクリップボードの文字列 */
+  readClipboardText(): Promise<string>;
+  writeClipboardText(text: string): Promise<void>;
   /**
    * ウィンドウを閉じる(アプリを終了する)前に確認する。
    * isDirty が true のとき confirm を呼び、false が返ったら閉じない。登録を解除する関数を返す

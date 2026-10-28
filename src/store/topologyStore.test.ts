@@ -291,3 +291,150 @@ describe("topologyStore: YAML との同期(SPEC 8章)", () => {
     expect(s.dirty).toBe(false);
   });
 });
+
+describe("topologyStore: 取り消し・やり直し(SPEC 7.4)", () => {
+  it("GUI の編集 1 回が 1 ステップ。YAML も一緒に戻る", () => {
+    const store = setup();
+    const s = () => store.getState();
+    expect(s().canUndo).toBe(false);
+    s().addDevice("generic-router-4", { x: 0, y: 0 });
+    const afterFirst = s().yamlText;
+    s().addDevice("generic-router-4", { x: 0, y: 0 });
+    expect(s().canUndo).toBe(true);
+    s().undo();
+    expect([...s().topology.devices.keys()]).toEqual(["rt1"]);
+    expect(s().yamlText).toBe(afterFirst);
+    expect(s().yamlOrigin).toBe("history");
+    expect(s().canRedo).toBe(true);
+    s().undo();
+    expect(s().topology.devices.size).toBe(0);
+    expect(s().canUndo).toBe(false);
+    s().redo();
+    s().redo();
+    expect([...s().topology.devices.keys()]).toEqual(["rt1", "rt2"]);
+    expect(s().canRedo).toBe(false);
+  });
+
+  it("YAML の読み込み 1 回が 1 ステップ。GUI の編集と混ざっても逆順に戻る", () => {
+    const store = setup();
+    const s = () => store.getState();
+    s().openText(specExample);
+    s().moveDevices([["rt1", { x: 1, y: 1 }]]);
+    s().setYamlDraft(s().yamlText.replace("label: Edge Router", "label: R1"));
+    s().commitYamlDraft();
+    s().moveDevices([["rt1", { x: 2, y: 2 }]]);
+    s().undo();
+    expect(s().topology.layout.get("rt1")).toEqual({ x: 1, y: 1 });
+    expect(s().topology.devices.get("rt1")?.label).toBe("R1");
+    s().undo();
+    expect(s().topology.devices.get("rt1")?.label).toBe("Edge Router");
+    s().undo();
+    expect(s().yamlText).toBe(specExample);
+    expect(s().dirty).toBe(false);
+  });
+
+  it("取り消すと識別子も戻るので、選択が外れない", () => {
+    const store = setup();
+    const s = () => store.getState();
+    s().openText(specExample);
+    const linkId = s().topology.links[1].id;
+    s().setSelection({ devices: ["rt1"], links: [linkId] });
+    s().deleteDevices(["srv1"]);
+    s().undo();
+    expect(s().topology.links.map((l) => l.id)).toContain(linkId);
+    expect(s().selection).toEqual({ devices: ["rt1"], links: [linkId] });
+  });
+
+  it("打ち込み中の内容は、1 ステップにしてから取り消す", () => {
+    const store = setup();
+    const s = () => store.getState();
+    s().openText(specExample);
+    s().setYamlDraft(specExample.replace("label: mgmt", "label: x"));
+    s().undo();
+    expect(s().yamlText).toBe(specExample);
+    s().redo();
+    expect(s().yamlText).toContain("label: x");
+  });
+
+  it("新しく編集すると、やり直しの履歴は消える", () => {
+    const store = setup();
+    const s = () => store.getState();
+    s().addDevice("generic-router-4", { x: 0, y: 0 });
+    s().undo();
+    s().addDevice("generic-server-2", { x: 0, y: 0 });
+    expect(s().canRedo).toBe(false);
+    s().redo();
+    expect([...s().topology.devices.keys()]).toEqual(["srv1"]);
+  });
+
+  it("同じ機器を 1 秒以内に続けて動かしたら 1 ステップにまとめる", () => {
+    vi.useFakeTimers();
+    try {
+      const store = setup();
+      const s = () => store.getState();
+      s().addDevice("generic-router-4", { x: 0, y: 0 });
+      const move = (x: number) =>
+        s().moveDevices([["rt1", { x, y: 0 }]], { coalesce: "arrow:rt1" });
+      move(5);
+      vi.advanceTimersByTime(300);
+      move(10);
+      vi.advanceTimersByTime(300);
+      move(15);
+      vi.advanceTimersByTime(1500);
+      move(20);
+      s().undo();
+      expect(s().topology.layout.get("rt1")).toEqual({ x: 15, y: 0 });
+      s().undo();
+      expect(s().topology.layout.get("rt1")).toEqual({ x: 0, y: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ファイルを開くと履歴は空になる", () => {
+    const store = setup();
+    store.getState().addDevice("generic-router-4", { x: 0, y: 0 });
+    store.getState().openText(specExample);
+    expect(store.getState().canUndo).toBe(false);
+    store.getState().undo();
+    expect(store.getState().yamlText).toBe(specExample);
+  });
+
+  it("構文エラーのとき、最初の取り消しは最後に正しく読めた状態に戻すだけ", () => {
+    const store = setup();
+    const s = () => store.getState();
+    s().openText(specExample);
+    s().moveDevices([["rt1", { x: 1, y: 1 }]]);
+    const valid = s().yamlText;
+    s().setYamlDraft("constella: 1\ndevices: [\n");
+    s().commitYamlDraft();
+    expect(s().canUndo).toBe(true);
+    s().undo();
+    expect(s().yamlErrors).toEqual([]);
+    expect(s().yamlText).toBe(valid);
+    s().undo();
+    expect(s().yamlText).toBe(specExample);
+  });
+
+  it("構文エラーのファイルを開いた直後は、取り消す先が無い", () => {
+    const store = setup();
+    store.getState().openText("constella: 1\ndevices: [\n");
+    expect(store.getState().canUndo).toBe(false);
+    store.getState().undo();
+    expect(store.getState().yamlText).toBe("constella: 1\ndevices: [\n");
+  });
+
+  it("取り消せるのは最新の 200 ステップまで", () => {
+    const store = setup();
+    const s = () => store.getState();
+    for (let i = 1; i <= 205; i++) s().moveDevices([["x", { x: i, y: 0 }]]);
+    s().addDevice("generic-router-4", { x: 0, y: 0 });
+    for (let i = 1; i <= 202; i++) s().moveDevices([["rt1", { x: i, y: 0 }]]);
+    let count = 0;
+    while (s().canUndo) {
+      s().undo();
+      count++;
+    }
+    expect(count).toBe(200);
+  });
+});

@@ -3,7 +3,7 @@
 //   読み直して問題の位置を今の文字列にそろえる
 // - YAML エディタの内容は setYamlDraft() で受け取り、commitYamlDraft() で読み込む(エディタが 300ms 待ってから呼ぶ)
 // - YAML に構文エラーがある間、図は最後に正しく読めた状態のまま。その間の GUI の編集は確認してから当てる
-// フェーズ2の Undo/Redo はここに履歴を足す。
+// - 取り消し・やり直し(SPEC 7.4): GUI の編集 1 回、エディタの内容の読み込み 1 回(300ms の区切り)が 1 ステップ
 
 import { enableMapSet, produce } from "immer";
 import { createStore } from "zustand/vanilla";
@@ -38,7 +38,7 @@ export interface Selection {
 }
 
 /** YAML 文字列を変えた出どころ。"yaml" はエディタ自身の内容なので、エディタに書き戻さない */
-export type YamlOrigin = "gui" | "yaml" | "file";
+export type YamlOrigin = "gui" | "yaml" | "file" | "history";
 
 export interface TopologyState {
   /** 最後に正しく読めた図。GUI の編集はここに当てる */
@@ -66,6 +66,8 @@ export interface TopologyState {
   selection: Selection;
   /** GUI の編集を取りやめた回数(キャンバスが動かしかけた機器を元の位置に戻すため) */
   rejectedEdits: number;
+  canUndo: boolean;
+  canRedo: boolean;
 
   /** ファイルを開いた(または新規)。構文エラーがあっても開き、エディタで直せるようにする */
   openText(text: string, filePath?: string): void;
@@ -77,10 +79,16 @@ export interface TopologyState {
   /** 打ち込み中の内容を読み込んで図に反映する */
   commitYamlDraft(): void;
 
-  /** すべての GUI の編集はここを通す */
-  edit(recipe: (draft: Topology) => void): void;
+  /**
+   * すべての GUI の編集はここを通す。
+   * coalesce が直前の編集と同じで 1 秒以内なら、取り消しの 1 ステップにまとめる(矢印キーの移動など)
+   */
+  edit(recipe: (draft: Topology) => void, options?: EditOptions): void;
+  /** 取り消す。構文エラーがあれば、最初は最後に正しく読めた状態に戻すだけ */
+  undo(): void;
+  redo(): void;
   addDevice(modelId: string, position: Position): string;
-  moveDevices(positions: Iterable<[string, Position]>): void;
+  moveDevices(positions: Iterable<[string, Position]>, options?: EditOptions): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
   /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
@@ -89,6 +97,10 @@ export interface TopologyState {
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
+}
+
+export interface EditOptions {
+  coalesce?: string;
 }
 
 export interface TopologyStoreOptions {
@@ -100,15 +112,92 @@ export type TopologyStore = ReturnType<typeof createTopologyStore>;
 
 const EMPTY_SELECTION: Selection = { devices: [], links: [] };
 export const EMPTY_YAML = "constella: 1\n";
+/** 取り消せるステップの数 */
+const HISTORY_LIMIT = 200;
+/** この時間内に同じ種類の編集が続いたら、取り消しの 1 ステップにまとめる */
+const COALESCE_MS = 1000;
+
+/** 取り消し・やり直しで戻す状態 */
+interface Snapshot {
+  topology: Topology;
+  base?: YamlBase;
+  yamlText: string;
+  yamlIssues: Issue[];
+}
 
 export function createTopologyStore(catalog: ModelCatalog, options: TopologyStoreOptions = {}) {
   let confirming = false;
+  let past: Snapshot[] = [];
+  let future: Snapshot[] = [];
+  let lastCoalesce: { key: string; time: number } | undefined;
+  /**
+   * 最後に正しく読めた YAML 文字列(構文エラーの間も、取り消しの状態として使う)。
+   * 構文エラーのあるファイルを開いた直後など、まだ無ければ undefined
+   */
+  let validText: string | undefined = EMPTY_YAML;
 
   return createStore<TopologyState>()((set, get) => {
+    /** 今の(最後に正しく読めた)状態。正しく読めた状態がまだ無ければ undefined */
+    const snapshot = (): Snapshot | undefined => {
+      const { topology, base, yamlIssues } = get();
+      return validText === undefined
+        ? undefined
+        : { topology, base, yamlText: validText, yamlIssues };
+    };
+
+    const updateHistoryFlags = () =>
+      set({
+        canUndo: past.length > 0 || (get().yamlErrors.length > 0 && validText !== undefined),
+        canRedo: future.length > 0,
+      });
+
+    /** 変更前の状態を履歴に積む。新しい編集をしたら、やり直しの履歴は消える */
+    const record = (coalesce?: string) => {
+      const now = Date.now();
+      const merge =
+        coalesce !== undefined &&
+        lastCoalesce?.key === coalesce &&
+        now - lastCoalesce.time < COALESCE_MS;
+      lastCoalesce = coalesce === undefined ? undefined : { key: coalesce, time: now };
+      future = [];
+      const current = snapshot();
+      if (merge || !current) return;
+      past.push(current);
+      if (past.length > HISTORY_LIMIT) past.shift();
+    };
+
+    const resetHistory = () => {
+      past = [];
+      future = [];
+      lastCoalesce = undefined;
+    };
+
+    /** 履歴の状態をそのまま戻す(識別子や選択も元どおりになる) */
+    const restore = (s: Snapshot) => {
+      validText = s.yamlText;
+      set({
+        topology: s.topology,
+        base: s.base,
+        yamlIssues: s.yamlIssues,
+        yamlText: s.yamlText,
+        yamlOrigin: "history",
+        yamlDraft: undefined,
+        yamlErrors: [],
+        issues: computeIssues(s.topology, catalog, s.base, s.yamlIssues),
+        dirty: s.yamlText !== get().savedText,
+        selection: keepExisting(get().selection, s.topology),
+      });
+    };
+
     /** YAML 文字列を読み込んで図に反映する。構文エラーなら図はそのまま */
     const applyText = (text: string, origin: YamlOrigin) => {
       const { topology, base, yamlIssues, savedText, selection } = get();
       const parsed = parseTopology(text, { catalog });
+      // エディタで書き換えたら、やり直しの履歴は消える。正しく読めたときだけ取り消しのステップにする
+      if (origin === "yaml") {
+        if (parsed.ok) record();
+        else future = [];
+      }
       if (!parsed.ok) {
         set({
           yamlText: text,
@@ -128,6 +217,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
         return;
       }
       const adopted = adoptIdentity(topology, parsed);
+      validText = text;
       set({
         topology: adopted.topology,
         base: adopted.base,
@@ -142,10 +232,11 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
       });
     };
 
-    /** 構文エラーのある YAML を捨てて、最後に正しく読めた図から作り直す */
+    /** 構文エラーのある YAML を捨てて、最後に正しく読めた文字列(無ければ今の図から作った文字列)に戻す */
     const discardInvalidYaml = () => {
       const { topology, base } = get();
-      applyText(serializeTopology(topology, base).text, "gui");
+      applyText(validText ?? serializeTopology(topology, base).text, "history");
+      updateHistoryFlags();
     };
 
     const initial = parseTopology(EMPTY_YAML, { catalog });
@@ -164,6 +255,8 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
       dirty: false,
       selection: EMPTY_SELECTION,
       rejectedEdits: 0,
+      canUndo: false,
+      canRedo: false,
 
       openText(text, filePath) {
         // 前のファイルの図や識別子は引き継がない
@@ -175,7 +268,10 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
           savedText: text,
           selection: EMPTY_SELECTION,
         });
+        resetHistory();
+        validText = undefined;
         applyText(text, "file");
+        updateHistoryFlags();
       },
 
       newDocument() {
@@ -195,9 +291,39 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
         if (yamlDraft === undefined) return;
         if (yamlDraft === yamlText) set({ yamlDraft: undefined });
         else applyText(yamlDraft, "yaml");
+        updateHistoryFlags();
       },
 
-      edit(recipe) {
+      undo() {
+        // 打ち込み中の内容を 1 ステップにしてから取り消す
+        get().commitYamlDraft();
+        if (get().yamlErrors.length > 0) {
+          // 正しく読めた状態がまだ無ければ(構文エラーのファイルを開いた直後)、戻す先が無い
+          if (validText === undefined) return;
+          discardInvalidYaml();
+        } else {
+          const prev = past.pop();
+          const current = snapshot();
+          if (!prev || !current) return;
+          future.push(current);
+          restore(prev);
+        }
+        lastCoalesce = undefined;
+        updateHistoryFlags();
+      },
+
+      redo() {
+        get().commitYamlDraft();
+        const current = snapshot();
+        const next = current && future.pop();
+        if (!current || !next) return;
+        past.push(current);
+        restore(next);
+        lastCoalesce = undefined;
+        updateHistoryFlags();
+      },
+
+      edit(recipe, editOptions = {}) {
         // 打ち込み中の内容を先に読み込む(GUI の編集で上書きして消さないように)
         get().commitYamlDraft();
         if (get().yamlErrors.length > 0) {
@@ -208,18 +334,20 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
             confirming = false;
             if (!ok) return;
             discardInvalidYaml();
-            get().edit(recipe);
+            get().edit(recipe, editOptions);
           });
           return;
         }
         const { topology, base, selection, savedText } = get();
         const next = produce(topology, recipe);
         if (next === topology) return;
+        record(editOptions.coalesce);
         const written = serializeTopology(next, base);
         // 書き出した YAML を読み直して、問題の位置を今の文字列にそろえる
         const rebased = rebaseOnText(written.text, next, catalog);
         const nextBase = rebased?.base ?? written.base;
         const yamlIssues = rebased?.fileIssues ?? get().yamlIssues;
+        validText = written.text;
         set({
           topology: next,
           base: nextBase,
@@ -230,6 +358,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
           dirty: written.text !== savedText,
           selection: keepExisting(selection, next),
         });
+        updateHistoryFlags();
       },
 
       addDevice(modelId, position) {
@@ -240,7 +369,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
         return id;
       },
 
-      moveDevices(positions) {
+      moveDevices(positions, moveOptions) {
         const list = [...positions];
         const { layout } = get().topology;
         // 位置が変わっていなければ編集にしない(クリックだけで未保存にならないように)
@@ -249,7 +378,7 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
           return !cur || cur.x !== Math.round(p.x) || cur.y !== Math.round(p.y);
         });
         if (changed.length === 0) return;
-        get().edit((t) => moveDevices(t, changed));
+        get().edit((t) => moveDevices(t, changed), moveOptions);
       },
 
       deleteDevices(ids) {

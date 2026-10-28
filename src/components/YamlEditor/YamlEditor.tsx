@@ -4,8 +4,9 @@
 //   エディタ自身の変更(出どころ "yaml")は書き戻さない
 // - 構文エラーと、位置の分かる問題に下線を引く(フェーズ2-1 Q3)
 // - 問題パネルからのジャンプ(フェーズ2-1 Q4)
+// - 取り消し・やり直しはアプリ全体の履歴で行うので、エディタ独自の履歴は持たない(フェーズ2-2 Q1)
 
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
 import {
   bracketMatching,
@@ -16,7 +17,7 @@ import {
 } from "@codemirror/language";
 import { type Diagnostic, lintGutter, setDiagnostics } from "@codemirror/lint";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Annotation, EditorState, type Extension, Transaction } from "@codemirror/state";
+import { Annotation, EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -81,7 +82,6 @@ function extensions(onDocChanged: (text: string) => void): Extension[] {
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightSpecialChars(),
-    history(),
     drawSelection(),
     indentUnit.of("  "),
     EditorState.tabSize.of(2),
@@ -90,7 +90,18 @@ function extensions(onDocChanged: (text: string) => void): Extension[] {
     highlightActiveLine(),
     highlightSelectionMatches(),
     search({ top: true }),
-    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+    keymap.of([...defaultKeymap, ...searchKeymap, indentWithTab]),
+    // ⌘Z はアプリ全体のショートカットで受ける。ここでは、ブラウザのメニューなどからの
+    // 取り消しがエディタの中だけで起きないように、アプリ全体の取り消しに回す
+    EditorView.domEventHandlers({
+      beforeinput(e) {
+        if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return false;
+        e.preventDefault();
+        if (e.inputType === "historyUndo") topologyStore.getState().undo();
+        else topologyStore.getState().redo();
+        return true;
+      },
+    }),
     yaml(),
     syntaxHighlighting(highlightStyle),
     lintGutter(),
@@ -138,8 +149,7 @@ function replaceText(view: EditorView, text: string): void {
   }
   view.dispatch({
     changes: { from: start, to: endA, insert: text.slice(start, endB) },
-    // GUI の変更はエディタの取り消し履歴に入れない(アプリ全体の取り消しは次のタスクで整理する)
-    annotations: [fromStore.of(true), Transaction.addToHistory.of(false)],
+    annotations: fromStore.of(true),
   });
 }
 
@@ -170,7 +180,7 @@ export function YamlEditor() {
 
     const unsubscribeStore = topologyStore.subscribe((state, prev) => {
       if (state.yamlText !== prev.yamlText && state.yamlOrigin !== "yaml") {
-        // ファイルを開いたときは取り消し履歴ごと入れ替える。GUI の変更は差分だけ反映する
+        // ファイルを開いたときはカーソルなども含めて入れ替える。GUI の変更や取り消しは差分だけ反映する
         if (state.yamlOrigin === "file") view.setState(createState(state.yamlText));
         else replaceText(view, state.yamlText);
       }

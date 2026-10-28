@@ -3,6 +3,7 @@
 
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import type { MenuCommands, Platform } from "./types";
@@ -28,6 +29,14 @@ export const tauriPlatform: Platform = {
 
   setTitle(title) {
     void getCurrentWindow().setTitle(title);
+  },
+
+  readClipboardText() {
+    return readText();
+  },
+
+  async writeClipboardText(text) {
+    await writeText(text);
   },
 
   guardClose({ isDirty, confirm }) {
@@ -85,12 +94,13 @@ export const tauriPlatform: Platform = {
         await PredefinedMenuItem.new({ item: "CloseWindow", text: "閉じる" }),
       ],
     });
-    // 入力欄で使う標準の編集操作。キャンバスの取り消し・やり直しはフェーズ2で入れる
+    // 取り消す・やり直すはアプリ全体の操作につなぐ。カット・コピー・ペーストは入力欄で使う標準のもの
+    // (図のコピー・ペーストはショートカットで扱う。フェーズ2-2 Q4)
     const edit = await Submenu.new({
       text: "編集",
       items: [
-        await PredefinedMenuItem.new({ item: "Undo", text: "取り消す" }),
-        await PredefinedMenuItem.new({ item: "Redo", text: "やり直す" }),
+        await command("取り消す", "CmdOrCtrl+Z", commands.undo),
+        await command("やり直す", "CmdOrCtrl+Shift+Z", commands.redo),
         await separator(),
         await PredefinedMenuItem.new({ item: "Cut", text: "カット" }),
         await PredefinedMenuItem.new({ item: "Copy", text: "コピー" }),

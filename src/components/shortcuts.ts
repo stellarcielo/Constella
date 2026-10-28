@@ -1,7 +1,9 @@
 // アプリ全体のキーボードショートカット。
 
 import { useEffect } from "react";
-import { uiStore } from "../store";
+import { editCommands } from "../commands";
+import { topologyStore, uiStore } from "../store";
+import { type EditAction, editActionFor, keyPlace } from "./editKeys";
 
 /** 文字を入力している最中か(入力欄で C を打っても接続モードにしないため) */
 export function isTyping(target: EventTarget | null): boolean {
@@ -20,12 +22,31 @@ export function releaseInputFocus(inside?: Element | null): void {
   }
 }
 
+/** ⌘Z・⌘C などの編集キー(振り分けは editKeys.ts) */
+function runEditKey(e: KeyboardEvent, action: EditAction): void {
+  // 確認ダイアログが出ている間は図を変えない(メニューの「取り消す」にも回さない)
+  if (document.querySelector("[aria-modal]")) {
+    if (action !== "copy") e.preventDefault();
+    return;
+  }
+  // 機器を選んでいなければ、ページの文字のコピーなど標準の動作に任せる
+  const noDevices = topologyStore.getState().selection.devices.length === 0;
+  if ((action === "copy" || action === "cut") && noDevices) return;
+  e.preventDefault();
+  void editCommands[action]();
+}
+
 export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.isComposing) return;
       if (e.key === "Escape") {
         uiStore.getState().escape();
+        return;
+      }
+      const action = editActionFor(e, keyPlace(e.target));
+      if (action) {
+        runEditKey(e, action);
         return;
       }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;

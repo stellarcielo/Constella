@@ -1,8 +1,10 @@
-// アプリ全体で使うファイル操作。platform・ストア・ダイアログをつなぐ。
+// アプリ全体で使うファイル操作・編集操作。platform・ストア・ダイアログをつなぐ。
 
 import { askDialog } from "../components/Dialog/dialogs";
+import { keyPlace } from "../components/editKeys";
 import { platform } from "../platform";
 import { topologyStore, uiStore } from "../store";
+import { createEditCommands } from "./edit";
 import { createFileCommands } from "./files";
 
 export const fileCommands = createFileCommands({
@@ -46,6 +48,16 @@ export const fileCommands = createFileCommands({
       actions: [{ value: "ok", label: "OK", primary: true }],
       cancelLabel: null,
     });
+  },
+});
+
+export const editCommands = createEditCommands({
+  store: topologyStore,
+  clipboard: platform,
+  isTextInputFocused: () => keyPlace(document.activeElement) === "input",
+  textCommand(command) {
+    // メニューの「取り消す」をアプリの操作に置き換えたので、入力欄の取り消しはここから行う
+    document.execCommand(command);
   },
 });
 

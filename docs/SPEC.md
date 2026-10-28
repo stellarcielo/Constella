@@ -340,7 +340,7 @@ ports:
 
 ### フェーズ2: 双方向同期とレイアウト
 - [x] YAML エディタ(CodeMirror)とのリアルタイム双方向同期(コメント保持)
-- [ ] Undo/Redo、コピー&ペースト
+- [x] Undo/Redo、コピー&ペースト
 - [ ] elkjs による自動レイアウト
 - [ ] SVG / PNG エクスポート
 - [ ] JSON Schema と examples の整備

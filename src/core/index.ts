@@ -14,3 +14,4 @@ export * from "./ports";
 export * from "./media";
 export { lineColumn, yamlErrorMessage } from "./text";
 export { adoptIdentity } from "./identity";
+export * from "./fragment";

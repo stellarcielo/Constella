@@ -2,7 +2,7 @@
 // メニューバーが無い環境(ブラウザ)での保存などのショートカット。
 
 import { useEffect } from "react";
-import { documentName, fileCommands } from "../commands";
+import { documentName, editCommands, fileCommands } from "../commands";
 import { platform } from "../platform";
 import { topologyStore, useTopology } from "../store";
 
@@ -22,6 +22,8 @@ export function useDocumentShell(): void {
       save: () => void fileCommands.save(),
       saveAs: () => void fileCommands.saveAs(),
       quit: () => void fileCommands.quit(),
+      undo: () => editCommands.undo(),
+      redo: () => editCommands.redo(),
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,
