@@ -21,9 +21,11 @@ import {
 import "@xyflow/react/dist/style.css";
 import { type DragEvent, useCallback, useMemo, useState } from "react";
 import {
+  type Endpoint,
   findModel,
   type Issue,
   type IssueTarget,
+  linkMedia,
   type ModelCatalog,
   type Position,
   resolveLabel,
@@ -36,6 +38,7 @@ import { MODEL_DRAG_TYPE } from "../dnd";
 import { ConnectOverlay } from "./ConnectOverlay";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
+import { parallelSlots } from "./linkGeometry";
 import "./Canvas.css";
 
 const nodeTypes: NodeTypes = { device: DeviceNode };
@@ -79,7 +82,7 @@ function CanvasInner() {
   const derived = useMemo(
     () => ({
       nodes: buildNodes(topology, catalog, selection, issues),
-      edges: buildEdges(topology, selection, issues),
+      edges: buildEdges(topology, catalog, selection, issues),
     }),
     [topology, catalog, selection, issues],
   );
@@ -216,28 +219,47 @@ function buildNodes(
   });
 }
 
-function buildEdges(t: Topology, selection: Selection, issues: Issue[]): LinkEdgeType[] {
+function buildEdges(
+  t: Topology,
+  catalog: ModelCatalog,
+  selection: Selection,
+  issues: Issue[],
+): LinkEdgeType[] {
   const selected = new Set(selection.links);
   const problems = worstProblems(issues, (target) =>
     target.kind === "link" ? target.id : undefined,
   );
-  const edges: LinkEdgeType[] = [];
+  // 端が不正なリンクや、存在しないデバイスへのリンクは描けない(問題パネルに出る)
+  const drawable: { link: (typeof t.links)[number]; a: Endpoint; b: Endpoint }[] = [];
   for (const link of t.links) {
-    // 端が不正なリンクや、存在しないデバイスへのリンクは描けない(問題パネルに出る)
-    if (!link.a || !link.b || !t.devices.has(link.a.device) || !t.devices.has(link.b.device)) {
-      continue;
+    if (link.a && link.b && t.devices.has(link.a.device) && t.devices.has(link.b.device)) {
+      drawable.push({ link, a: link.a, b: link.b });
     }
+  }
+  const slots = parallelSlots(
+    drawable.map(({ link, a, b }) => ({ id: link.id, source: a.device, target: b.device })),
+  );
+  return drawable.map(({ link, a, b }) => {
+    const media = linkMedia(link, t, catalog);
     const problem = problems.get(link.id);
-    edges.push({
+    const slot = slots.get(link.id) ?? { index: 0, count: 1 };
+    return {
       id: link.id,
       type: "link",
-      source: link.a.device,
-      target: link.b.device,
+      source: a.device,
+      target: b.device,
       selected: selected.has(link.id),
-      className: problem ? `problem-${problem}` : undefined,
-    });
-  }
-  return edges;
+      className: problem ? `media-${media} problem-${problem}` : `media-${media}`,
+      data: {
+        media,
+        aName: a.iface,
+        bName: b.iface,
+        label: link.label,
+        slotIndex: slot.index,
+        slotCount: slot.count,
+      },
+    };
+  });
 }
 
 /** 対象ごとに、いちばん重い問題を求める(赤 = エラー、黄 = 警告) */

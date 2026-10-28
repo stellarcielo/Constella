@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createUiStore } from "./uiStore";
+import { createUiStore, DEFAULT_VIEW, type ViewStorage } from "./uiStore";
 
 const gi00 = { endpoint: { device: "rt1", iface: "Gi0/0" }, type: "rj45" as const };
 const eth0 = { endpoint: { device: "srv1", iface: "eth0" }, type: "rj45" as const };
@@ -74,5 +74,41 @@ describe("uiStore: 接続モード", () => {
     store.getState().toggleConnectMode();
     expect(store.getState().mode).toBe("select");
     expect(store.getState().connect).toEqual({ stage: "idle" });
+  });
+});
+
+describe("uiStore: 表示オプション", () => {
+  function memoryStorage(initial?: string): ViewStorage & { data: Map<string, string> } {
+    const data = new Map<string, string>(initial ? [["constella.view", initial]] : []);
+    return {
+      data,
+      getItem: (key) => data.get(key) ?? null,
+      setItem: (key, value) => void data.set(key, value),
+    };
+  }
+
+  it("既定は IF 名ラベルを短い形で表示", () => {
+    expect(createUiStore().getState().view).toEqual(DEFAULT_VIEW);
+    expect(DEFAULT_VIEW).toEqual({ showIfLabels: true, longIfNames: false });
+  });
+
+  it("変更すると保存し、次に作ったときに読み込む(Q4)", () => {
+    const storage = memoryStorage();
+    createUiStore(storage).getState().setView({ longIfNames: true });
+    expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual({
+      showIfLabels: true,
+      longIfNames: true,
+    });
+    expect(createUiStore(storage).getState().view).toEqual({
+      showIfLabels: true,
+      longIfNames: true,
+    });
+  });
+
+  it("保存された内容が壊れていたら既定値を使う", () => {
+    expect(createUiStore(memoryStorage("{oops")).getState().view).toEqual(DEFAULT_VIEW);
+    expect(createUiStore(memoryStorage('{"showIfLabels":"yes"}')).getState().view).toEqual(
+      DEFAULT_VIEW,
+    );
   });
 });

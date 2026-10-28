@@ -11,3 +11,4 @@ export { expandPortName, type ExpandResult } from "./portExpand";
 export { buildCatalog, type ModelParseResult, parseModelDefinition } from "./modelLibrary";
 export * from "./edit";
 export * from "./ports";
+export * from "./media";

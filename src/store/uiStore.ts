@@ -1,4 +1,4 @@
-// 画面の状態(モードと作りかけの接続)。トポロジとは分けて持ち、Undo の対象にしない。
+// 画面の状態(モード、作りかけの接続、表示オプション)。トポロジとは分けて持ち、Undo の対象にしない。
 
 import { createStore } from "zustand/vanilla";
 import type { Endpoint, PortType } from "../core";
@@ -21,9 +21,21 @@ export type ConnectState =
   /** B 側のポートを選んでいる */
   | { stage: "pickB"; a: ChosenPort; device: string };
 
+/** 表示オプション(SPEC 7.3)。YAML には書かず、アプリに覚えておく */
+export interface ViewOptions {
+  /** リンク両端の IF 名ラベルを表示する */
+  showIfLabels: boolean;
+  /** IF 名を長い形(GigabitEthernet0/1)で表示する */
+  longIfNames: boolean;
+}
+
+export const DEFAULT_VIEW: ViewOptions = { showIfLabels: true, longIfNames: false };
+const VIEW_STORAGE_KEY = "constella.view";
+
 export interface UiState {
   mode: Mode;
   connect: ConnectState;
+  view: ViewOptions;
 
   setMode(mode: Mode): void;
   toggleConnectMode(): void;
@@ -35,14 +47,19 @@ export interface UiState {
   escape(): void;
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
   clickPane(): void;
+  setView(view: Partial<ViewOptions>): void;
 }
+
+/** 表示オプションを覚えておく場所。テストでは渡さない */
+export type ViewStorage = Pick<Storage, "getItem" | "setItem">;
 
 const IDLE: ConnectState = { stage: "idle" };
 
-export function createUiStore() {
-  return createStore<UiState>()((set, get) => ({
+export function createUiStore(storage?: ViewStorage) {
+  const store = createStore<UiState>()((set, get) => ({
     mode: "select",
     connect: IDLE,
+    view: loadView(storage),
 
     setMode(mode) {
       if (mode !== get().mode) set({ mode, connect: IDLE });
@@ -89,5 +106,34 @@ export function createUiStore() {
     clickPane() {
       if (get().connect.stage !== "idle") set({ connect: IDLE });
     },
+
+    setView(view) {
+      set({ view: { ...get().view, ...view } });
+    },
   }));
+  if (storage) {
+    store.subscribe((state, prev) => {
+      if (state.view === prev.view) return;
+      try {
+        storage.setItem(VIEW_STORAGE_KEY, JSON.stringify(state.view));
+      } catch {
+        // 保存できなくても表示には影響しない
+      }
+    });
+  }
+  return store;
+}
+
+function loadView(storage?: ViewStorage): ViewOptions {
+  try {
+    const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
+    if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
+    const { showIfLabels, longIfNames } = saved as Record<string, unknown>;
+    return {
+      showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
+      longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
+    };
+  } catch {
+    return DEFAULT_VIEW;
+  }
 }

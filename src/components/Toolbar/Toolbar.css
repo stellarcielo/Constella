@@ -31,7 +31,16 @@
   border-left: 1px solid var(--border);
 }
 
-.toolbar-button[aria-pressed="true"] {
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.toolbar-button[aria-pressed="true"]:not(:disabled) {
   background: var(--accent);
   color: #fff;
 }

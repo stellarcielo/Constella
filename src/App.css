@@ -5,9 +5,11 @@
   --hover: #e8eaee;
   --text: #1f2328;
   --text-muted: #646b75;
-  --label-bg: rgb(255 255 255 / 0.85);
+  --label-bg: rgb(255 255 255 / 0.92);
   --accent: #2f6fde;
-  --link: #8c959f;
+  --media-copper: #8c959f;
+  --media-fiber: #e8822a;
+  --media-dac: #3d7be0;
   --error: #d1242f;
   --warning: #e0a800;
   --warning-text: #9a6700;
@@ -37,9 +39,11 @@
     --hover: #21262d;
     --text: #e6edf3;
     --text-muted: #8d96a0;
-    --label-bg: rgb(22 27 34 / 0.85);
+    --label-bg: rgb(22 27 34 / 0.92);
     --accent: #4c8dff;
-    --link: #6e7681;
+    --media-copper: #7d8590;
+    --media-fiber: #f0883e;
+    --media-dac: #58a6ff;
     --error: #f85149;
     --warning: #d29922;
     --warning-text: #d29922;

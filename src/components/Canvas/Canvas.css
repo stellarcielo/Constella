@@ -67,10 +67,27 @@
   pointer-events: none;
 }
 
-/* リンクの線 */
+/* リンクの線。色と種類は media で決まる(SPEC 7.3) */
 .react-flow__edge-path {
-  stroke: var(--link);
+  stroke: var(--media-copper);
   stroke-width: 2;
+}
+
+.react-flow__edge.media-fiber .react-flow__edge-path {
+  stroke: var(--media-fiber);
+}
+
+.react-flow__edge.media-dac .react-flow__edge-path {
+  stroke: var(--media-dac);
+}
+
+.react-flow__edge.media-wireless .react-flow__edge-path {
+  stroke-dasharray: 8 5;
+}
+
+.react-flow__edge.media-virtual .react-flow__edge-path {
+  stroke-dasharray: 2 4;
+  stroke-linecap: round;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
@@ -116,4 +133,35 @@
   stroke: var(--accent);
   stroke-width: 2;
   stroke-dasharray: 6 4;
+}
+
+/* リンクのラベル(IF 名とリンク中央のラベル) */
+.link-if-label,
+.link-label {
+  position: absolute;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--label-bg);
+  color: var(--text);
+  line-height: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.link-if-label {
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.link-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.link-if-label.selected,
+.link-label.selected {
+  border-color: var(--accent);
+  color: var(--accent);
 }
