@@ -165,3 +165,97 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* グループの枠(フェーズ3-1)。枠は線や機器より後ろに描く(表示領域の中で z-index を負にする) */
+.group-frames {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.group-frame {
+  fill: none;
+  stroke: var(--group-plain);
+  stroke-width: 1;
+}
+
+.group-frame.kind-site {
+  stroke: var(--group-site);
+  stroke-width: 2.5;
+  fill: var(--group-site-fill);
+}
+
+.group-frame.kind-rack {
+  stroke: var(--group-rack);
+  stroke-width: 1.5;
+  fill: var(--group-rack-fill);
+}
+
+.group-frame.kind-vlan {
+  stroke: var(--group-vlan);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 5;
+  fill: var(--group-vlan-fill);
+}
+
+.group-frame.kind-subnet {
+  stroke: var(--group-subnet);
+  stroke-width: 1.5;
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+  fill: var(--group-subnet-fill);
+}
+
+.group-frame.kind-as {
+  stroke: var(--group-as);
+  stroke-width: 1.5;
+  stroke-dasharray: 10 4 2 4;
+  fill: var(--group-as-fill);
+}
+
+/* 枠のラベル。線より手前に背景付きで描き、クリックでメンバーを選択する */
+.group-label {
+  position: absolute;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--label-bg);
+  color: var(--group-plain);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.group-label:hover {
+  text-decoration: underline;
+}
+
+.canvas.mode-connect .group-label {
+  cursor: default;
+  text-decoration: none;
+}
+
+.group-label.kind-site {
+  color: var(--group-site);
+}
+
+.group-label.kind-rack {
+  color: var(--group-rack);
+}
+
+.group-label.kind-vlan {
+  color: var(--group-vlan);
+}
+
+.group-label.kind-subnet {
+  color: var(--group-subnet);
+}
+
+.group-label.kind-as {
+  color: var(--group-as);
+}

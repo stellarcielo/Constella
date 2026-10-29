@@ -77,3 +77,35 @@ links:
     b: srv2:eth0
   - a: acc2:Gi0/2
     b: srv2:eth1
+
+# グループは、メンバーの機器を囲む枠として描かれる(座標は書かなくてよい)。
+# 拠点はラックのメンバーをすべて含むので、ラックの枠の外側に描かれる
+groups:
+  - id: dc1
+    kind: site
+    label: 本社 DC
+    members:
+      - fw1
+      - fw2
+      - core1
+      - core2
+      - acc1
+      - acc2
+      - srv1
+      - srv2
+  - id: rack-a
+    kind: rack
+    label: ラック A
+    members:
+      - fw1
+      - core1
+      - acc1
+      - srv1
+  - id: rack-b
+    kind: rack
+    label: ラック B
+    members:
+      - fw2
+      - core2
+      - acc2
+      - srv2

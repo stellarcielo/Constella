@@ -130,6 +130,28 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   }
 
+  // グループ(フェーズ3-1 Q6): 存在しないメンバー(SPEC 4.5 の「存在しないデバイスへの参照」)と id の重複
+  const groupIds = new Set<string>();
+  t.groups.forEach((group, index) => {
+    const target: IssueTarget = { kind: "group", index };
+    if (group.id !== "") {
+      if (groupIds.has(group.id)) {
+        add("error", "duplicate-group-id", `グループ id「${group.id}」が重複しています`, target);
+      }
+      groupIds.add(group.id);
+    }
+    for (const member of new Set(group.members)) {
+      if (!t.devices.has(member)) {
+        add(
+          "error",
+          "unknown-device",
+          `グループ「${group.id}」のメンバー「${member}」に対応するデバイスがありません`,
+          target,
+        );
+      }
+    }
+  });
+
   return issues;
 }
 

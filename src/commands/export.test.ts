@@ -7,7 +7,7 @@ function setup(choose: string | null = "/tmp/out.svg") {
   const store = createTopologyStore(testCatalog);
   store.getState().openText(specExample, "/docs/lab.constella.yaml");
   const written: { path: string; data: string | Uint8Array }[] = [];
-  const view = { showIfLabels: true, longIfNames: false };
+  const view = { showIfLabels: true, longIfNames: false, showGroups: true };
   const deps = {
     platform: {
       chooseExportPath: vi.fn(async () => choose),

@@ -353,7 +353,7 @@ ports:
 **完了条件**: YAML だけを手書き(座標なし)して開くと自動配置された図になり、GUI で動かすとコメントを残したまま YAML の layout が更新される。
 
 ### フェーズ3: ネットワーク情報の可視化
-- [ ] グループ(site / rack / vlan / subnet / as)の枠表示
+- [x] グループ(site / rack / vlan / subnet / as)の枠表示
 - [ ] IF の IP / VLAN 情報をラベルに表示
 - [ ] L1 / L2 / L3 表示切り替え
 - [ ] ユーザーモデルの追加 UI

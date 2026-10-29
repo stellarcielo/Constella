@@ -19,3 +19,4 @@ export * from "./layout";
 export * from "./linkGeometry";
 export * from "./icons";
 export * from "./render";
+export * from "./groupFrames";

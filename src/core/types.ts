@@ -184,6 +184,7 @@ export type IssueCode =
   | "unknown-key"
   | "invalid-device-id"
   | "duplicate-device-id"
+  | "duplicate-group-id"
   | "duplicate-interface"
   | "invalid-endpoint"
   | "unknown-model"

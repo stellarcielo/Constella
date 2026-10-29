@@ -62,8 +62,19 @@ describe("issueFocus", () => {
     });
   });
 
-  it("ファイル全体とグループでは何も選ばない", () => {
+  it("ファイル全体では何も選ばない", () => {
     expect(issueFocus({ kind: "document" }, t)).toBeUndefined();
-    expect(issueFocus({ kind: "group", index: 0 }, t)).toBeUndefined();
+  });
+
+  it("グループでは、存在するメンバーを選ぶ(無ければ何も選ばない)", () => {
+    const grouped = load(
+      "constella: 1\ndevices:\n  a: {}\n  b: {}\ngroups:\n  - { id: g, members: [ a, ghost, b, a ] }\n  - { id: e, members: [ ghost ] }\n",
+    );
+    expect(issueFocus({ kind: "group", index: 0 }, grouped)).toEqual({
+      selection: { devices: ["a", "b"], links: [] },
+      devices: ["a", "b"],
+    });
+    expect(issueFocus({ kind: "group", index: 1 }, grouped)).toBeUndefined();
+    expect(issueFocus({ kind: "group", index: 5 }, grouped)).toBeUndefined();
   });
 });

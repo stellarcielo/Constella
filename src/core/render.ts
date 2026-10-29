@@ -1,6 +1,7 @@
 // トポロジを SVG の文字列にする(SVG / PNG の書き出し。将来の CLI の `constella render` でも使う)。
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
+import { groupFrames, groupTitle } from "./groupFrames";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { expandIfName } from "./ifname";
 import {
@@ -15,7 +16,7 @@ import {
 } from "./linkGeometry";
 import { linkMedia } from "./media";
 import { resolveLabel, resolveRole } from "./topology";
-import type { Media, ModelCatalog, Position, Role, Topology } from "./types";
+import type { GroupKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
 
 export interface RenderOptions {
   /** layout に座標の無いデバイスの位置(キャンバスの自動配置。キー = デバイスID) */
@@ -24,6 +25,8 @@ export interface RenderOptions {
   showIfLabels?: boolean;
   /** IF 名を長い形で描くか(ツールバーの「長い名前」) */
   longIfNames?: boolean;
+  /** グループの枠を描くか(ツールバーの「グループ」) */
+  showGroups?: boolean;
   /** 図のまわりの余白 */
   padding?: number;
 }
@@ -64,6 +67,31 @@ const MEDIA_STYLES: Record<Media, string> = {
   dac: 'stroke="#3d7be0"',
   wireless: 'stroke="#8c959f" stroke-dasharray="8 5"',
   virtual: 'stroke="#8c959f" stroke-dasharray="2 4" stroke-linecap="round"',
+};
+
+/**
+ * グループの種類ごとの枠の見た目(Canvas.css と合わせる。フェーズ3-1 Q2)。
+ * 拠点は太い実線、ラックは実線、VLAN は破線、サブネットは点線、AS は一点鎖線、種類なしは細い実線
+ */
+const GROUP_STYLES: Record<GroupKind | "none", string> = {
+  site: 'stroke="#57606a" stroke-width="2.5" fill="#f6f8fa"',
+  rack: 'stroke="#8c959f" stroke-width="1.5" fill="#eef1f4" fill-opacity="0.7"',
+  vlan: 'stroke="#8250df" stroke-width="1.5" stroke-dasharray="8 5" fill="#8250df" fill-opacity="0.05"',
+  subnet:
+    'stroke="#1a7f37" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round" fill="#1a7f37" fill-opacity="0.05"',
+  as: 'stroke="#bc4c00" stroke-width="1.5" stroke-dasharray="10 4 2 4" fill="#bc4c00" fill-opacity="0.05"',
+  custom: 'stroke="#8c959f" stroke-width="1" fill="none"',
+  none: 'stroke="#8c959f" stroke-width="1" fill="none"',
+};
+
+const GROUP_TEXT_COLORS: Record<GroupKind | "none", string> = {
+  site: "#424a53",
+  rack: "#57606a",
+  vlan: "#8250df",
+  subnet: "#1a7f37",
+  as: "#bc4c00",
+  custom: "#57606a",
+  none: "#57606a",
 };
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif';
@@ -128,7 +156,7 @@ function label(
   at: Point,
   text: string,
   size: { width: number; height: number },
-  style: { font: string; fontSize: number; color: string; border: boolean },
+  style: { font: string; fontSize: number; color: string; border: boolean; bold?: boolean },
   bounds: Bounds,
 ): string {
   const x = at.x - size.width / 2;
@@ -139,8 +167,8 @@ function label(
     `<rect x="${n(x)}" y="${n(y)}" width="${n(size.width)}" height="${n(size.height)}" rx="3" ` +
     `fill="${THEME.labelBg}" fill-opacity="${THEME.labelBgOpacity}"${border}/>` +
     `<text x="${n(at.x)}" y="${n(at.y + style.fontSize * 0.35)}" text-anchor="middle" ` +
-    `font-family="${escapeXml(style.font)}" font-size="${style.fontSize}" fill="${style.color}">` +
-    `${escapeXml(text)}</text>`
+    `font-family="${escapeXml(style.font)}" font-size="${style.fontSize}"` +
+    `${style.bold ? ' font-weight="600"' : ""} fill="${style.color}">${escapeXml(text)}</text>`
   );
 }
 
@@ -160,6 +188,31 @@ export function renderSvg(
   for (const id of t.devices.keys()) {
     const pos = t.layout.get(id) ?? options.fallbackPositions?.get(id);
     if (pos) positions.set(id, pos);
+  }
+
+  // グループの枠(いちばん下。外側の枠から描く)。ラベルは背景を付けて線より手前に描く(キャンバスと同じ)
+  const frames: string[] = [];
+  const frameLabels: string[] = [];
+  if (options.showGroups ?? true) {
+    for (const frame of groupFrames(t, (id) => positions.get(id))) {
+      const kind = frame.group.kind ?? "none";
+      bounds.add(frame.x, frame.y, frame.x + frame.width, frame.y + frame.height);
+      frames.push(
+        `<rect x="${n(frame.x)}" y="${n(frame.y)}" width="${n(frame.width)}" height="${n(frame.height)}" ` +
+          `rx="10" ${GROUP_STYLES[kind]}/>`,
+      );
+      const title = groupTitle(frame.group);
+      const size = { width: nameWidth(title), height: 16 };
+      frameLabels.push(
+        label(
+          { x: frame.x + 8 + size.width / 2, y: frame.y + 4 + size.height / 2 },
+          title,
+          size,
+          { font: FONT, fontSize: 11, color: GROUP_TEXT_COLORS[kind], border: false, bold: true },
+          bounds,
+        ),
+      );
+    }
   }
 
   // リンク(線は下、ラベルはデバイスより上に描く。キャンバスと同じ重なり)
@@ -254,7 +307,9 @@ export function renderSvg(
     `viewBox="${x} ${y} ${width} ${height}">` +
     title +
     `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${THEME.background}"/>` +
+    `<g>${frames.join("")}</g>` +
     `<g>${lines.join("")}</g>` +
+    `<g>${frameLabels.join("")}</g>` +
     `<g>${nodes.join("")}</g>` +
     `<g>${linkLabels.join("")}</g>` +
     `</svg>\n`;

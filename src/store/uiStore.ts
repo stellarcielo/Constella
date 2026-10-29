@@ -29,9 +29,16 @@ export interface ViewOptions {
   longIfNames: boolean;
   /** YAML エディタを表示する */
   showYaml: boolean;
+  /** グループの枠を表示する(フェーズ3-1 Q5) */
+  showGroups: boolean;
 }
 
-export const DEFAULT_VIEW: ViewOptions = { showIfLabels: true, longIfNames: false, showYaml: true };
+export const DEFAULT_VIEW: ViewOptions = {
+  showIfLabels: true,
+  longIfNames: false,
+  showYaml: true,
+  showGroups: true,
+};
 const VIEW_STORAGE_KEY = "constella.view";
 
 export interface UiState {
@@ -158,11 +165,12 @@ function loadView(storage?: ViewStorage): ViewOptions {
   try {
     const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
     if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
-    const { showIfLabels, longIfNames, showYaml } = saved as Record<string, unknown>;
+    const { showIfLabels, longIfNames, showYaml, showGroups } = saved as Record<string, unknown>;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
       showYaml: typeof showYaml === "boolean" ? showYaml : DEFAULT_VIEW.showYaml,
+      showGroups: typeof showGroups === "boolean" ? showGroups : DEFAULT_VIEW.showGroups,
     };
   } catch {
     return DEFAULT_VIEW;

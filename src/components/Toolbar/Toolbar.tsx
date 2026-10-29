@@ -73,6 +73,15 @@ export function Toolbar() {
         <button
           type="button"
           className="toolbar-button"
+          aria-pressed={view.showGroups}
+          title="グループ(拠点・ラック・VLAN など)の枠を表示する"
+          onClick={() => uiStore.getState().setView({ showGroups: !view.showGroups })}
+        >
+          グループ
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
           aria-pressed={view.showIfLabels}
           title="リンク両端の IF 名を表示する"
           onClick={() => uiStore.getState().setView({ showIfLabels: !view.showIfLabels })}

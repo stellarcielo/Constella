@@ -118,4 +118,25 @@ links:
     const { issues } = check("constella: 1\nlayout:\n  ghost: { x: 0, y: 0 }\n");
     expect(summary(issues)).toEqual([["warning", "unknown-layout-device"]]);
   });
+
+  it("グループのメンバーに存在しないデバイスがあればエラー(位置はそのグループ)", () => {
+    const { issues, text } = check(
+      `${devices}groups:\n  - { id: rack1, kind: rack, members: [ rt1, ghost, ghost ] }\n`,
+    );
+    expect(summary(issues)).toEqual([["error", "unknown-device"]]);
+    expect(issues[0].target).toEqual({ kind: "group", index: 0 });
+    expect(issues[0].message).toContain("ghost");
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe(
+      "{ id: rack1, kind: rack, members: [ rt1, ghost, ghost ] }",
+    );
+  });
+
+  it("グループ id の重複はエラー(2 つ目に出す)", () => {
+    const { issues } = check(
+      `${devices}groups:\n  - { id: g, members: [ rt1 ] }\n  - { id: g, members: [ sw1 ] }\n`,
+    );
+    expect(summary(issues)).toEqual([["error", "duplicate-group-id"]]);
+    expect(issues[0].target).toEqual({ kind: "group", index: 1 });
+  });
 });

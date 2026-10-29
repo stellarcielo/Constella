@@ -80,6 +80,30 @@ describe("renderSvg", () => {
     expect(withFallback.match(/<path d="M [^"]*" fill="none"/g)).toHaveLength(3);
   });
 
+  it("グループの枠を、種類ごとの見た目でいちばん下に描き、表示設定に従う", () => {
+    const t = load(
+      `${twoRouters}groups:\n  - { id: dc, kind: site, label: 本社 & DC, members: [ r1, r2 ] }\n  - { id: v10, kind: vlan, members: [ r1 ] }\n`,
+    );
+    const { svg } = renderSvg(t, testCatalog);
+    expect(svg).toContain(">拠点: 本社 &amp; DC</text>");
+    expect(svg).toContain(">VLAN: v10</text>");
+    expect(svg).toContain('stroke-dasharray="8 5" fill="#8250df"');
+    // 枠はリンクの線より下、枠のラベルは線より上・機器より下に描く
+    const frameRect = svg.indexOf('stroke="#57606a" stroke-width="2.5"');
+    const firstLine = svg.indexOf('fill="none" stroke-width="2"');
+    expect(frameRect).toBeLessThan(firstLine);
+    expect(firstLine).toBeLessThan(svg.indexOf("拠点: 本社"));
+    expect(svg.indexOf("拠点: 本社")).toBeLessThan(svg.indexOf(">Edge &lt;1&gt;</text>"));
+    // 外側の枠(拠点)が先
+    expect(svg.indexOf("拠点: 本社")).toBeLessThan(svg.indexOf("VLAN: v10"));
+    const hidden = renderSvg(t, testCatalog, { showGroups: false }).svg;
+    expect(hidden).not.toContain("拠点: 本社");
+    // 枠の分だけ図が大きくなる
+    expect(renderSvg(t, testCatalog).height).toBeGreaterThan(
+      renderSvg(t, testCatalog, { showGroups: false }).height,
+    );
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

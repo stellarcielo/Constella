@@ -36,7 +36,8 @@ function describeLink(link: Link, show: (iface: string) => string): string {
 /**
  * 問題をクリックしたときに選ぶものと、表示を合わせるデバイス。
  * 図に描けないリンク(端が不正など)も選ぶ(インスペクタで内容を見たり削除したりできる)。
- * ファイル全体やグループ(表示はフェーズ3)の問題では何も選ばない。
+ * グループの問題では、そのグループのメンバー(存在するもの)を選ぶ(枠のラベルのクリックと同じ)。
+ * ファイル全体の問題では何も選ばない。
  */
 export function issueFocus(
   target: IssueTarget,
@@ -58,8 +59,15 @@ export function issueFocus(
       );
       return { selection: { devices: [], links: [link.id] }, devices: [...new Set(ends)] };
     }
+    case "group": {
+      const members = [...new Set(t.groups[target.index]?.members ?? [])].filter((id) =>
+        t.devices.has(id),
+      );
+      return members.length > 0
+        ? { selection: { devices: members, links: [] }, devices: members }
+        : undefined;
+    }
     case "document":
-    case "group":
       return undefined;
   }
 }
