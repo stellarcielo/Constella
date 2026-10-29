@@ -34,6 +34,7 @@ describe("modelFormFromText / modelFormToText", () => {
       name: "Catalyst 2960-24TT-L",
       role: "l2switch",
       flexible: false,
+      guest: "",
       ports: [
         { name: "FastEthernet0/{1-24}", type: "rj45", speed: "100M" },
         { name: "GigabitEthernet0/{1-2}", type: "rj45", speed: "1G" },
@@ -66,6 +67,15 @@ describe("modelFormFromText / modelFormToText", () => {
       }),
     );
     expect(text).toBe('id: edge-10\nvendor: "A: B"\nname: "2960"\nrole: router\nflexible: true\n');
+  });
+
+  it("guest を読み書きする(フェーズ4-1)", () => {
+    const text =
+      'id: my-vm\nrole: firewall\nflexible: true\nguest: vm\nports:\n  - name: "net{0-1}"\n    type: virtual\n';
+    const f = modelFormFromText(text);
+    expect(f?.guest).toBe("vm");
+    expect(f && modelFormToText(f)).toBe(text);
+    expect(modelFormFromText("id: a\nrole: server\nguest: lxc\n")?.guest).toBe("");
   });
 
   it("YAML でなければ undefined", () => {

@@ -145,6 +145,39 @@ layout:
     expect(noNames).toContain(">192.0.2.1/30</text>");
   });
 
+  it("ゲストに VM / CT の印を付け、ホストの枠を描く。「ゲスト」を隠すと、どちらも描かない(フェーズ4-1)", () => {
+    const t = load(`constella: 1
+devices:
+  sw1: { model: generic-l2switch-24 }
+  pve1: { model: generic-hypervisor-4 }
+  web01: { model: generic-vm, host: pve1 }
+  db01: { model: generic-container, host: pve1 }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+  - { a: web01:net0, b: sw1:Gi0/2 }
+layout:
+  sw1: { x: 0, y: 0 }
+  pve1: { x: 0, y: 200 }
+  web01: { x: -100, y: 400 }
+  db01: { x: 100, y: 400 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    expect(svg).toContain('font-weight="700" fill="#646b75">VM</text>');
+    expect(svg).toContain('font-weight="700" fill="#646b75">CT</text>');
+    expect(svg).toContain(">VM 1・CT 1</text>");
+    expect(svg).toContain('stroke="#6b7f00" stroke-width="1.5" fill="#6b7f00"');
+    expect(svg.match(/<path d="M [^"]*" fill="none" stroke-width="2"/g)).toHaveLength(2);
+    // ホストの枠は「グループ」を隠しても描く
+    expect(renderSvg(t, testCatalog, { showGroups: false }).svg).toContain(">VM 1・CT 1</text>");
+
+    const hidden = renderSvg(t, testCatalog, { showGuests: false }).svg;
+    expect(hidden).not.toContain(">web01</text>");
+    expect(hidden).not.toContain(">VM 1・CT 1</text>");
+    expect(hidden).toContain(">pve1</text>");
+    // ゲストにつながるリンクも描かない
+    expect(hidden.match(/<path d="M [^"]*" fill="none" stroke-width="2"/g)).toHaveLength(1);
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

@@ -1,6 +1,7 @@
 // トポロジの編集操作(SPEC 7章)。
 // 引数のトポロジを直接書き換える。ストアでは Immer の produce の中で呼ぶ。
 
+import { resolveGuest } from "./hosts";
 import { ifNameKey } from "./ifname";
 import { canonicalIfName } from "./ports";
 import { createLinkId, createUid, DEVICE_ID_PATTERN, findModel, resolveRole } from "./topology";
@@ -8,6 +9,7 @@ import type {
   Device,
   Endpoint,
   Extra,
+  GuestKind,
   InterfaceInfo,
   Link,
   Meta,
@@ -24,15 +26,19 @@ export const ROLE_ID_PREFIX: Record<Role, string> = {
   l3switch: "l3sw",
   firewall: "fw",
   server: "srv",
+  hypervisor: "hv",
   pc: "pc",
   ap: "ap",
   cloud: "cloud",
   generic: "dev",
 };
 
-/** プレフィックス + 今ある最大の番号 + 1(削除した ID を使い回さない) */
-export function nextDeviceId(t: Topology, role: Role): string {
-  const prefix = ROLE_ID_PREFIX[role];
+/** ゲストの ID のプレフィックス。ゲストは role ではなく種類で採番する(SPEC 7.1) */
+export const GUEST_ID_PREFIX: Record<GuestKind, string> = { vm: "vm", container: "ct" };
+
+/** プレフィックス + 今ある最大の番号 + 1(削除した ID を使い回さない)。ゲストなら guest を渡す */
+export function nextDeviceId(t: Topology, role: Role, guest?: GuestKind): string {
+  const prefix = guest === undefined ? ROLE_ID_PREFIX[role] : GUEST_ID_PREFIX[guest];
   const pattern = new RegExp(`^${prefix}(\\d+)$`);
   let max = 0;
   for (const id of t.devices.keys()) {
@@ -51,6 +57,8 @@ export interface NewDevice {
   model?: string;
   /** model が無いとき、またはモデルの role を上書きするとき */
   role?: Role;
+  /** ゲストにするとき、動いているホストのデバイスID */
+  host?: string;
   position: Position;
 }
 
@@ -60,7 +68,8 @@ export function addDevice(t: Topology, spec: NewDevice, catalog: ModelCatalog): 
   if (spec.model !== undefined) device.model = spec.model;
   const modelRole = findModel(device, catalog)?.role;
   if (spec.role !== undefined && spec.role !== modelRole) device.role = spec.role;
-  device.id = nextDeviceId(t, spec.role ?? modelRole ?? "generic");
+  if (spec.host !== undefined) device.host = spec.host;
+  device.id = nextDeviceId(t, spec.role ?? modelRole ?? "generic", resolveGuest(device, catalog));
   t.devices.set(device.id, device);
   t.layout.set(device.id, roundPosition(spec.position));
   return device.id;
@@ -73,7 +82,10 @@ export function moveDevices(t: Topology, positions: Iterable<[string, Position]>
   }
 }
 
-/** デバイスを削除する。接続していたリンク、layout、グループのメンバーからも取り除く */
+/**
+ * デバイスを削除する。接続していたリンク、layout、グループのメンバーからも取り除く。
+ * ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
+ */
 export function removeDevices(t: Topology, ids: Iterable<string>): void {
   const removed = new Set(ids);
   if (removed.size === 0) return;
@@ -88,6 +100,9 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
     if (group.members.some((m) => removed.has(m))) {
       group.members = group.members.filter((m) => !removed.has(m));
     }
+  }
+  for (const device of t.devices.values()) {
+    if (device.host !== undefined && removed.has(device.host)) delete device.host;
   }
 }
 
@@ -124,7 +139,7 @@ export function checkDeviceId(t: Topology, id: string, currentId?: string): stri
   return undefined;
 }
 
-/** デバイスID を変える。リンク・layout・グループの参照もすべて書き換える */
+/** デバイスID を変える。リンク・layout・グループ・ゲストの host の参照もすべて書き換える */
 export function renameDevice(t: Topology, oldId: string, newId: string): void {
   if (oldId === newId) return;
   const device = t.devices.get(oldId);
@@ -145,6 +160,9 @@ export function renameDevice(t: Topology, oldId: string, newId: string): void {
     if (group.members.includes(oldId)) {
       group.members = group.members.map((m) => (m === oldId ? newId : m));
     }
+  }
+  for (const other of t.devices.values()) {
+    if (other.host === oldId) other.host = newId;
   }
 }
 
@@ -170,6 +188,31 @@ export function setDeviceRole(
   if (!device) return;
   const modelRole = findModel(device, catalog)?.role;
   applyChanges(device, { role: role === modelRole ? undefined : role });
+}
+
+/** ホストを設定する(SPEC 4.6)。undefined か空文字なら外す */
+export function setDeviceHost(t: Topology, id: string, host: string | undefined): void {
+  const device = t.devices.get(id);
+  if (device) applyChanges(device, { host });
+}
+
+/** ゲストの種類を設定する。undefined、またはモデルと同じ種類なら消す(モデルに合わせる) */
+export function setDeviceGuest(
+  t: Topology,
+  id: string,
+  guest: GuestKind | undefined,
+  catalog: ModelCatalog,
+): void {
+  const device = t.devices.get(id);
+  if (!device) return;
+  const modelGuest = findModel(device, catalog)?.guest;
+  applyChanges(device, { guest: guest === modelGuest ? undefined : guest });
+}
+
+/** VMID を設定する。undefined なら消す */
+export function setDeviceVmid(t: Topology, id: string, vmid: number | undefined): void {
+  const device = t.devices.get(id);
+  if (device) applyChanges(device, { vmid });
 }
 
 /** モデルを変えたときに使えなくなるもの */

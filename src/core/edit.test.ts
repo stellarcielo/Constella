@@ -10,8 +10,11 @@ import {
   removeDevices,
   removeLinks,
   renameDevice,
+  setDeviceGuest,
+  setDeviceHost,
   setDeviceLabel,
   setDeviceRole,
+  setDeviceVmid,
   updateInterface,
   updateLink,
   updateMeta,
@@ -364,5 +367,75 @@ describe("updateLink / updateMeta", () => {
     const t = example();
     updateMeta(t, { title: "新しいタイトル", description: undefined });
     expect(t.meta).toEqual({ title: "新しいタイトル", extra: {} });
+  });
+});
+
+describe("ゲストとホスト(SPEC 4.6・7.1)", () => {
+  const guests = () => {
+    const result = parseTopology(
+      `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  vm1: { model: generic-vm, host: pve1, vmid: 100 }
+  ct1: { model: generic-container, host: pve1 }
+  sw1: { model: generic-l2switch-24 }
+`,
+      { catalog: testCatalog },
+    );
+    if (!result.ok) throw new Error();
+    return result.topology;
+  };
+
+  it("ハイパーバイザは hv、ゲストは role ではなく種類で採番する", () => {
+    const t = createEmptyTopology();
+    expect(nextDeviceId(t, "hypervisor")).toBe("hv1");
+    expect(nextDeviceId(t, "firewall", "vm")).toBe("vm1");
+    expect(nextDeviceId(t, "server", "container")).toBe("ct1");
+  });
+
+  it("addDevice: モデルの guest で採番し、host を書く", () => {
+    const t = guests();
+    const at = { x: 0, y: 0 };
+    expect(addDevice(t, { model: "generic-hypervisor-4", position: at }, testCatalog)).toBe("hv1");
+    const id = addDevice(t, { model: "generic-vm", host: "pve1", position: at }, testCatalog);
+    expect(id).toBe("vm2");
+    expect(t.devices.get(id)?.host).toBe("pve1");
+    // host だけでもゲスト(VM)になる
+    expect(
+      addDevice(t, { model: "generic-server-2", host: "pve1", position: at }, testCatalog),
+    ).toBe("vm3");
+  });
+
+  it("ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)", () => {
+    const t = guests();
+    removeDevices(t, ["pve1"]);
+    expect([...t.devices.keys()]).toEqual(["vm1", "ct1", "sw1"]);
+    expect(t.devices.get("vm1")?.host).toBeUndefined();
+    expect(t.devices.get("vm1")?.vmid).toBe(100);
+  });
+
+  it("ホストの ID を変えると、ゲストの host も書き換える", () => {
+    const t = guests();
+    renameDevice(t, "pve1", "pve-a");
+    expect(t.devices.get("vm1")?.host).toBe("pve-a");
+    expect(t.devices.get("ct1")?.host).toBe("pve-a");
+  });
+
+  it("host・guest・vmid の設定。モデルと同じ guest は書かない", () => {
+    const t = guests();
+    setDeviceHost(t, "sw1", "pve1");
+    expect(t.devices.get("sw1")?.host).toBe("pve1");
+    setDeviceHost(t, "sw1", undefined);
+    expect(t.devices.get("sw1")).not.toHaveProperty("host");
+
+    setDeviceGuest(t, "ct1", "vm", testCatalog);
+    expect(t.devices.get("ct1")?.guest).toBe("vm");
+    setDeviceGuest(t, "ct1", "container", testCatalog);
+    expect(t.devices.get("ct1")).not.toHaveProperty("guest");
+
+    setDeviceVmid(t, "ct1", 200);
+    expect(t.devices.get("ct1")?.vmid).toBe(200);
+    setDeviceVmid(t, "ct1", undefined);
+    expect(t.devices.get("ct1")).not.toHaveProperty("vmid");
   });
 });

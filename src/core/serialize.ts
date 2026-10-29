@@ -199,7 +199,15 @@ class Writer {
   }
 
   private syncDevice(map: YAMLMap, device: Device): void {
+    const before = new Set(map.items.map((pair) => keyText(pair.key)));
     this.syncFields(map, deviceFields(device), device.extra);
+    // 新しく書いた項目(GUI で設定した host など)は、interfaces より前に置く
+    const at = map.items.findIndex((pair) => keyText(pair.key) === "interfaces");
+    const added = map.items.filter((pair, i) => i > at && !before.has(keyText(pair.key)));
+    if (at >= 0 && added.length > 0) {
+      map.items = map.items.filter((pair) => !added.includes(pair));
+      map.items.splice(at, 0, ...added);
+    }
     const node = map.get("interfaces", true);
     if (device.interfaces.size === 0) {
       if (isMap(node) && !("interfaces" in device.extra)) map.delete("interfaces");
@@ -423,6 +431,9 @@ function deviceFields(device: Device): Fields {
     ["model", device.model],
     ["role", device.role],
     ["label", device.label],
+    ["host", device.host],
+    ["guest", device.guest],
+    ["vmid", device.vmid],
   ];
 }
 

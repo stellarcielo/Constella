@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeLayout, placeMissing } from "./layout";
+import { DEVICE_BOX, groupFrames } from "./groupFrames";
+import { computeLayout, guestPositions, placeMissing } from "./layout";
 import { parseTopology } from "./parse";
 import { testCatalog } from "./testFixtures";
 import type { Topology } from "./types";
@@ -136,17 +137,118 @@ links:
 describe("placeMissing", () => {
   it("座標の無いデバイスを、既にある座標の下に置く", async () => {
     const t = load(handWritten);
-    const pos = await placeMissing(
-      t,
-      testCatalog,
-      ["srv1", "sw1"],
-      [
-        { x: 100, y: 0 },
-        { x: 300, y: 200 },
-      ],
-    );
+    const placed = new Map([
+      ["rt1", { x: 100, y: 0 }],
+      ["isp", { x: 300, y: 200 }],
+    ]);
+    const pos = await placeMissing(t, testCatalog, ["srv1", "sw1"], (id) => placed.get(id));
     expect(Math.min(...[...pos.values()].map((p) => p.x))).toBe(100);
     expect(Math.min(...[...pos.values()].map((p) => p.y))).toBeGreaterThan(200);
     expect((pos.get("sw1")?.y ?? 0) < (pos.get("srv1")?.y ?? 0)).toBe(true);
+  });
+});
+
+describe("ゲストとホスト(SPEC 9章・4.6)", () => {
+  const lab = `constella: 1
+devices:
+  rt1: { model: generic-router-4 }
+  sw1: { model: generic-l2switch-24 }
+  fw01: { model: generic-vm, role: firewall, host: pve1 }
+  pve1: { model: generic-hypervisor-4 }
+  web01: { model: generic-vm, host: pve1 }
+  db01: { model: generic-container, host: pve1 }
+  srv1: { model: generic-server-2 }
+  nested: { model: generic-vm, host: pve2 }
+  pve2: { model: generic-hypervisor-4 }
+  inner: { model: generic-vm, host: nested }
+links:
+  - { a: rt1:Gi0/1, b: sw1:Gi0/24 }
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+  - { a: pve2:eno1, b: sw1:Gi0/2 }
+  - { a: srv1:eth0, b: sw1:Gi0/3 }
+`;
+
+  it("ゲストはロールに関係なく、ホストの下の段に、YAML の順で並べる", async () => {
+    const pos = await computeLayout(load(lab), testCatalog);
+    const p = (id: string) => pos.get(id) ?? { x: NaN, y: NaN };
+    expect(pos.size).toBe(10);
+    for (const guest of ["fw01", "web01", "db01"]) expect(p(guest).y).toBeGreaterThan(p("pve1").y);
+    expect(p("fw01").y).toBe(p("web01").y);
+    expect(p("fw01").x).toBeLessThan(p("web01").x);
+    expect(p("web01").x).toBeLessThan(p("db01").x);
+    // ホストは server と同じ段
+    expect(p("pve1").y).toBe(p("srv1").y);
+    // 入れ子のゲストは、さらに下の段
+    expect(p("inner").y).toBeGreaterThan(p("nested").y);
+  });
+
+  it("ホストの枠が、ほかの機器と重ならない", async () => {
+    const t = load(lab);
+    const pos = await computeLayout(t, testCatalog);
+    const frames = groupFrames(t, (id) => pos.get(id));
+    expect(frames.map((f) => (f.type === "host" ? f.host : ""))).toEqual([
+      "pve2",
+      "pve1",
+      "nested",
+    ]);
+    for (const frame of frames) {
+      for (const [id, p] of pos) {
+        if (frame.members.includes(id)) continue;
+        const apart =
+          p.x + DEVICE_BOX.width <= frame.x ||
+          p.x >= frame.x + frame.width ||
+          p.y + DEVICE_BOX.height <= frame.y ||
+          p.y >= frame.y + frame.height;
+        expect(apart, `${id} が ${frame.type === "host" ? frame.host : ""} の枠に重なる`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("同じ入力なら同じ結果になる", async () => {
+    const t = load(lab);
+    expect([...(await computeLayout(t, testCatalog))]).toEqual([
+      ...(await computeLayout(t, testCatalog)),
+    ]);
+  });
+
+  it("ホストを並べないときは、ゲストも機器 1 台として並べる", async () => {
+    const pos = await computeLayout(load(lab), testCatalog, { devices: ["fw01", "rt1"] });
+    expect(pos.get("fw01")?.y).toBe(pos.get("rt1")?.y);
+  });
+
+  it("guestPositions: ゲストがいなければホストを中心に下の段へ、いれば右に続ける", () => {
+    const host = { x: 400, y: 100 };
+    expect(guestPositions(host, [], 3)).toEqual([
+      { x: 244, y: 276 },
+      { x: 400, y: 276 },
+      { x: 556, y: 276 },
+    ]);
+    const placed = [
+      { x: 300, y: 276 },
+      { x: 456, y: 276 },
+      { x: 300, y: 452 },
+    ];
+    expect(guestPositions(host, placed, 2)).toEqual([
+      { x: 456, y: 452 },
+      { x: 612, y: 452 },
+    ]);
+  });
+
+  it("placeMissing: ホストに座標があるゲストは、ホストの下に並べる(フェーズ4-1 Q1)", async () => {
+    const t = load(lab);
+    const placed = new Map([
+      ["rt1", { x: 0, y: 0 }],
+      ["sw1", { x: 0, y: 200 }],
+      ["pve1", { x: 400, y: 400 }],
+      ["web01", { x: 400, y: 600 }],
+    ]);
+    const missing = ["fw01", "db01", "srv1"];
+    const pos = await placeMissing(t, testCatalog, missing, (id) => placed.get(id));
+    expect(pos.get("fw01")).toEqual({ x: 556, y: 600 });
+    expect(pos.get("db01")).toEqual({ x: 712, y: 600 });
+    // ゲストでない機器は、今までどおり既にある座標の下に置く
+    expect(pos.get("srv1")?.y).toBeGreaterThan(600);
   });
 });

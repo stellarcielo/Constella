@@ -23,6 +23,7 @@ import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   type Endpoint,
   findModel,
+  guestDropTarget,
   type Issue,
   type IssueTarget,
   interfaceInfo,
@@ -30,6 +31,7 @@ import {
   type ModelCatalog,
   parallelSlots,
   type Position,
+  resolveGuest,
   resolveLabel,
   resolveRole,
   type Severity,
@@ -87,6 +89,7 @@ function CanvasInner() {
   const autoPositions = useTopology((s) => s.autoPositions);
   const placing = useTopology((s) => s.placing);
   const mode = useUi((s) => s.mode);
+  const showGuests = useUi((s) => s.view.showGuests);
   const { screenToFlowPosition, getNodes, fitView, setViewport, getZoom } = useReactFlow();
 
   // 表示位置の要求: ファイルを開いたとき・新規のとき(_viewport が無ければ全体が見えるように)と、
@@ -135,12 +138,30 @@ function CanvasInner() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [getNodes]);
 
+  // ゲストを隠したら、選択からも外す(見えないゲストを delete キーで消さないように)
+  useEffect(() => {
+    if (showGuests) return;
+    const { selection, topology, catalog } = topologyStore.getState();
+    const isGuest = (id: string | undefined) => {
+      const device = id === undefined ? undefined : topology.devices.get(id);
+      return device !== undefined && resolveGuest(device, catalog) !== undefined;
+    };
+    const devices = selection.devices.filter((id) => !isGuest(id));
+    const links = selection.links.filter((id) => {
+      const link = topology.links.find((l) => l.id === id);
+      return !isGuest(link?.a?.device) && !isGuest(link?.b?.device);
+    });
+    if (devices.length !== selection.devices.length || links.length !== selection.links.length) {
+      topologyStore.getState().setSelection({ devices, links });
+    }
+  }, [showGuests]);
+
   const derived = useMemo(
     () => ({
-      nodes: buildNodes(topology, autoPositions, catalog, issues),
+      nodes: buildNodes(topology, autoPositions, catalog, issues, showGuests),
       edges: buildEdges(topology, catalog, issues),
     }),
-    [topology, autoPositions, catalog, issues],
+    [topology, autoPositions, catalog, issues, showGuests],
   );
 
   // ストア側が変わったら作り直す。React Flow が測ったノードの大きさは引き継ぐ
@@ -208,13 +229,19 @@ function CanvasInner() {
       const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       // カーソルの位置がアイコンの中心になるように置く
       const store = topologyStore.getState();
-      const id = store.addDevice(modelId, {
-        x: p.x - DEVICE_NODE_WIDTH / 2,
-        y: p.y - DEVICE_ICON_BOX / 2,
-      });
+      let position: Position = { x: p.x - DEVICE_NODE_WIDTH / 2, y: p.y - DEVICE_ICON_BOX / 2 };
+      // VM・コンテナは、ホストの上か枠の中に落とせば、そのホストのゲストにする(フェーズ4-1 Q2)
+      let host: string | undefined;
+      if (store.catalog.get(modelId)?.guest !== undefined) {
+        const visible = new Map(getNodes().flatMap((n) => (n.hidden ? [] : [[n.id, n.position]])));
+        const drop = guestDropTarget(store.topology, store.catalog, (id) => visible.get(id), p);
+        host = drop?.host;
+        if (drop?.position) position = drop.position;
+      }
+      const id = store.addDevice(modelId, position, host);
       if (uiStore.getState().mode === "select") store.setSelection({ devices: [id], links: [] });
     },
-    [screenToFlowPosition],
+    [screenToFlowPosition, getNodes],
   );
 
   const selecting = mode === "select";
@@ -273,6 +300,7 @@ function buildNodes(
   autoPositions: ReadonlyMap<string, Position>,
   catalog: ModelCatalog,
   issues: Issue[],
+  showGuests: boolean,
 ): DeviceNodeType[] {
   const problems = worstProblems(issues, (target) =>
     target.kind === "device" ? target.id : target.kind === "interface" ? target.device : undefined,
@@ -280,15 +308,20 @@ function buildNodes(
   return [...t.devices.values()].map((device) => {
     const model = findModel(device, catalog);
     const position = t.layout.get(device.id) ?? autoPositions.get(device.uid);
+    const guest = resolveGuest(device, catalog);
     return {
       id: device.id,
       type: "device",
       position: position ?? { x: 0, y: 0 },
-      hidden: !position,
+      // ゲストを表示しないときは隠す(つながるリンクも React Flow が隠す。SPEC 7.3)
+      hidden: !position || (!showGuests && guest !== undefined),
       data: {
         label: resolveLabel(device),
         role: resolveRole(device, catalog),
         modelName: model?.name ?? device.model,
+        guest,
+        host: device.host,
+        vmid: device.vmid,
         problem: problems.get(device.id),
       },
     };

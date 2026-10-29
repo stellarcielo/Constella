@@ -1,15 +1,15 @@
-// モデル一覧。検索欄と role ごとのグループ。項目をキャンバスへドラッグして配置する。
+// モデル一覧。検索欄と role ごとのグループ(ゲストのモデルは「ゲスト」にまとめる)。項目をキャンバスへドラッグして配置する。
 // 「＋」でユーザーモデルを追加し、各項目の「複製」「編集」で既存のモデルを元に作る・直す(フェーズ3-4)。
 
 import { useMemo, useState } from "react";
 import { copyModelId, type DeviceModel, emptyModelForm, modelFormFromText } from "../../core";
 import { RoleIcon } from "../../icons/RoleIcon";
-import { ROLE_LABELS, ROLE_ORDER } from "../../icons/roles";
 import { builtinModelText } from "../../library";
 import { useTopology, useUserModels } from "../../store";
 import type { UserModelFile } from "../../store/userModels";
 import { askDialog } from "../Dialog/dialogs";
 import { MODEL_DRAG_TYPE } from "../dnd";
+import { modelSections } from "../modelSections";
 import { openModelEditor } from "../ModelEditor/editorStore";
 import "./Palette.css";
 
@@ -30,12 +30,7 @@ export function Palette() {
     const q = query.trim().toLowerCase();
     const matches = (m: DeviceModel) =>
       q === "" || [m.id, m.name, m.vendor].some((v) => v?.toLowerCase().includes(q));
-    return ROLE_ORDER.map((role) => ({
-      role,
-      models: [...catalog.values()]
-        .filter((m) => m.role === role && matches(m))
-        .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id)),
-    })).filter((g) => g.models.length > 0);
+    return modelSections([...catalog.values()].filter(matches));
   }, [catalog, query]);
 
   /** 既存のモデル(組み込み・ユーザー)を元に、新しいモデルを作る(フェーズ3-4 Q3) */
@@ -90,9 +85,9 @@ export function Palette() {
         </button>
       </div>
       <div className="palette-list">
-        {groups.map(({ role, models }) => (
-          <section key={role}>
-            <h3 className="palette-group">{ROLE_LABELS[role]}</h3>
+        {groups.map(({ key, label, models }) => (
+          <section key={key}>
+            <h3 className="palette-group">{label}</h3>
             {models.map((m) => {
               const userFile = userFiles.get(m.id);
               return (

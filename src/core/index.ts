@@ -4,6 +4,7 @@
 export * from "./types";
 export * from "./ifname";
 export * from "./topology";
+export * from "./hosts";
 export { parseTopology, type ParseOptions, type ParseResult, type YamlBase } from "./parse";
 export { rebaseOnText, serializeTopology, type SerializeResult } from "./serialize";
 export { locateTarget, validateTopology } from "./validate";
@@ -20,5 +21,6 @@ export * from "./linkGeometry";
 export * from "./icons";
 export * from "./render";
 export * from "./groupFrames";
+export * from "./guestDrop";
 export * from "./ifLabel";
 export * from "./modelForm";

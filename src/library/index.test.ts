@@ -10,19 +10,45 @@ describe("組み込みモデル", () => {
     expect(problems).toEqual([]);
   });
 
-  it("SPEC 5.3 の 9 機種がそろっていて、ポート数が正しい", () => {
+  it("SPEC 5.3 の 12 機種がそろっていて、ポート数が正しい", () => {
     const counts = Object.fromEntries(models.map((m) => [m.id, m.ports.length]));
     expect(counts).toEqual({
       "cisco-c2960-24tt-l": 26,
       "generic-ap": 2,
       "generic-cloud": 0,
+      "generic-container": 4,
       "generic-firewall-8": 8,
+      "generic-hypervisor-4": 4,
       "generic-l2switch-24": 28,
       "generic-l3switch-48": 52,
       "generic-pc": 1,
       "generic-router-4": 4,
       "generic-server-2": 2,
+      "generic-vm": 4,
     });
+  });
+
+  it("仮想化のモデル(SPEC 5.3・4.6)", () => {
+    const catalog = builtinCatalog();
+    expect(catalog.get("generic-hypervisor-4")?.role).toBe("hypervisor");
+    expect(catalog.get("generic-hypervisor-4")?.ports.map((p) => p.name)).toEqual([
+      "eno1",
+      "eno2",
+      "eno3",
+      "eno4",
+    ]);
+    for (const [id, guest] of [
+      ["generic-vm", "vm"],
+      ["generic-container", "container"],
+    ] as const) {
+      expect(catalog.get(id)).toMatchObject({ role: "server", flexible: true, guest });
+      expect(catalog.get(id)?.ports.map((p) => [p.name, p.type])).toEqual([
+        ["net0", "virtual"],
+        ["net1", "virtual"],
+        ["net2", "virtual"],
+        ["net3", "virtual"],
+      ]);
+    }
   });
 
   it("ファイル名と id が一致する(Q4)", () => {

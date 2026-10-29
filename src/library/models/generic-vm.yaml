@@ -1,0 +1,10 @@
+# 仮想マシン(Proxmox VE の VM)。NIC は net0〜net3。それ以外の名前も使える
+id: generic-vm
+vendor: Generic
+name: Virtual Machine
+role: server
+flexible: true
+guest: vm
+ports:
+  - name: "net{0-3}"
+    type: virtual

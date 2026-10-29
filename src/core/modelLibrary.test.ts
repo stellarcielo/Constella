@@ -14,6 +14,16 @@ function errors(result: ModelParseResult): string[] {
 }
 
 describe("parseModelDefinition", () => {
+  it("guest を読み、不正な値はエラー(SPEC 5.1・4.6)", () => {
+    expect(model("id: v\nrole: server\nflexible: true\nguest: container\n").guest).toBe(
+      "container",
+    );
+    expect(model("id: s\nrole: server\nflexible: true\n")).not.toHaveProperty("guest");
+    expect(
+      errors(parseModelDefinition("id: v\nrole: server\nflexible: true\nguest: lxc\n")),
+    ).toEqual(["guest の値が不正です(vm / container)"]);
+  });
+
   it("SPEC 5.1 の例", () => {
     const m = model(`id: cisco-c2960-24tt-l
 vendor: Cisco
@@ -72,7 +82,7 @@ ports:
   - just-a-name
 `);
     expect(errors(result)).toEqual([
-      "role の値が不正です(router / l2switch / l3switch / firewall / server / pc / ap / cloud / generic)",
+      "role の値が不正です(router / l2switch / l3switch / firewall / server / hypervisor / pc / ap / cloud / generic)",
       "flexible は true か false で書いてください",
       expect.stringContaining("ポートの type の値が不正です"),
       "name がありません",

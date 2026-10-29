@@ -5,7 +5,7 @@
 > 人や AI が書ける YAML 定義を双方向に同期する。
 
 - バージョン: 0.1(MVP 設計)
-- 最終更新: 2026-10-29
+- 最終更新: 2026-10-30
 
 ---
 
@@ -59,7 +59,14 @@
 | インターフェース / ポート | デバイスが持つ接続口。本仕様では同義 |
 | エンドポイント | `デバイスID:インターフェース名` の形式で表す接続端 |
 | リンク | 2つのエンドポイントを結ぶ線 |
-| ロール | デバイスの役割(router / l2switch / l3switch / firewall / server / pc / ap / cloud / generic) |
+| ロール | デバイスの役割(router / l2switch / l3switch / firewall / server / hypervisor / pc / ap / cloud / generic) |
+| ハイパーバイザ(ホスト) | VM やコンテナを動かす機器(Proxmox VE のノードなど)。ロールは hypervisor |
+| ゲスト | ホストの上で動く VM(仮想マシン)またはコンテナ(Proxmox VE の LXC) |
+| ブリッジ | ホストの中の仮想スイッチ(Proxmox VE の `vmbr0` など)。ゲストはブリッジにつなぐ |
+| bond | 複数の NIC を 1 本に束ねたもの(リンクアグリゲーション) |
+| VLAN インターフェース | 1 つの VLAN だけを扱う論理的な IF(`vmbr0.10` など) |
+| クラスタ | 複数のホストをまとめて管理する単位(Proxmox VE のクラスタ) |
+| SDN | クラスタ全体で仮想ネットワークを定義する仕組み(Proxmox VE の SDN。ゾーンと VNet) |
 
 ---
 
@@ -117,6 +124,9 @@ layout:
 | `model` | 任意 | モデルID。省略時はフレキシブルデバイス |
 | `role` | 任意 | 省略時はモデルの role。モデルも無い場合は `generic` |
 | `label` | 任意 | 図に表示する名前。省略時はデバイスID |
+| `host` | 任意 | ゲストのとき、動いているホストのデバイスID(4.6) |
+| `guest` | 任意 | `vm` / `container`。省略時はモデルの guest。どちらも無く `host` があれば `vm`(4.6) |
+| `vmid` | 任意 | Proxmox VE の VMID(100〜999999999 の整数) |
 | `interfaces` | 任意 | インターフェースごとの追加情報(下記) |
 
 デバイスID の規則: `^[A-Za-z0-9][A-Za-z0-9._-]*$`(`:` は使用不可)
@@ -125,32 +135,47 @@ layout:
 - `description`: 文字列
 - `ip`: 文字列の配列(例: `["192.0.2.1/30", "2001:db8::1/64"]`)
 - `mode`: `access` / `trunk` / `routed`
-- `vlan`: access の場合の VLAN ID
-- `vlans`: trunk の場合の許可 VLAN(例: `"10,20,100-110"`)
+- `vlan`: access の場合の VLAN ID。ゲストの IF では VLAN タグ(Proxmox VE の `tag`)、VLAN インターフェースではその VLAN ID
+- `vlans`: trunk の場合の許可 VLAN(例: `"10,20,100-110"`)。ゲストの IF では Proxmox VE の `trunks`、VLAN aware なブリッジでは通す VLAN(Proxmox VE の `bridge-vids`。省略時は `2-4094`)
+
+論理的な IF(bond・ブリッジ・VLAN インターフェース。4.6)に書ける項目:
+- `type`: `bond` / `bridge` / `vlan`。省略時は物理的な IF(ポート)。`type` を書いた IF は、モデルに無い名前でも使える
+- `members`: bond で束ねる IF、ブリッジにつなぐ IF(Proxmox VE の `bond-slaves` / `bridge-ports`)。同じデバイスの IF 名の配列
+- `bond-mode`: bond のモード(`balance-rr` / `active-backup` / `balance-xor` / `broadcast` / `802.3ad` / `balance-tlb` / `balance-alb`)
+- `vlan-aware`: ブリッジが VLAN aware(VLAN を区別して通す)か。`true` / `false`、省略時は `false`
+- `vlan-raw-device`: VLAN インターフェースの親の IF
+- VLAN インターフェースの `vlan` と `vlan-raw-device` は、名前が `親.VLAN ID`(`vmbr0.10`)なら省略できる。名前が `vlan10` の形なら `vlan` を省略できる
 
 #### `links`(配列)
 | フィールド | 必須 | 説明 |
 |---|---|---|
 | `a` | 必須 | エンドポイント `デバイスID:IF名` |
 | `b` | 必須 | エンドポイント |
-| `media` | 任意 | `copper` / `fiber` / `dac` / `wireless` / `virtual`。省略時はポート種別から推定 |
+| `media` | 任意 | `copper` / `fiber` / `dac` / `wireless` / `virtual`。省略時はポート種別から推定(ブリッジとのリンクは `virtual`) |
 | `label` | 任意 | リンク中央に表示する文字 |
 
 - エンドポイントは **最初の `:`** でデバイスIDとIF名に分割する。
 - `a` と `b` の順序に意味はない。
+- ゲストの IF とホストのブリッジを結ぶリンクも書く(`a: web01:net0`、`b: pve1:vmbr0`。4.6)。ブリッジには何本でもつなげる。
 
-#### `layout`(マップ。キー = デバイスID)
+#### `layout`(マップ。キー = デバイスID、またはブリッジの `ホストのデバイスID:ブリッジ名`)
 - `{ x: number, y: number }`。GUI でデバイスを動かすと自動更新される。
+- ブリッジ(4.6)の位置は `pve1:vmbr0: { x: 300, y: 520 }` のように書く。
 - 任意で `_viewport: { x, y, zoom }` を保存してよい。
 
-#### `groups`(フェーズ3で実装。スキーマだけ先に定義)
+#### `groups`(配列)
 ```yaml
 groups:
   - id: rack1
-    kind: rack          # site / rack / vlan / subnet / as / custom
+    kind: rack          # site / rack / vlan / subnet / as / cluster / custom
     label: Rack 1
     members: [rt1, core-sw1]
 ```
+- `kind: cluster` のグループは、クラスタのネットワーク `networks` を持てる(4.6)。
+
+#### `sdn`(マップ。4.6)
+- `zones`: SDN のゾーン(キー = ゾーンID)
+- `vnets`: SDN の VNet(キー = VNet ID)
 
 ### 4.4 インターフェース名の正規化
 - Cisco 系の長い名前と短い名前を同一視する。
@@ -169,6 +194,141 @@ groups:
 | 警告 | ポート種別の不一致(例: RJ45 と SFP)、自分自身への接続 | 黄色で強調 |
 
 - フレキシブルデバイス(model 無し、または `flexible: true` のモデル)は、未定義の IF 名を参照されたら自動でその IF を持っているものとして扱う。
+- ハイパーバイザまわり(ゲスト・ブリッジ・bond・VLAN インターフェース・クラスタ・SDN)の検証は 4.6 を参照。
+
+### 4.6 ハイパーバイザ(仮想化基盤)
+Proxmox VE のような仮想化基盤を描くための書き方。キーや IF の名前は Proxmox VE に合わせるが、ほかのハイパーバイザにも使える汎用の形にする。
+
+```yaml
+devices:
+  core-sw1:
+    model: generic-l2switch-24
+    interfaces:
+      Gi0/1: { mode: trunk, vlans: "10,20,40" }
+      Gi0/2: { mode: trunk, vlans: "10,20,40" }
+  pve1:
+    model: generic-hypervisor-4      # ロールは hypervisor。物理的な NIC は eno1〜eno4
+    interfaces:
+      bond0:    { type: bond, members: [eno1, eno2], bond-mode: 802.3ad }
+      vmbr0:    { type: bridge, members: [bond0], vlan-aware: true }
+      vmbr0.10: { type: vlan, ip: [192.168.10.2/24] }   # ホストの管理用の IP
+  web01:
+    model: generic-vm                # guest: vm
+    host: pve1                       # pve1 の上で動く
+    vmid: 100
+    interfaces:
+      net0: { vlan: 10, ip: [192.168.10.11/24] }       # vlan = Proxmox VE の tag
+  fw01:
+    model: generic-vm
+    role: firewall                   # ロール(機能)は今までどおり。OPNsense の VM なら firewall
+    host: pve1
+    vmid: 101
+    interfaces:
+      net0: { mode: trunk, vlans: "10,20" }             # Proxmox VE の trunks
+  db01:
+    model: generic-container         # guest: container(Proxmox VE の LXC)
+    host: pve1
+    vmid: 200
+    interfaces:
+      net0: { vlan: 20 }
+
+links:
+  - a: pve1:eno1                     # 物理的な配線は今までどおり
+    b: core-sw1:Gi0/1
+  - a: pve1:eno2
+    b: core-sw1:Gi0/2
+  - a: web01:net0                    # ゲストはブリッジにつなぐ
+    b: pve1:vmbr0
+  - a: fw01:net0
+    b: pve1:vmbr0
+  - a: db01:net0
+    b: pve1:vmbr0
+
+layout:
+  pve1:vmbr0: { x: 300, y: 520 }     # ブリッジの位置は「ホスト:ブリッジ」で覚える
+
+groups:
+  - id: lab
+    kind: cluster
+    members: [pve1, pve2, pve3]      # pve2・pve3 の定義は省略
+    networks:                        # クラスタのネットワーク(名前: サブネット)
+      corosync: 10.10.0.0/24
+      ceph-public: 10.20.0.0/24
+      migration: 10.30.0.0/24
+
+sdn:
+  zones:
+    vlanzone: { type: vlan, bridge: vmbr0 }    # nodes を省略 = ロールが hypervisor の機器すべて
+  vnets:
+    vnet40: { zone: vlanzone, tag: 40, subnets: [10.40.0.0/24] }   # 各ホストに vnet40 ができる
+```
+
+#### ホストとゲスト
+- ホストは、ふつうはロールが hypervisor の機器(組み込みモデル `generic-hypervisor-4` など)。ほかのロールの機器(コンテナを動かすサーバーなど)もホストにできる。
+- ゲストは、`host` に動いているホストのデバイスIDを書いた機器。
+  - VM かコンテナかは `guest`(`vm` / `container`)で表す。省略時はモデルの `guest`、それも無ければ `vm`。
+  - `guest` があって `host` が無い機器は、図に描かないホストの上のゲストとして扱う(クラウドの VM など)。
+  - ロールは、ゲストでも機能を表す(OPNsense の VM なら firewall)。
+- ゲストの上でさらにゲストを動かす(入れ子の仮想化)こともできる。
+
+#### ホストの中のネットワーク
+- bond・ブリッジ・VLAN インターフェースは、ホストの `interfaces` に `type` を付けて書く(Linux や Proxmox VE の `/etc/network/interfaces` と同じ考え方)。
+- bond の `members` には物理的な IF を、ブリッジの `members` には物理的な IF・bond・VLAN インターフェースを書く。`members` の無いブリッジは、ホストの中だけのネットワークになる。
+- ホストの IP は、ブリッジや VLAN インターフェースの `ip` に書く。
+- リンクをつなぐのは、物理的な IF とブリッジだけ。bond・VLAN インターフェースにはつながない(束ねた線は、メンバーの物理的な IF ごとに書く)。
+
+#### ゲストとブリッジのつなぎ方
+- `links` に、ゲストの IF とホストのブリッジを結ぶリンクを書く。ブリッジにつなげるのは、そのホストの上で動くゲストの IF だけ。
+- VLAN タグはゲストの IF の `vlan` に、トランク(複数の VLAN を通す)は `mode: trunk` と `vlans` に書く。
+
+#### クラスタ
+- `groups` に `kind: cluster` のグループを書き、`members` にホストを並べる。
+- `networks` に、クラスタのネットワークの名前とサブネットを書く。名前は自由(`corosync`・`ceph-public`・`ceph-cluster`・`migration` など)。
+- IP がそのサブネットに入る IF には、ラベルにネットワークの名前を出す。
+
+#### SDN
+- 最上位の `sdn` に、ゾーン(`zones`)と VNet(`vnets`)を書く。
+- ゾーンに書ける項目:
+  - `type`(必須): `simple` / `vlan` / `qinq` / `vxlan` / `evpn`
+  - `bridge`: vlan・qinq のときに使う、各ホストのブリッジ
+  - `tag`: qinq の外側の VLAN ID
+  - `nodes`: ゾーンを使うホストのデバイスID。省略時は、ロールが hypervisor の機器すべて
+- VNet に書ける項目:
+  - `zone`(必須): ゾーンID
+  - `tag`: VLAN ID(vxlan・evpn では VNI)。simple 以外では必須
+  - `subnets`: サブネットの配列
+- VNet は、ゾーンの各ホストの中のブリッジとして扱う。ゲストは `pve1:vnet40` につなぎ、位置も `pve1:vnet40` で覚える。
+
+#### Proxmox VE との対応
+| Proxmox VE | Constella |
+|---|---|
+| ノード | ロールが hypervisor の機器 |
+| VM(qemu)/ CT(lxc) | `guest: vm` / `guest: container` の機器。`host` にノード、`vmid` に VMID |
+| ゲストの NIC(`net0`)の `bridge=vmbr0` | リンク `web01:net0` ↔ `pve1:vmbr0` |
+| ゲストの NIC の `tag=10` | IF `net0` の `vlan: 10` |
+| ゲストの NIC の `trunks=20;30` | IF `net0` の `mode: trunk`、`vlans: "20,30"` |
+| `bond-slaves` / `bond-mode` | `type: bond` の IF の `members` / `bond-mode` |
+| `bridge-ports` / `bridge-vlan-aware` / `bridge-vids` | `type: bridge` の IF の `members` / `vlan-aware` / `vlans` |
+| `vmbr0.10`、`vlan-raw-device` | `type: vlan` の IF、`vlan-raw-device` |
+| クラスタ、corosync・Ceph・移行(migration)のネットワーク | `kind: cluster` のグループ、`networks` |
+| SDN のゾーン・VNet | `sdn` の `zones`・`vnets` |
+
+#### 検証(4.5 に加える)
+| レベル | 内容 |
+|---|---|
+| エラー | `host` のデバイスが無い。`host` をたどると輪になる(自分自身を含む) |
+| エラー | VMID の重複(同じホストの中。ホストがクラスタに入っていれば、クラスタの中) |
+| エラー | `members` の IF が無い。1 つの IF が 2 つの bond・ブリッジに入っている |
+| エラー | ブリッジに、そのホストの上で動くゲスト以外の IF がつながっている。bond・VLAN インターフェースにリンクがつながっている |
+| エラー | SDN: 参照先(ホスト・ゾーン)が無い。ゾーンのホストに `bridge` が無い。ゾーンに入っていないホストで VNet を使っている。VNet の `tag` が無い(simple 以外)。VNet ID がホストの IF 名と重なる |
+| 警告 | VLAN の通り道(下記)で、通らない VLAN がある |
+| 警告 | クラスタのホストに、`networks` のサブネットに入る IP が無い |
+| 警告 | VNet ID が 8 文字より長い(Proxmox VE の制限) |
+
+VLAN の通り道(最初のスイッチまでを確かめる):
+- 対象は、ゲストの IF のタグ(`vlan`)とトランクの `vlans`、ホストの VLAN インターフェースの VLAN、vlan ゾーンの VNet の `tag`。
+- ブリッジが VLAN aware なら、ブリッジの `vlans`(省略時は `2-4094`)に入っているか。
+- ブリッジの `members` から bond をたどって物理的な IF へ進み、その IF につながるスイッチのポートで通るか。trunk なら `vlans`(省略時はすべて通す)に入っているか。access なら、タグの付いた VLAN は通らない。`mode` が書かれていなければ確かめない。
 
 ---
 
@@ -194,6 +354,7 @@ ports:
 - `type`: `rj45` / `sfp` / `sfp+` / `sfp28` / `qsfp+` / `qsfp28` / `console` / `serial` / `wireless` / `virtual`
 - `speed`: 表示用の文字列(`100M` / `1G` / `10G` / `25G` / `40G` / `100G` など)
 - `flexible: true` を指定すると、定義外の IF 名も使用可能になる。
+- `guest: vm` / `guest: container` を指定すると、そのモデルの機器はゲスト(4.6)になる。
 - 必要に応じて `icon` でアイコンを上書きできる(既定は role ごとのアイコン)。
 
 ### 5.2 モデルの置き場所
@@ -211,6 +372,11 @@ ports:
 - `generic-pc`(eth0)
 - `generic-ap`(eth0, wlan0)
 - `generic-cloud`(flexible)
+
+仮想化のモデル(フェーズ4で追加。4.6):
+- `generic-hypervisor-4`(eno1〜eno4、rj45。role: hypervisor)
+- `generic-vm`(net0〜net3、virtual、flexible。role: server、guest: vm)
+- `generic-container`(net0〜net3、virtual、flexible。role: server、guest: container)
 
 実機モデル(例として1つ):
 - `cisco-c2960-24tt-l`(上記 5.1 の定義)
@@ -247,9 +413,15 @@ ports:
 
 ### 7.1 デバイスの配置
 - パレットからキャンバスへドラッグ&ドロップで配置。
-- デバイスIDは role ごとのプレフィックス + 連番で自動採番(`rt1`, `sw1`, `l3sw1`, `fw1`, `srv1`, `pc1`, `ap1`, `cloud1`)。
-- インスペクタでデバイスID・ラベル・モデルを変更できる。
-  - **デバイスIDを変更したら、関連するリンク・layout・groups の参照もすべて書き換える。**
+- パレットのモデルは role ごとにまとめ、ゲストのモデル(`guest` のあるモデル)は「ゲスト(VM・コンテナ)」にまとめる。インスペクタのモデル一覧も同じ。
+- VM・コンテナのモデルを置くとき(4.6):
+  - ハイパーバイザ(またはゲストのいるホスト)の上に落とすと、そのホストのゲストになり、ホストの下に並ぶ(同じホストのゲストがいれば、その右)。
+  - ホストの枠の中に落とすと、その枠のホストのゲストになる(落とした位置に置く)。
+  - それ以外の所に落とすと、`host` なし。
+  - 置いたあとにドラッグしても、ホストは変わらない(インスペクタで変える)。
+- デバイスIDは role ごとのプレフィックス + 連番で自動採番(`rt1`, `sw1`, `l3sw1`, `fw1`, `srv1`, `hv1`, `pc1`, `ap1`, `cloud1`)。ゲストは role ではなく種類で採番する(`vm1`, `ct1`)。
+- インスペクタでデバイスID・ラベル・モデルを変更できる。ゲストなら、種類・ホスト・VMID も変更できる。
+  - **デバイスIDを変更したら、関連するリンク・layout・groups の参照もすべて書き換える**(ゲストの `host`、ブリッジの位置のキー、SDN の `nodes` も含む)。
   - モデルを変更して既存リンクのポートが存在しなくなる場合は確認ダイアログを出す。
 
 ### 7.2 接続(Packet Tracer 風)
@@ -272,19 +444,28 @@ ports:
 - IF に IP・VLAN が書かれていれば、IF 名ラベルの下に 1 行ずつ表示する(IP は 1 つずつ、access は `VLAN 10`、trunk は `trunk 10,20,30`)。
 - 同じデバイス間に複数リンクがある場合(LAG など)は、線を少しずつずらして重ならないようにする。
 - media による線のスタイル: copper=実線(グレー系)、fiber=実線(オレンジ系)、dac=実線(青系)、wireless=破線、virtual=点線。
-- 表示オプション: IF名ラベル・IP・VLAN それぞれの表示/非表示、長い名前/短縮形の切り替え。
+- ハイパーバイザ(4.6)の表示:
+  - ホストは枠で囲み、中にブリッジとゲストを置く。グループの枠は、メンバーのホストの枠を丸ごと囲む。
+  - ホストの枠のラベルは、直接のゲストの数(`VM 2・CT 1`)。クリックすると、ホストとゲストをまとめて選ぶ。
+  - ホストの枠は「グループ」の表示とは別に、ゲストを表示しているときに出す。
+  - ゲストのアイコンには `VM` / `CT` の印を付ける。
+  - ブリッジ(SDN の VNet を含む)は小さな箱で描き、ホストとの間に線を引く。線のホスト側には、ブリッジのメンバー(bond0 など。bond なら束ねた NIC も)を出す。ブリッジ側の端には IF 名を出さない(箱に名前があるため)。
+  - クラスタのネットワークに入る IF は、IP の行にネットワークの名前(`corosync` など)を添える。
+- 表示オプション: IF名ラベル・IP・VLAN・ゲスト(VM・コンテナ・ブリッジ)それぞれの表示/非表示、長い名前/短縮形の切り替え。
 - 表示レイヤー(すべて / L1 / L2 / L3)で、ラベルの行とグループの枠をまとめて切り替える。
-  - L1: IF 名と、拠点・ラックの枠
+  - L1: IF 名と、拠点・ラックの枠。ゲストとブリッジは隠す
   - L2: IF 名と VLAN、VLAN の枠
   - L3: IF 名と IP、サブネット・AS の枠
-  - 種類なし・custom の枠は、どのレイヤーでも表示する。
+  - 種類なし・custom・cluster の枠は、どのレイヤーでも表示する。
   - レイヤーを選んだあとも、個々の表示オプションで調整できる。
   - ショートカットは ⌘0(すべて)、⌘1〜⌘3(L1〜L3)。
 
 ### 7.4 編集操作
 - 選択・複数選択(ドラッグ範囲選択、⇧クリック)・移動・削除。
 - デバイス削除時は接続していたリンクも削除する。
+  - ホストを削除しても、ゲストは残して `host` を外す(ホストとゲストをまとめて消すときは、ホストの枠のラベルをクリックして選ぶ)。
 - コピー&ペースト: 選択デバイスと、選択内で完結するリンクを複製。デバイスIDは自動で再採番。
+  - ゲストの `host` は、ホストも一緒に複製したなら新しいホストに、そうでなければ元のまま(図に無いホストなら外す)。
 - Undo/Redo: すべての編集(GUI・YAML の両方)を対象にする。YAML エディタでの編集は、反映の単位(後述のデバウンス後)で1ステップとする。
 
 ---
@@ -311,8 +492,10 @@ ports:
 ---
 
 ## 9. 自動レイアウト
-- elkjs の layered アルゴリズムを使用(上から下へ: cloud → router/firewall → l3switch → l2switch → server/pc/ap の順になるよう、role でレイヤーのヒントを与える)。
+- elkjs の layered アルゴリズムを使用(上から下へ: cloud → router/firewall → l3switch → l2switch → server/hypervisor/pc/ap の順になるよう、role でレイヤーのヒントを与える)。
+- ゲストは、ホストの枠の中にまとめて並べる(上からホスト・ブリッジ・ゲストの順)。ホストとゲストのかたまりは、ホストの段に置く。
 - ファイル読み込み時、`layout` に座標が無いデバイスだけを自動配置する(既存の座標は動かさない)。
+  - ホストに座標があるゲストは、ホストの下に並べる(同じホストのゲストがいれば、いちばん下の段の右に続ける)。ほかの機器と重なったときは「自動整列」で直す。
 - ツールバーの「自動整列」で全デバイスを再配置(Undo 可能)。
 
 ---
@@ -330,7 +513,7 @@ ports:
 - `schema/constella.schema.json`(JSON Schema)をリポジトリに置き、トポロジ YAML の仕様を機械可読にする。
   - 公開 URL: `https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json`
   - ファイルの先頭に `# yaml-language-server: $schema=<公開 URL>` を書くと、対応エディタ(VS Code の YAML 拡張機能など)で補完と検証が効く。
-- `examples/` にサンプルトポロジを数個置く(小規模ラボ、2層スイッチ網、冗長構成+LAG)。
+- `examples/` にサンプルトポロジを数個置く(小規模ラボ、2層スイッチ網、冗長構成+LAG、Proxmox VE)。
 - 将来: CLI(`constella validate <file>` / `constella render <file> -o out.svg`)と MCP サーバーを提供し、AI から直接検証・描画できるようにする。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
 
 ---
@@ -369,6 +552,14 @@ ports:
 
 ### フェーズ4以降(候補)
 - [x] macOS 版の配布準備(簡易署名・ユニバーサル版・アイコン・GitHub Releases)
+- ハイパーバイザ(Proxmox VE など)の対応(4.6)
+  - [x] 4-1 ゲストとホストの枠(role hypervisor、`host`・`guest`・`vmid`、仮想化の組み込みモデル、ホストの枠、自動レイアウト、表示オプション「ゲスト」)
+  - [ ] 4-2 ブリッジ(`type: bridge`、ブリッジの箱、ゲストとのリンク、ブリッジの位置の保存)
+  - [ ] 4-3 bond・VLAN インターフェース(`type: bond` / `vlan`、ラベル)
+  - [ ] 4-4 VLAN の通り道の検証
+  - [ ] 4-5 クラスタ(`kind: cluster`、`networks`)
+  - [ ] 4-6 SDN(ゾーン・VNet)
+- Proxmox VE からの取り込み(API または設定ファイル)
 - Windows / Linux ビルドとインストーラ
 - CLI / MCP サーバー
 - LLDP / SNMP からの取り込み、containerlab / NetBox との連携

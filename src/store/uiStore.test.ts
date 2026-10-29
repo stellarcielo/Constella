@@ -97,6 +97,7 @@ describe("uiStore: 表示オプション", () => {
       showIp: true,
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
+      showGuests: true,
     });
   });
 
@@ -113,9 +114,17 @@ describe("uiStore: 表示オプション", () => {
       showIp: false,
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
+      showGuests: true,
     };
     expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual(saved);
     expect(createUiStore(storage).getState().view).toEqual(saved);
+  });
+
+  it("ゲストの表示を覚えておく。前の版で保存した設定には無いので、既定(表示する)にする", () => {
+    expect(createUiStore(memoryStorage('{"showGuests":false}')).getState().view.showGuests).toBe(
+      false,
+    );
+    expect(createUiStore(memoryStorage('{"showIp":false}')).getState().view.showGuests).toBe(true);
   });
 
   it("枠の種類は、知っている種類だけを読み込む", () => {
@@ -138,6 +147,7 @@ describe("uiStore: 表示オプション", () => {
       showIp: false,
       showVlan: true,
       groupKinds: ["vlan"],
+      showGuests: true,
     });
   });
 

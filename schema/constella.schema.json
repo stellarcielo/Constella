@@ -67,7 +67,7 @@
       "additionalProperties": false,
       "properties": {
         "model": {
-          "description": "モデル(機種)の ID。省略するとフレキシブル(どんな IF 名も使える)。組み込み: generic-router-4 / generic-l2switch-24 / generic-l3switch-48 / generic-firewall-8 / generic-server-2 / generic-pc / generic-ap / generic-cloud / cisco-c2960-24tt-l",
+          "description": "モデル(機種)の ID。省略するとフレキシブル(どんな IF 名も使える)。組み込み: generic-router-4 / generic-l2switch-24 / generic-l3switch-48 / generic-firewall-8 / generic-server-2 / generic-pc / generic-ap / generic-cloud / generic-hypervisor-4 / generic-vm / generic-container / cisco-c2960-24tt-l",
           "type": "string",
           "minLength": 1,
           "examples": ["generic-router-4", "generic-l2switch-24", "cisco-c2960-24tt-l"]
@@ -77,6 +77,21 @@
           "description": "図に表示する名前。省略するとデバイスID",
           "type": ["string", "number", "boolean"]
         },
+        "host": {
+          "description": "ゲスト(VM・コンテナ)のとき、動いているホスト(ハイパーバイザなど)のデバイスID",
+          "allOf": [{ "$ref": "#/definitions/deviceId" }]
+        },
+        "guest": {
+          "description": "ゲストの種類: vm(仮想マシン)/ container(コンテナ。Proxmox VE の LXC)。省略するとモデルの種類、どちらも無く host があれば vm",
+          "type": "string",
+          "enum": ["vm", "container"]
+        },
+        "vmid": {
+          "description": "Proxmox VE の VMID(VM・コンテナの番号)",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 999999999
+        },
         "interfaces": {
           "description": "IF ごとの追加情報(キー = IF 名。GigabitEthernet0/1 と Gi0/1 のように長い名前・短い名前のどちらでも書ける)",
           "type": ["object", "null"],
@@ -85,7 +100,7 @@
       }
     },
     "role": {
-      "description": "機器の役割。図のアイコンと、自動配置の段(上から cloud → router・firewall → l3switch → l2switch・generic → server・pc・ap)を決める。省略するとモデルの役割、モデルも無ければ generic",
+      "description": "機器の役割。図のアイコンと、自動配置の段(上から cloud → router・firewall → l3switch → l2switch・generic → server・hypervisor・pc・ap)を決める。省略するとモデルの役割、モデルも無ければ generic",
       "type": "string",
       "enum": [
         "router",
@@ -93,6 +108,7 @@
         "l3switch",
         "firewall",
         "server",
+        "hypervisor",
         "pc",
         "ap",
         "cloud",

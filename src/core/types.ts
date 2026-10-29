@@ -15,12 +15,21 @@ export const ROLES = [
   "l3switch",
   "firewall",
   "server",
+  "hypervisor",
   "pc",
   "ap",
   "cloud",
   "generic",
 ] as const;
 export type Role = (typeof ROLES)[number];
+
+/** ゲストの種類(SPEC 4.6): VM(仮想マシン)とコンテナ(Proxmox VE の LXC) */
+export const GUEST_KINDS = ["vm", "container"] as const;
+export type GuestKind = (typeof GUEST_KINDS)[number];
+
+/** VMID(Proxmox VE が VM・コンテナに振る番号)の範囲 */
+export const VMID_MIN = 100;
+export const VMID_MAX = 999999999;
 
 export const MEDIA = ["copper", "fiber", "dac", "wireless", "virtual"] as const;
 export type Media = (typeof MEDIA)[number];
@@ -81,6 +90,11 @@ export interface Device {
   model?: string;
   role?: Role;
   label?: string;
+  /** ゲストのとき、動いているホストのデバイスID(SPEC 4.6) */
+  host?: string;
+  /** 省略時はモデルの guest。どちらも無く host があれば vm */
+  guest?: GuestKind;
+  vmid?: number;
   /** キー = 短縮形に正規化した IF 名 */
   interfaces: Map<string, InterfaceInfo>;
   extra: Extra;
@@ -151,6 +165,8 @@ export interface DeviceModel {
   ports: PortDef[];
   /** true なら定義外の IF 名も使える */
   flexible: boolean;
+  /** このモデルの機器はゲスト(SPEC 4.6) */
+  guest?: GuestKind;
   icon?: string;
 }
 
@@ -193,11 +209,14 @@ export type IssueCode =
   | "port-in-use"
   | "self-loop"
   | "port-type-mismatch"
-  | "unknown-layout-device";
+  | "unknown-layout-device"
+  | "host-cycle"
+  | "duplicate-vmid";
 
 export type IssueTarget =
   | { kind: "document" }
-  | { kind: "device"; id: string }
+  /** field があれば、YAML ではその項目の値を指す */
+  | { kind: "device"; id: string; field?: string }
   | { kind: "interface"; device: string; name: string }
   | { kind: "link"; id: string; end?: "a" | "b" }
   | { kind: "layout"; id: string }

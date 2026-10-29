@@ -140,3 +140,56 @@ links:
     expect(issues[0].target).toEqual({ kind: "group", index: 1 });
   });
 });
+
+describe("validateTopology: ホストとゲスト(SPEC 4.6)", () => {
+  const guests = `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  pve2: { model: generic-hypervisor-4 }
+`;
+
+  it("問題の無いゲスト", () => {
+    const { issues } = check(
+      `${guests}  vm1: { model: generic-vm, host: pve1, vmid: 100 }\n  ct1: { model: generic-container, host: pve2, vmid: 100 }\n`,
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("存在しないホスト。YAML では host の値を指す", () => {
+    const { issues, text } = check(`${guests}  vm1: { model: generic-vm, host: pve9 }\n`);
+    expect(summary(issues)).toEqual([["error", "unknown-device"]]);
+    expect(issues[0].target).toEqual({ kind: "device", id: "vm1", field: "host" });
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("pve9");
+  });
+
+  it("host が自分自身", () => {
+    const { issues } = check(`${guests}  vm1: { host: vm1 }\n`);
+    expect(summary(issues)).toEqual([["error", "host-cycle"]]);
+    expect(issues[0].message).toContain("自分自身");
+  });
+
+  it("host をたどると輪になる。輪の中のデバイスごとに、そこから一周する道筋を書く", () => {
+    const { issues } = check(`${guests}  a: { host: b }\n  b: { host: a }\n`);
+    expect(summary(issues)).toEqual([
+      ["error", "host-cycle"],
+      ["error", "host-cycle"],
+    ]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "host をたどると輪になります(a → b → a)",
+      "host をたどると輪になります(b → a → b)",
+    ]);
+  });
+
+  it("同じホストの中で VMID が重なる。YAML では後の vmid の値を指す", () => {
+    const { issues, text } = check(
+      `${guests}  vm1: { host: pve1, vmid: 100 }\n  vm2: { host: pve1, vmid: 100 }\n  vm3: { host: pve1, vmid: 101 }\n`,
+    );
+    expect(summary(issues)).toEqual([["error", "duplicate-vmid"]]);
+    expect(issues[0].target).toEqual({ kind: "device", id: "vm2", field: "vmid" });
+    expect(issues[0].message).toContain("vm1");
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("100");
+    expect(r?.start).toBeGreaterThan(text.indexOf("vm2:"));
+  });
+});

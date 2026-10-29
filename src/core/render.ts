@@ -1,7 +1,8 @@
 // トポロジを SVG の文字列にする(SVG / PNG の書き出し。将来の CLI の `constella render` でも使う)。
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
-import { groupFrames, groupKindFilter, groupTitle } from "./groupFrames";
+import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
+import { resolveGuest } from "./hosts";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import {
@@ -17,7 +18,7 @@ import {
 } from "./linkGeometry";
 import { linkMedia } from "./media";
 import { resolveLabel, resolveRole } from "./topology";
-import type { GroupKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
+import type { GroupKind, GuestKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
 
 export interface RenderOptions {
   /** layout に座標の無いデバイスの位置(キャンバスの自動配置。キー = デバイスID) */
@@ -34,6 +35,8 @@ export interface RenderOptions {
   showGroups?: boolean;
   /** 枠を描くグループの種類(表示レイヤー。省略すればすべて。種類なし・custom はいつも描く) */
   groupKinds?: readonly GroupKind[];
+  /** ゲスト(VM・コンテナ)とホストの枠を描くか(ツールバーの「ゲスト」) */
+  showGuests?: boolean;
   /** 図のまわりの余白 */
   padding?: number;
 }
@@ -62,6 +65,7 @@ const ROLE_COLORS: Record<Role, string> = {
   l3switch: "#8250df",
   l2switch: "#1a7f37",
   server: "#bf5b00",
+  hypervisor: "#6b7f00",
   pc: "#0a7d8c",
   ap: "#b3368f",
   generic: "#57606a",
@@ -91,6 +95,13 @@ const GROUP_STYLES: Record<GroupKind | "none", string> = {
   none: 'stroke="#8c959f" stroke-width="1" fill="none"',
 };
 
+/** ホストの枠(Canvas.css と合わせる) */
+const HOST_FRAME_STYLE = 'stroke="#6b7f00" stroke-width="1.5" fill="#6b7f00" fill-opacity="0.05"';
+const HOST_FRAME_TEXT_COLOR = "#6b7f00";
+
+/** ゲストの印(アイコンの右上に重ねる。Canvas.css の .device-guest-badge と合わせる) */
+const GUEST_BADGE_TEXT: Record<GuestKind, string> = { vm: "VM", container: "CT" };
+
 const GROUP_TEXT_COLORS: Record<GroupKind | "none", string> = {
   site: "#424a53",
   rack: "#57606a",
@@ -111,6 +122,21 @@ const ICON_SIZE = 34;
 const NAME_TOP = ICON_BOX + 4;
 const NAME_HEIGHT = 18;
 const NAME_FONT = 12;
+
+/** ゲストの印。アイコンの箱の右上の角(right, top)に重ねる */
+function guestBadge(right: number, top: number, text: string, bounds: Bounds): string {
+  const width = 20;
+  const height = 13;
+  const x = right - width + 9;
+  const y = top - 6;
+  bounds.add(x, y, x + width, y + height);
+  return (
+    `<rect x="${n(x)}" y="${n(y)}" width="${width}" height="${height}" rx="4" ` +
+    `fill="${THEME.labelBg}" stroke="${THEME.border}"/>` +
+    `<text x="${n(x + width / 2)}" y="${n(y + height / 2 + 9 * 0.35)}" text-anchor="middle" ` +
+    `font-family="${escapeXml(FONT)}" font-size="9" font-weight="700" fill="${THEME.textMuted}">${text}</text>`
+  );
+}
 
 /** ノードの左上の座標から、アイコンの中心へ(キャンバスのリンクの端と同じ点) */
 function iconCenter(p: Position): Point {
@@ -215,36 +241,41 @@ export function renderSvg(
   const padding = options.padding ?? 24;
   const bounds = new Bounds();
 
+  // ゲストを隠すときは、ゲストとそこにつながるリンクを描かない(SPEC 7.3)
+  const showGuests = options.showGuests ?? true;
   const positions = new Map<string, Position>();
-  for (const id of t.devices.keys()) {
+  for (const [id, device] of t.devices) {
+    if (!showGuests && resolveGuest(device, catalog) !== undefined) continue;
     const pos = t.layout.get(id) ?? options.fallbackPositions?.get(id);
     if (pos) positions.set(id, pos);
   }
 
-  // グループの枠(いちばん下。外側の枠から描く)。ラベルは背景を付けて線より手前に描く(キャンバスと同じ)
+  // グループとホストの枠(いちばん下。外側の枠から描く)。ラベルは背景を付けて線より手前に描く(キャンバスと同じ)。
+  // ホストの枠は「グループ」の表示に関係なく、ゲストを描くときに描く
   const frames: string[] = [];
   const frameLabels: string[] = [];
-  if (options.showGroups ?? true) {
-    const visible = options.groupKinds ? groupKindFilter(options.groupKinds) : undefined;
-    for (const frame of groupFrames(t, (id) => positions.get(id), visible)) {
-      const kind = frame.group.kind ?? "none";
-      bounds.add(frame.x, frame.y, frame.x + frame.width, frame.y + frame.height);
-      frames.push(
-        `<rect x="${n(frame.x)}" y="${n(frame.y)}" width="${n(frame.width)}" height="${n(frame.height)}" ` +
-          `rx="10" ${GROUP_STYLES[kind]}/>`,
-      );
-      const title = groupTitle(frame.group);
-      const size = { width: estimateNameWidth(title), height: 16 };
-      frameLabels.push(
-        label(
-          { x: frame.x + 8 + size.width / 2, y: frame.y + 4 + size.height / 2 },
-          title,
-          size,
-          { font: FONT, fontSize: 11, color: GROUP_TEXT_COLORS[kind], border: false, bold: true },
-          bounds,
-        ),
-      );
-    }
+  const kindFilter = options.groupKinds ? groupKindFilter(options.groupKinds) : undefined;
+  const visible = (options.showGroups ?? true) ? kindFilter : () => false;
+  for (const frame of groupFrames(t, (id) => positions.get(id), visible)) {
+    const kind = frame.type === "host" ? undefined : (frame.group.kind ?? "none");
+    bounds.add(frame.x, frame.y, frame.x + frame.width, frame.y + frame.height);
+    frames.push(
+      `<rect x="${n(frame.x)}" y="${n(frame.y)}" width="${n(frame.width)}" height="${n(frame.height)}" ` +
+        `rx="10" ${kind ? GROUP_STYLES[kind] : HOST_FRAME_STYLE}/>`,
+    );
+    const title =
+      frame.type === "host" ? hostFrameTitle(t, catalog, frame) : groupTitle(frame.group);
+    const size = { width: estimateNameWidth(title), height: 16 };
+    const color = kind ? GROUP_TEXT_COLORS[kind] : HOST_FRAME_TEXT_COLOR;
+    frameLabels.push(
+      label(
+        { x: frame.x + 8 + size.width / 2, y: frame.y + 4 + size.height / 2 },
+        title,
+        size,
+        { font: FONT, fontSize: 11, color, border: false, bold: true },
+        bounds,
+      ),
+    );
   }
 
   // リンク(線は下、ラベルはデバイスより上に描く。キャンバスと同じ重なり)
@@ -315,6 +346,7 @@ export function renderSvg(
     const name = resolveLabel(device);
     const nameCenter = { x: pos.x + NODE_WIDTH / 2, y: pos.y + NAME_TOP + NAME_HEIGHT / 2 };
     bounds.add(boxX, pos.y, boxX + ICON_BOX, pos.y + ICON_BOX);
+    const guest = resolveGuest(device, catalog);
     nodes.push(
       `<g>` +
         `<rect x="${n(boxX)}" y="${n(pos.y)}" width="${ICON_BOX}" height="${ICON_BOX}" rx="12" ` +
@@ -322,6 +354,7 @@ export function renderSvg(
         `<g transform="translate(${n(iconX)} ${n(iconY)}) scale(${iconScale.toFixed(4)})" ` +
         `fill="none" stroke="${ROLE_COLORS[role]}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
         `${ROLE_ICON_SVG[role]}</g>` +
+        (guest ? guestBadge(boxX + ICON_BOX, pos.y, GUEST_BADGE_TEXT[guest], bounds) : "") +
         label(
           nameCenter,
           name,

@@ -24,6 +24,16 @@ describe("表示レイヤー(フェーズ3-3)", () => {
     for (const layer of VIEW_LAYERS) expect(LAYER_PRESETS[layer].showIfLabels).toBe(true);
   });
 
+  it("L1 だけはゲストを隠す(フェーズ4-1)", () => {
+    expect(VIEW_LAYERS.map((layer) => LAYER_PRESETS[layer].showGuests)).toEqual([
+      true,
+      false,
+      true,
+      true,
+    ]);
+    expect(currentLayer(withLayer("l1", { showGuests: true }))).toBeUndefined();
+  });
+
   it("既定の表示は「すべて」に当たる", () => {
     expect(currentLayer(DEFAULT_VIEW)).toBe("all");
   });

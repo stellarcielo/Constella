@@ -26,6 +26,26 @@ const models: DeviceModel[] = [
   },
   { id: "generic-server-2", role: "server", flexible: false, ports: range("eth", 0, 1, "rj45") },
   { id: "generic-cloud", role: "cloud", flexible: true, ports: [] },
+  {
+    id: "generic-hypervisor-4",
+    role: "hypervisor",
+    flexible: false,
+    ports: range("eno", 1, 4, "rj45"),
+  },
+  {
+    id: "generic-vm",
+    role: "server",
+    flexible: true,
+    guest: "vm",
+    ports: range("net", 0, 3, "virtual"),
+  },
+  {
+    id: "generic-container",
+    role: "server",
+    flexible: true,
+    guest: "container",
+    ports: range("net", 0, 3, "virtual"),
+  },
 ];
 
 export const testCatalog: ModelCatalog = new Map(models.map((m) => [m.id, m]));

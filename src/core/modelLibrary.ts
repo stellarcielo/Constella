@@ -6,6 +6,8 @@ import { expandPortName } from "./portExpand";
 import { yamlErrorMessage } from "./text";
 import {
   type DeviceModel,
+  GUEST_KINDS,
+  type GuestKind,
   type ModelCatalog,
   type ModelIssue,
   PORT_TYPES,
@@ -19,7 +21,7 @@ import {
 export type ModelParseResult =
   { ok: true; model: DeviceModel; issues: ModelIssue[] } | { ok: false; issues: ModelIssue[] };
 
-const MODEL_KEYS = ["id", "vendor", "name", "role", "ports", "flexible", "icon"];
+const MODEL_KEYS = ["id", "vendor", "name", "role", "ports", "flexible", "guest", "icon"];
 const PORT_KEYS = ["name", "type", "speed"];
 
 /**
@@ -84,6 +86,14 @@ export function parseModelDefinition(text: string): ModelParseResult {
     else add("error", "flexible は true か false で書いてください", flexibleNode);
   }
 
+  let guest: GuestKind | undefined;
+  const guestNode = root.get("guest", true) as Node | undefined;
+  if (guestNode !== undefined) {
+    if (isScalar(guestNode) && (GUEST_KINDS as readonly unknown[]).includes(guestNode.value)) {
+      guest = guestNode.value as GuestKind;
+    } else add("error", `guest の値が不正です(${GUEST_KINDS.join(" / ")})`, guestNode);
+  }
+
   const ports: PortDef[] = [];
   const portsNode = root.get("ports", true) as Node | undefined;
   if (portsNode === undefined) {
@@ -143,6 +153,7 @@ export function parseModelDefinition(text: string): ModelParseResult {
   const model: DeviceModel = { id, role, ports, flexible };
   if (vendor !== undefined) model.vendor = vendor;
   if (name !== undefined) model.name = name;
+  if (guest !== undefined) model.guest = guest;
   if (icon !== undefined) model.icon = icon;
   return { ok: true, model, issues };
 }

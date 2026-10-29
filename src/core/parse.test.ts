@@ -300,3 +300,34 @@ links:
     expect(range && text.slice(range.start, range.end)).toBe("toaster");
   });
 });
+
+describe("parseTopology: ゲスト(SPEC 4.6)", () => {
+  it("host・guest・vmid を読む", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  web01: { model: generic-vm, host: pve1, guest: container, vmid: 100 }
+`);
+    expect(issues).toEqual([]);
+    const web01 = topology.devices.get("web01");
+    expect([web01?.host, web01?.guest, web01?.vmid]).toEqual(["pve1", "container", 100]);
+  });
+
+  it("不正な値はエラーにして値を残す", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  a: { host: 1, guest: lxc, vmid: 99 }
+  b: { vmid: 1000000000 }
+  c: { vmid: abc, host: "" }
+`);
+    expect(codes(issues)).toEqual(Array(6).fill("invalid-value"));
+    expect(topology.devices.get("a")?.extra).toEqual({ host: 1, guest: "lxc", vmid: 99 });
+    expect(topology.devices.get("b")?.vmid).toBeUndefined();
+    expect(topology.devices.get("c")?.extra).toEqual({ vmid: "abc", host: "" });
+  });
+
+  it("未知のキーの警告に、使えるキーとして載せる", () => {
+    const { issues } = parseOk("constella: 1\ndevices:\n  a: { vendor: acme }\n");
+    expect(issues[0].message).toContain("host, guest, vmid");
+  });
+});

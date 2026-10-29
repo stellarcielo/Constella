@@ -31,6 +31,7 @@
   --role-l3switch: #8250df;
   --role-l2switch: #1a7f37;
   --role-server: #bf5b00;
+  --role-hypervisor: #6b7f00;
   --role-pc: #0a7d8c;
   --role-ap: #b3368f;
   --role-generic: #57606a;
@@ -47,6 +48,8 @@
   --group-as: #bc4c00;
   --group-as-fill: rgb(188 76 0 / 0.05);
   --group-plain: #8c959f;
+  --group-host: #6b7f00;
+  --group-host-fill: rgb(107 127 0 / 0.05);
 
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
   font-size: 13px;
@@ -86,6 +89,7 @@
     --role-l3switch: #b392f0;
     --role-l2switch: #56d364;
     --role-server: #f0883e;
+    --role-hypervisor: #a9c23f;
     --role-pc: #39c5cf;
     --role-ap: #f778ba;
     --role-generic: #8d96a0;
@@ -101,6 +105,8 @@
     --group-as: #ffa657;
     --group-as-fill: rgb(255 166 87 / 0.06);
     --group-plain: #6e7681;
+    --group-host: #a9c23f;
+    --group-host-fill: rgb(169 194 63 / 0.06);
   }
 }
 
@@ -184,6 +190,9 @@ body {
 }
 .role-icon.role-server {
   color: var(--role-server);
+}
+.role-icon.role-hypervisor {
+  color: var(--role-hypervisor);
 }
 .role-icon.role-pc {
   color: var(--role-pc);

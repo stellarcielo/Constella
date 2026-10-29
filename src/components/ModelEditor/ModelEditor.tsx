@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import {
   checkModelForm,
   expandPortName,
+  GUEST_KINDS,
   type ModelForm,
   normalizeIfName,
   PORT_TYPES,
@@ -15,7 +16,7 @@ import {
   ROLES,
   type Role,
 } from "../../core";
-import { ROLE_LABELS } from "../../icons/roles";
+import { GUEST_LABELS, ROLE_LABELS } from "../../icons/roles";
 import { loadBuiltinModels } from "../../library";
 import { userModelsStore, useTopology, useUserModels } from "../../store";
 import { modelFileName } from "../../store/userModels";
@@ -218,6 +219,25 @@ function ModelEditor({ request }: { request: ModelEditorRequest }) {
               フレキシブル(定義していない IF 名も使える)
             </label>
           </div>
+          <label className="model-editor-label" htmlFor={`${titleId}-guest`}>
+            ゲスト
+          </label>
+          <select
+            id={`${titleId}-guest`}
+            className="field-input"
+            value={form.guest}
+            onChange={(e) => {
+              const value = e.target.value;
+              update({ guest: GUEST_KINDS.find((kind) => kind === value) ?? "" });
+            }}
+          >
+            <option value="">なし(物理的な機器)</option>
+            {GUEST_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {GUEST_LABELS[kind]}({kind})
+              </option>
+            ))}
+          </select>
         </div>
 
         <h3 className="model-editor-heading">ポート</h3>

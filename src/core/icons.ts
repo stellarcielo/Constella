@@ -22,6 +22,14 @@ export const ROLE_ICON_SVG: Record<Role, string> = {
   firewall:
     '<rect x="6" y="9" width="36" height="30" rx="2"/>' +
     '<path d="M6 19h36M6 29h36M18 9v10M30 9v10M12 19v10M24 19v10M36 19v10M18 29v10M30 29v10"/>',
+  // 物理的なホストの上に、VM(箱)が 3 つ載っている
+  hypervisor:
+    '<rect x="6" y="31" width="36" height="10" rx="2"/>' +
+    '<path d="M11 36h2M18 36h18"/>' +
+    '<rect x="7" y="8" width="10" height="15" rx="2"/>' +
+    '<rect x="19" y="8" width="10" height="15" rx="2"/>' +
+    '<rect x="31" y="8" width="10" height="15" rx="2"/>' +
+    '<path d="M12 23v8M24 23v8M36 23v8"/>',
   // ラックの箱が 3 段
   server:
     '<rect x="10" y="6" width="28" height="11" rx="2"/>' +

@@ -6,6 +6,8 @@ import { parseModelDefinition } from "./modelLibrary";
 import { DEVICE_ID_PATTERN } from "./topology";
 import {
   type DeviceModel,
+  GUEST_KINDS,
+  type GuestKind,
   type ModelIssue,
   PORT_TYPES,
   type PortDef,
@@ -28,6 +30,8 @@ export interface ModelForm {
   role: Role;
   /** 定義していない IF 名も使えるか */
   flexible: boolean;
+  /** このモデルの機器をゲスト(VM・コンテナ)にするか。空ならゲストではない */
+  guest: GuestKind | "";
   ports: PortRow[];
   /** フォームでは扱わない項目(icon や未知のキー)。保存しても残す */
   extra: Record<string, unknown>;
@@ -36,7 +40,7 @@ export interface ModelForm {
 /** モデルの ID は、そのままファイル名(`<id>.yaml`)にするので、デバイスID と同じ規則にする */
 export const MODEL_ID_PATTERN = DEVICE_ID_PATTERN;
 
-const FORM_KEYS = ["id", "vendor", "name", "role", "flexible", "ports"];
+const FORM_KEYS = ["id", "vendor", "name", "role", "flexible", "guest", "ports"];
 
 export function emptyModelForm(): ModelForm {
   return {
@@ -45,6 +49,7 @@ export function emptyModelForm(): ModelForm {
     name: "",
     role: "generic",
     flexible: false,
+    guest: "",
     ports: [{ name: "", type: "rj45", speed: "" }],
     extra: {},
   };
@@ -60,6 +65,7 @@ export function modelFormFromText(text: string): ModelForm | undefined {
     return isScalar(node) && node.value !== null ? String(node.value) : "";
   };
   const roleValue = text_("role");
+  const guestValue = text_("guest");
   const ports: PortRow[] = [];
   const portsNode = root.get("ports", true);
   if (isSeq(portsNode)) {
@@ -91,6 +97,7 @@ export function modelFormFromText(text: string): ModelForm | undefined {
     name: text_("name"),
     role: (ROLES as readonly string[]).includes(roleValue) ? (roleValue as Role) : "generic",
     flexible: isScalar(flexibleNode) && (flexibleNode.value as unknown) === true,
+    guest: (GUEST_KINDS as readonly string[]).includes(guestValue) ? (guestValue as GuestKind) : "",
     ports,
     extra,
   };
@@ -111,6 +118,7 @@ export function modelFormToText(form: ModelForm): string {
   if (form.name.trim()) lines.push(`name: ${scalar(form.name.trim())}`);
   lines.push(`role: ${form.role}`);
   if (form.flexible) lines.push("flexible: true");
+  if (form.guest) lines.push(`guest: ${form.guest}`);
   const ports = form.ports.filter((p) => p.name.trim() !== "");
   if (ports.length > 0) {
     lines.push("ports:");

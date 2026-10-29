@@ -98,7 +98,8 @@ export interface TopologyState {
   /** 取り消す。構文エラーがあれば、最初は最後に正しく読めた状態に戻すだけ */
   undo(): void;
   redo(): void;
-  addDevice(modelId: string, position: Position): string;
+  /** host を渡すと、そのホストのゲストにする(フェーズ4-1 Q2) */
+  addDevice(modelId: string, position: Position, host?: string): string;
   moveDevices(positions: Iterable<[string, Position]>, options?: EditOptions): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
@@ -385,10 +386,10 @@ export function createTopologyStore(
         updateHistoryFlags();
       },
 
-      addDevice(modelId, position) {
+      addDevice(modelId, position, host) {
         let id = "";
         get().edit((t) => {
-          id = addDevice(t, { model: modelId, position }, get().catalog);
+          id = addDevice(t, { model: modelId, position, host }, get().catalog);
         });
         return id;
       },
@@ -486,16 +487,15 @@ export function createTopologyStore(
         const missing = missingDevices();
         if (missing.length === 0) break;
         const { topology, autoPositions } = store.getState();
-        const placed: Position[] = [];
-        for (const device of topology.devices.values()) {
-          const pos = topology.layout.get(device.id) ?? autoPositions.get(device.uid);
-          if (pos) placed.push(pos);
-        }
+        const positionOf = (id: string) => {
+          const device = topology.devices.get(id);
+          return device && (topology.layout.get(id) ?? autoPositions.get(device.uid));
+        };
         const laid = await placeMissing(
           topology,
           catalog,
           missing.map((d) => d.id),
-          placed,
+          positionOf,
         );
         const next = new Map(store.getState().autoPositions);
         for (const device of missing) {

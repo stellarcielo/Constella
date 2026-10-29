@@ -2,6 +2,7 @@
 // 外で書いた(AI に書かせた)YAML の断片も貼り付けられる。
 
 import { nextDeviceId, roundPosition } from "./edit";
+import { resolveGuest } from "./hosts";
 import { parseTopology } from "./parse";
 import { serializeTopology } from "./serialize";
 import { createEmptyTopology, createLinkId, createUid, resolveRole } from "./topology";
@@ -45,6 +46,7 @@ export function parseFragment(text: string, catalog: ModelCatalog): Topology | u
 /**
  * 断片を貼り付ける。デバイスID は role ごとに振り直し(パレットから置いたときと同じ規則)、
  * 断片の中で両端がそろうリンクだけを追加する。座標は offset だけずらす(座標の無いデバイスはそのまま)。
+ * ゲストの host は、ホストも一緒に貼り付けたならその新しい ID にし、図に無いホストなら外す。
  * 貼り付けたデバイスとリンクの ID を返す。
  */
 export function pasteFragment(
@@ -54,12 +56,20 @@ export function pasteFragment(
   offset: Position,
 ): { devices: string[]; links: string[] } {
   const ids = new Map<string, string>();
+  const existing = new Set(t.devices.keys());
   for (const device of fragment.devices.values()) {
-    const id = nextDeviceId(t, resolveRole(device, catalog));
+    const id = nextDeviceId(t, resolveRole(device, catalog), resolveGuest(device, catalog));
     ids.set(device.id, id);
     t.devices.set(id, { ...structuredClone(device), id, uid: createUid() });
     const pos = fragment.layout.get(device.id);
     if (pos) t.layout.set(id, roundPosition({ x: pos.x + offset.x, y: pos.y + offset.y }));
+  }
+  for (const id of ids.values()) {
+    const device = t.devices.get(id);
+    if (device?.host === undefined) continue;
+    const host = ids.get(device.host);
+    if (host !== undefined) device.host = host;
+    else if (!existing.has(device.host)) delete device.host;
   }
   const links: string[] = [];
   for (const link of fragment.links) {

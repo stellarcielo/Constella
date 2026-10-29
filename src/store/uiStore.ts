@@ -45,6 +45,8 @@ export interface ViewOptions {
   showVlan: boolean;
   /** 枠を表示するグループの種類(種類なし・custom は常に表示。フェーズ3-3) */
   groupKinds: GroupKind[];
+  /** ゲスト(VM・コンテナ)とホストの枠を表示する(フェーズ4-1) */
+  showGuests: boolean;
 }
 
 export const DEFAULT_VIEW: ViewOptions = {
@@ -55,6 +57,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   showIp: true,
   showVlan: true,
   groupKinds: [...LAYER_GROUP_KINDS],
+  showGuests: true,
 };
 const VIEW_STORAGE_KEY = "constella.view";
 
@@ -188,8 +191,16 @@ function loadView(storage?: ViewStorage): ViewOptions {
   try {
     const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
     if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
-    const { showIfLabels, longIfNames, showYaml, showGroups, showIp, showVlan, groupKinds } =
-      saved as Record<string, unknown>;
+    const {
+      showIfLabels,
+      longIfNames,
+      showYaml,
+      showGroups,
+      showIp,
+      showVlan,
+      groupKinds,
+      showGuests,
+    } = saved as Record<string, unknown>;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
@@ -200,6 +211,7 @@ function loadView(storage?: ViewStorage): ViewOptions {
       groupKinds: Array.isArray(groupKinds)
         ? GROUP_KINDS.filter((kind) => groupKinds.includes(kind))
         : DEFAULT_VIEW.groupKinds,
+      showGuests: typeof showGuests === "boolean" ? showGuests : DEFAULT_VIEW.showGuests,
     };
   } catch {
     return DEFAULT_VIEW;

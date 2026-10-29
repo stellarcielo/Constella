@@ -429,3 +429,66 @@ describe("rebaseOnText: 保存した YAML の読み直し", () => {
     expect(rebaseOnText(text, topology, testCatalog)).toBeUndefined();
   });
 });
+
+describe("serializeTopology: ゲスト(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+  web01:
+    model: generic-vm
+    # IF の設定
+    interfaces:
+      net0: { vlan: 10 }
+`;
+
+  it("GUI で設定した host・guest・vmid は、interfaces より前に書く", () => {
+    const { topology, base } = load(text);
+    const web01 = topology.devices.get("web01");
+    if (!web01) throw new Error();
+    web01.host = "pve1";
+    web01.guest = "container";
+    web01.vmid = 100;
+    expect(serializeTopology(topology, base).text).toBe(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+  web01:
+    model: generic-vm
+    host: pve1
+    guest: container
+    vmid: 100
+    # IF の設定
+    interfaces:
+      net0: { vlan: 10 }
+`);
+  });
+
+  it("消すと YAML からも消え、往復しても変わらない", () => {
+    const first = load(text);
+    const web01 = first.topology.devices.get("web01");
+    if (!web01) throw new Error();
+    web01.host = "pve1";
+    web01.vmid = 100;
+    const written = serializeTopology(first.topology, first.base).text;
+    const again = load(written);
+    expect(semantic(again.topology)).toEqual(semantic(first.topology));
+    const device = again.topology.devices.get("web01");
+    if (!device) throw new Error();
+    delete device.host;
+    delete device.vmid;
+    expect(serializeTopology(again.topology, again.base).text).toBe(text);
+  });
+
+  it("新しいデバイスは model・host の順に書く", () => {
+    const { topology, base } = load(text);
+    addDevice(
+      topology,
+      { model: "generic-container", host: "pve1", position: { x: 0, y: 0 } },
+      testCatalog,
+    );
+    expect(serializeTopology(topology, base).text).toContain(
+      "  ct1:\n    model: generic-container\n    host: pve1\n",
+    );
+  });
+});

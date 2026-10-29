@@ -1,6 +1,7 @@
 // 意味のチェック(SPEC 4.5)。パース時に分かる問題(重複・不正な値など)は parse.ts で出す。
 
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
+import { hostTree } from "./hosts";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
 import { portTypesCompatible } from "./ports";
@@ -60,6 +61,51 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
             device: device.id,
             name,
           },
+        );
+      }
+    }
+  }
+
+  // ホストとゲスト(SPEC 4.6): 存在しないホスト、輪になる host、同じホストの中での VMID の重複
+  for (const device of t.devices.values()) {
+    if (device.host !== undefined && !t.devices.has(device.host)) {
+      add(
+        "error",
+        "unknown-device",
+        `${device.id} のホスト「${device.host}」に対応するデバイスがありません`,
+        { kind: "device", id: device.id, field: "host" },
+      );
+    }
+  }
+  const tree = hostTree(t);
+  for (const cycle of tree.cycles) {
+    cycle.forEach((id, i) => {
+      // そのデバイスから始めて、一周して戻るまでを書く
+      const route = [...cycle.slice(i), ...cycle.slice(0, i), id].join(" → ");
+      add(
+        "error",
+        "host-cycle",
+        cycle.length === 1
+          ? `${id} の host が自分自身になっています`
+          : `host をたどると輪になります(${route})`,
+        { kind: "device", id, field: "host" },
+      );
+    });
+  }
+  for (const [host, guests] of tree.guestsOf) {
+    const seen = new Map<number, string>();
+    for (const id of guests) {
+      const vmid = t.devices.get(id)?.vmid;
+      if (vmid === undefined) continue;
+      const first = seen.get(vmid);
+      if (first === undefined) {
+        seen.set(vmid, id);
+      } else {
+        add(
+          "error",
+          "duplicate-vmid",
+          `${id} の VMID ${vmid} は ${first} と重なっています(どちらも ${host} の上で動いています)`,
+          { kind: "device", id, field: "vmid" },
         );
       }
     }
@@ -161,8 +207,14 @@ export function locateTarget(base: YamlBase, target: IssueTarget): SourceRange |
   switch (target.kind) {
     case "document":
       return undefined;
-    case "device":
-      return rangeOf(findPair(doc.get("devices", true), (k) => k === target.id)?.key);
+    case "device": {
+      const pair = findPair(doc.get("devices", true), (k) => k === target.id);
+      const value = pair?.value;
+      // 項目の指定があれば、その値の位置(無ければデバイスID の位置)
+      const field =
+        target.field !== undefined && isMap(value) ? value.get(target.field, true) : undefined;
+      return rangeOf(field ?? pair?.key);
+    }
     case "interface": {
       const device = findPair(doc.get("devices", true), (k) => k === target.device)?.value;
       const ifs = isMap(device) ? device.get("interfaces", true) : undefined;

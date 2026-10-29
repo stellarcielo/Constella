@@ -9,6 +9,7 @@ import {
   DEVICE_ID_PATTERN,
   FORMAT_VERSION,
   GROUP_KINDS,
+  GUEST_KINDS,
   INTERFACE_MODES,
   MEDIA,
   parseTopology,
@@ -18,6 +19,8 @@ import {
   serializeTopology,
   type Topology,
   validateTopology,
+  VMID_MAX,
+  VMID_MIN,
 } from "./core";
 import { specExample } from "./core/testFixtures";
 import { builtinCatalog } from "./library";
@@ -74,6 +77,11 @@ describe("JSON Schema", () => {
     expect(schema.definitions.media.enum).toEqual([...MEDIA]);
     expect(schema.definitions.interfaceMode.enum).toEqual([...INTERFACE_MODES]);
     expect(schema.definitions.groupKind.enum).toEqual([...GROUP_KINDS]);
+    expect(schema.definitions.device.properties.guest.enum).toEqual([...GUEST_KINDS]);
+    expect(schema.definitions.device.properties.vmid).toMatchObject({
+      minimum: VMID_MIN,
+      maximum: VMID_MAX,
+    });
     expect(schema.definitions.deviceId.pattern).toBe(DEVICE_ID_PATTERN.source);
     expect(Object.keys(schema.properties.layout.patternProperties)).toEqual([
       DEVICE_ID_PATTERN.source,
@@ -121,6 +129,10 @@ groups:
   - { id: g1, kind: rack, label: Rack, members: [ r1, r2 ] }
 `,
     ],
+    [
+      "ゲスト",
+      "constella: 1\ndevices:\n  pve1: { role: hypervisor }\n  vm1: { host: pve1, guest: container, vmid: 999999999 }\n",
+    ],
   ];
   const rejected: [string, string][] = [
     ["バージョンが無い", "devices: {}\n"],
@@ -148,6 +160,9 @@ groups:
     ["zoom の無い _viewport", "constella: 1\nlayout:\n  _viewport: { x: 0, y: 0 }\n"],
     ["id の無いグループ", "constella: 1\ngroups:\n  - { kind: rack }\n"],
     ["不正な kind", "constella: 1\ngroups:\n  - { id: g1, kind: floor }\n"],
+    ["不正な guest", "constella: 1\ndevices:\n  vm1: { guest: lxc }\n"],
+    ["範囲外の vmid", "constella: 1\ndevices:\n  vm1: { vmid: 99 }\n"],
+    ["空の host", 'constella: 1\ndevices:\n  vm1: { host: "" }\n'],
   ];
 
   it.each(accepted)("パーサーと同じく受け付ける: %s", (_name, text) => {
@@ -164,8 +179,9 @@ groups:
 describe("examples(SPEC 11章)", () => {
   const entries = Object.entries(examples);
 
-  it("小規模ラボ・2層スイッチ網・冗長構成 + LAG の 3 つがある", () => {
+  it("小規模ラボ・2層スイッチ網・冗長構成 + LAG・Proxmox VE の 4 つがある", () => {
     expect(entries.map(([path]) => path.split("/").pop()).sort()).toEqual([
+      "proxmox.constella.yaml",
       "redundant-lag.constella.yaml",
       "small-lab.constella.yaml",
       "two-tier.constella.yaml",

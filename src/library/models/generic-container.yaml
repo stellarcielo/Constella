@@ -1,0 +1,10 @@
+# コンテナ(Proxmox VE の LXC)。NIC は net0〜net3。それ以外の名前も使える
+id: generic-container
+vendor: Generic
+name: Container
+role: server
+flexible: true
+guest: container
+ports:
+  - name: "net{0-3}"
+    type: virtual

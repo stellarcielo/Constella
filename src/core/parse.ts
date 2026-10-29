@@ -21,6 +21,7 @@ import {
   FORMAT_VERSION,
   GROUP_KINDS,
   type Group,
+  GUEST_KINDS,
   INTERFACE_MODES,
   type InterfaceInfo,
   type Issue,
@@ -34,6 +35,8 @@ import {
   type Severity,
   type SourceRange,
   type Topology,
+  VMID_MAX,
+  VMID_MIN,
 } from "./types";
 
 /** 保存時にコメントやキー順を保つために、読み込んだ YAML ドキュメントを持ち回る */
@@ -55,6 +58,7 @@ export interface ParseOptions {
 }
 
 const TOP_LEVEL_KEYS = ["constella", "meta", "devices", "links", "layout", "groups"];
+const DEVICE_KEYS = ["model", "role", "label", "host", "guest", "vmid", "interfaces"];
 
 export function parseTopology(text: string, options: ParseOptions = {}): ParseResult {
   const doc = parseDocument(text, { uniqueKeys: false });
@@ -247,11 +251,31 @@ class Parser {
         case "label":
           this.setText(device, key, value, ctx);
           break;
+        case "host":
+          if (isNonEmptyString(value)) device.host = value.value;
+          else this.invalid(device.extra, key, value, ctx, "ホストのデバイスID");
+          break;
+        case "guest": {
+          const guest = enumValue(value, GUEST_KINDS);
+          if (guest) device.guest = guest;
+          else this.invalid(device.extra, key, value, ctx, GUEST_KINDS.join(" / "));
+          break;
+        }
+        case "vmid":
+          if (isScalar(value) && Number.isInteger(value.value)) {
+            const vmid = value.value as number;
+            if (vmid >= VMID_MIN && vmid <= VMID_MAX) {
+              device.vmid = vmid;
+              break;
+            }
+          }
+          this.invalid(device.extra, key, value, ctx, `${VMID_MIN}〜${VMID_MAX} の整数`);
+          break;
         case "interfaces":
           device.interfaces = this.interfaces(id, value, ctx);
           break;
         default:
-          this.unknownKey(key, keyNode, ctx, ["model", "role", "label", "interfaces"]);
+          this.unknownKey(key, keyNode, ctx, DEVICE_KEYS);
           device.extra[key] = toJS(value);
       }
     }

@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
+# Proxmox VE: 2 台のホストの上で、VM とコンテナ(LXC)を動かす。
+# ゲストは host に動いているホストを書き、vmid に Proxmox VE の VMID を書く。
+# ロール(機能)はゲストでも今までどおり(OPNsense の VM は firewall)。
+constella: 1
+
+meta:
+  title: Proxmox VE のラボ
+  description: 2 台のホストと、その上で動く VM・コンテナ
+
+devices:
+  rt1:
+    model: generic-router-4
+  sw1:
+    model: generic-l2switch-24
+  pve1:
+    model: generic-hypervisor-4
+  pve2:
+    model: generic-hypervisor-4
+  fw01:
+    model: generic-vm
+    role: firewall
+    label: OPNsense
+    host: pve1
+    vmid: 100
+  web01:
+    model: generic-vm
+    host: pve1
+    vmid: 101
+  db01:
+    model: generic-container
+    host: pve1
+    vmid: 200
+  mon01:
+    model: generic-vm
+    host: pve2
+    vmid: 102
+  dns01:
+    model: generic-container
+    host: pve2
+    vmid: 201
+
+links:
+  - a: rt1:Gi0/1
+    b: sw1:Gi0/24
+  # ホストの物理的な NIC をスイッチにつなぐ
+  - a: pve1:eno1
+    b: sw1:Gi0/1
+  - a: pve1:eno2
+    b: sw1:Gi0/2
+  - a: pve2:eno1
+    b: sw1:Gi0/3
+  - a: pve2:eno2
+    b: sw1:Gi0/4

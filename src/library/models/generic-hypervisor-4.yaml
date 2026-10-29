@@ -1,0 +1,9 @@
+# 仮想化基盤のホスト(Proxmox VE のノードなど)。物理的な NIC は eno1〜eno4
+id: generic-hypervisor-4
+vendor: Generic
+name: Hypervisor (4 ports)
+role: hypervisor
+ports:
+  - name: "eno{1-4}"
+    type: rj45
+    speed: 1G

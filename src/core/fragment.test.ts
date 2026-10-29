@@ -82,3 +82,38 @@ describe("pasteFragment", () => {
     expect(t.layout.has("cloud1")).toBe(false);
   });
 });
+
+describe("pasteFragment: ゲスト(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  vm1: { model: generic-vm, host: pve1 }
+  ct1: { model: generic-container, host: pve1 }
+`;
+  const at = { x: 0, y: 0 };
+
+  it("ゲストだけを貼り付けたら、同じホストのゲストにする。ID は種類で採番する", () => {
+    const t = load(text);
+    const { devices } = pasteFragment(t, extractFragment(t, ["vm1", "ct1"]), testCatalog, at);
+    expect(devices).toEqual(["vm2", "ct2"]);
+    expect(devices.map((id) => t.devices.get(id)?.host)).toEqual(["pve1", "pve1"]);
+  });
+
+  it("ホストも一緒に貼り付けたら、新しいホストのゲストにする", () => {
+    const t = load(text);
+    const { devices } = pasteFragment(t, extractFragment(t, ["pve1", "vm1"]), testCatalog, at);
+    expect(devices).toEqual(["hv1", "vm2"]);
+    expect(t.devices.get("vm2")?.host).toBe("hv1");
+  });
+
+  it("図に無いホストのゲストを貼り付けたら、host を外す", () => {
+    const t = load(text);
+    const fragment = parseFragment(
+      "devices:\n  web: { model: generic-vm, host: pve9 }\n",
+      testCatalog,
+    );
+    if (!fragment) throw new Error();
+    const { devices } = pasteFragment(t, fragment, testCatalog, at);
+    expect(t.devices.get(devices[0])).not.toHaveProperty("host");
+  });
+});

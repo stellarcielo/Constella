@@ -1,4 +1,4 @@
-// デバイスのインスペクタ: ID・ラベル・モデル・role・IF 一覧(SPEC 7.1)。
+// デバイスのインスペクタ: ID・ラベル・モデル・role・ゲスト・IF 一覧(SPEC 7.1・4.6)。
 
 import { useState } from "react";
 import {
@@ -7,26 +7,50 @@ import {
   type Device,
   type Endpoint,
   findModel,
+  GUEST_KINDS,
+  type GuestKind,
+  hostCandidates,
   type Link,
   type ModelChangeImpact,
   modelChangeImpact,
+  resolveGuest,
   resolveLabel,
   resolveRole,
   type Role,
   ROLES,
+  setDeviceGuest,
+  setDeviceHost,
   setDeviceLabel,
   setDeviceRole,
+  setDeviceVmid,
+  type Topology,
+  VMID_MAX,
+  VMID_MIN,
 } from "../../core";
 import { RoleIcon } from "../../icons/RoleIcon";
-import { ROLE_LABELS, ROLE_ORDER } from "../../icons/roles";
+import { GUEST_LABELS, ROLE_LABELS, ROLE_ORDER } from "../../icons/roles";
 import { topologyStore, useTopology } from "../../store";
 import { ConfirmDialog } from "../Dialog/ConfirmDialog";
 import { useIfNameFormatter } from "../ifNames";
+import { modelSections } from "../modelSections";
 import { CommitInput, Field } from "./fields";
 import { InterfaceList } from "./InterfaceList";
 import { IssueList } from "./IssueList";
 
 const isRole = (value: string): value is Role => (ROLES as readonly string[]).includes(value);
+const isGuestKind = (value: string): value is GuestKind =>
+  (GUEST_KINDS as readonly string[]).includes(value);
+
+const vmidError = (value: string): string | undefined =>
+  value === "" || (/^\d+$/.test(value) && Number(value) >= VMID_MIN && Number(value) <= VMID_MAX)
+    ? undefined
+    : `${VMID_MIN}〜${VMID_MAX} の整数を入力してください`;
+
+/** ホストの選択肢での名前(ラベルがあれば添える) */
+const hostName = (t: Topology, id: string) => {
+  const label = t.devices.get(id)?.label;
+  return label && label !== id ? `${id}(${label})` : id;
+};
 
 type ModelDecision = "keep" | "remove";
 
@@ -42,6 +66,7 @@ export function DeviceInspector({ device }: { device: Device }) {
   const id = device.id;
   const model = findModel(device, catalog);
   const role = resolveRole(device, catalog);
+  const guest = resolveGuest(device, catalog);
   const edit = topologyStore.getState().edit;
   // デバイスそのものと IF の問題に加え、このデバイス側の端を指すリンクの問題(モデルに無い IF など)も出す
   const deviceIssues = issues.filter((i) => {
@@ -67,7 +92,6 @@ export function DeviceInspector({ device }: { device: Device }) {
     }
   };
 
-  const models = [...catalog.values()];
   const unknownModel = device.model !== undefined && !model;
 
   /** このデバイス側を先にして「Gi0/1 ↔ sw1:Gi0/2」の形にする */
@@ -125,21 +149,15 @@ export function DeviceInspector({ device }: { device: Device }) {
           >
             <option value="">モデルなし(フレキシブル)</option>
             {unknownModel && <option value={device.model}>不明なモデル: {device.model}</option>}
-            {ROLE_ORDER.map((r) => {
-              const group = models
-                .filter((m) => m.role === r)
-                .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
-              if (group.length === 0) return null;
-              return (
-                <optgroup key={r} label={ROLE_LABELS[r]}>
-                  {group.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name ?? m.id}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
+            {modelSections(catalog.values()).map((section) => (
+              <optgroup key={section.key} label={section.label}>
+                {section.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name ?? m.id}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </Field>
         <Field label="役割">
@@ -163,6 +181,32 @@ export function DeviceInspector({ device }: { device: Device }) {
             ))}
           </select>
         </Field>
+        <Field label="ゲスト">
+          <select
+            className="field-input"
+            aria-label="ゲスト"
+            value={device.guest ?? ""}
+            onChange={(e) => {
+              const value = e.target.value;
+              e.currentTarget.blur();
+              edit((t) => setDeviceGuest(t, id, isGuestKind(value) ? value : undefined, catalog));
+            }}
+          >
+            <option value="">
+              {model?.guest
+                ? `モデルどおり(${GUEST_LABELS[model.guest]})`
+                : device.host !== undefined
+                  ? "未指定(VM)"
+                  : "なし(物理的な機器)"}
+            </option>
+            {GUEST_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {GUEST_LABELS[kind]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {guest && <GuestFields device={device} />}
       </section>
 
       <InterfaceList device={device} />
@@ -217,6 +261,71 @@ export function DeviceInspector({ device }: { device: Device }) {
           <p className="muted">「そのまま残す」を選ぶと、これらはエラーとして表示されます。</p>
         </ConfirmDialog>
       )}
+    </>
+  );
+}
+
+/** ゲストのホストと VMID(SPEC 4.6) */
+function GuestFields({ device }: { device: Device }) {
+  const topology = useTopology((s) => s.topology);
+  const catalog = useTopology((s) => s.catalog);
+  const edit = topologyStore.getState().edit;
+  const id = device.id;
+  // 自分自身と、自分の上で動くゲストはホストにできない(輪になるため)
+  const candidates = hostCandidates(topology, id);
+  const isHypervisor = (other: string) => {
+    const d = topology.devices.get(other);
+    return d !== undefined && resolveRole(d, catalog) === "hypervisor";
+  };
+  const hypervisors = candidates.filter(isHypervisor);
+  const others = candidates.filter((other) => !isHypervisor(other));
+  const invalidHost = device.host !== undefined && !candidates.includes(device.host);
+
+  return (
+    <>
+      <Field label="ホスト">
+        <select
+          className="field-input"
+          aria-label="ホスト"
+          value={device.host ?? ""}
+          onChange={(e) => {
+            const value = e.target.value;
+            e.currentTarget.blur();
+            edit((t) => setDeviceHost(t, id, value === "" ? undefined : value));
+          }}
+        >
+          <option value="">なし(図に描かないホスト)</option>
+          {invalidHost && <option value={device.host}>使えないホスト: {device.host}</option>}
+          {hypervisors.length > 0 && (
+            <optgroup label={ROLE_LABELS.hypervisor}>
+              {hypervisors.map((h) => (
+                <option key={h} value={h}>
+                  {hostName(topology, h)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {others.length > 0 && (
+            <optgroup label="そのほかの機器">
+              {others.map((h) => (
+                <option key={h} value={h}>
+                  {hostName(topology, h)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </Field>
+      <Field label="VMID">
+        <CommitInput
+          label="VMID"
+          monospace
+          value={device.vmid?.toString() ?? ""}
+          placeholder="例: 100"
+          validate={vmidError}
+          onCommit={(v) => edit((t) => setDeviceVmid(t, id, v === "" ? undefined : Number(v)))}
+        />
+      </Field>
     </>
   );
 }

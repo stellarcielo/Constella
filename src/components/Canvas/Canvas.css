@@ -17,6 +17,7 @@
 }
 
 .device-node-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 52px;
@@ -37,6 +38,21 @@
 
 .device-node.problem-error .device-node-icon {
   box-shadow: 0 0 0 3px var(--error);
+}
+
+/* ゲスト(VM・コンテナ)の印。アイコンの右上に重ねる(SPEC 7.3) */
+.device-guest-badge {
+  position: absolute;
+  top: -6px;
+  right: -9px;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--label-bg);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
 }
 
 .device-node-label {
@@ -227,6 +243,13 @@
   fill: var(--group-as-fill);
 }
 
+/* ホストの枠(ホストと、その上で動くゲストを囲む。SPEC 7.3) */
+.group-frame.kind-host {
+  stroke: var(--group-host);
+  stroke-width: 1.5;
+  fill: var(--group-host-fill);
+}
+
 /* 枠のラベル。線より手前に背景付きで描き、クリックでメンバーを選択する */
 .group-label {
   position: absolute;
@@ -269,4 +292,8 @@
 
 .group-label.kind-as {
   color: var(--group-as);
+}
+
+.group-label.kind-host {
+  color: var(--group-host);
 }
