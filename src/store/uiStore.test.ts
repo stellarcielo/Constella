@@ -94,24 +94,26 @@ describe("uiStore: 表示オプション", () => {
       longIfNames: false,
       showYaml: true,
       showGroups: true,
+      showIp: true,
+      showVlan: true,
     });
   });
 
   it("変更すると保存し、次に作ったときに読み込む(Q4)", () => {
     const storage = memoryStorage();
-    createUiStore(storage).getState().setView({ longIfNames: true, showGroups: false });
-    expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual({
+    createUiStore(storage)
+      .getState()
+      .setView({ longIfNames: true, showGroups: false, showIp: false });
+    const saved = {
       showIfLabels: true,
       longIfNames: true,
       showYaml: true,
       showGroups: false,
-    });
-    expect(createUiStore(storage).getState().view).toEqual({
-      showIfLabels: true,
-      longIfNames: true,
-      showYaml: true,
-      showGroups: false,
-    });
+      showIp: false,
+      showVlan: true,
+    };
+    expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual(saved);
+    expect(createUiStore(storage).getState().view).toEqual(saved);
   });
 
   it("保存された内容が壊れていたら既定値を使う", () => {

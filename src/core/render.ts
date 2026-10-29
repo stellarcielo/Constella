@@ -3,10 +3,11 @@
 
 import { groupFrames, groupTitle } from "./groupFrames";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
-import { expandIfName } from "./ifname";
+import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import {
   endLabelPositions,
   estimateLabelSize,
+  estimateNameWidth,
   midpoint,
   offsetLine,
   parallelSlots,
@@ -25,6 +26,10 @@ export interface RenderOptions {
   showIfLabels?: boolean;
   /** IF 名を長い形で描くか(ツールバーの「長い名前」) */
   longIfNames?: boolean;
+  /** IF 名の下に IP を描くか(ツールバーの「IP」) */
+  showIp?: boolean;
+  /** IF 名の下に VLAN を描くか(ツールバーの「VLAN」) */
+  showVlan?: boolean;
   /** グループの枠を描くか(ツールバーの「グループ」) */
   showGroups?: boolean;
   /** 図のまわりの余白 */
@@ -110,13 +115,6 @@ function iconCenter(p: Position): Point {
   return { x: p.x + NODE_WIDTH / 2, y: p.y + ICON_BOX / 2 };
 }
 
-/** デバイス名の幅の見積もり(全角は 12px、半角は 7px) */
-function nameWidth(text: string): number {
-  let width = 12;
-  for (const ch of text) width += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? 12 : 7;
-  return width;
-}
-
 /** SVG の文字や属性に入れるため、特別な意味のある文字を置き換える */
 export function escapeXml(text: string): string {
   return text
@@ -172,6 +170,32 @@ function label(
   );
 }
 
+/** IF 名ラベル。IF 名の下に IP・VLAN を 1 行ずつ、薄い色で描く(キャンバスと同じ形) */
+function ifLabelSvg(at: Point, ifLabelValue: IfLabel, bounds: Bounds): string {
+  const lines = ifLabelLines(ifLabelValue);
+  const size = estimateLabelSize(lines);
+  const x = at.x - size.width / 2;
+  const y = at.y - size.height / 2;
+  bounds.add(x, y, x + size.width, y + size.height);
+  const lineHeight = (size.height - 2) / lines.length;
+  const text = lines
+    .map((line, i) => {
+      const muted = ifLabelValue.name === undefined || i > 0;
+      const baseline = y + 1 + lineHeight * (i + 0.5) + 10 * 0.35;
+      return (
+        `<text x="${n(at.x)}" y="${n(baseline)}" text-anchor="middle" ` +
+        `font-family="${escapeXml(MONO_FONT)}" font-size="10" ` +
+        `fill="${muted ? THEME.textMuted : THEME.text}">${escapeXml(line)}</text>`
+      );
+    })
+    .join("");
+  return (
+    `<rect x="${n(x)}" y="${n(y)}" width="${n(size.width)}" height="${n(size.height)}" rx="3" ` +
+    `fill="${THEME.labelBg}" fill-opacity="${THEME.labelBgOpacity}" stroke="${THEME.border}"/>` +
+    text
+  );
+}
+
 /**
  * 図全体を SVG にする。座標の無い(fallbackPositions にも無い)デバイスと、そこにつながるリンクは描かない
  */
@@ -180,7 +204,12 @@ export function renderSvg(
   catalog: ModelCatalog,
   options: RenderOptions = {},
 ): RenderedSvg {
-  const showIfLabels = options.showIfLabels ?? true;
+  const labelOptions = {
+    showIfName: options.showIfLabels ?? true,
+    longIfNames: options.longIfNames ?? false,
+    showIp: options.showIp ?? true,
+    showVlan: options.showVlan ?? true,
+  };
   const padding = options.padding ?? 24;
   const bounds = new Bounds();
 
@@ -202,7 +231,7 @@ export function renderSvg(
           `rx="10" ${GROUP_STYLES[kind]}/>`,
       );
       const title = groupTitle(frame.group);
-      const size = { width: nameWidth(title), height: 16 };
+      const size = { width: estimateNameWidth(title), height: 16 };
       frameLabels.push(
         label(
           { x: frame.x + 8 + size.width / 2, y: frame.y + 4 + size.height / 2 },
@@ -224,20 +253,25 @@ export function renderSvg(
   const slots = parallelSlots(
     drawable.map(({ link, a, b }) => ({ id: link.id, source: a.device, target: b.device })),
   );
-  const ifName = (name: string) => (options.longIfNames ? expandIfName(name) : name);
   const lines: string[] = [];
   const linkLabels: string[] = [];
+  const nameWidthOf = (id: string) => {
+    const device = t.devices.get(id);
+    return device ? estimateNameWidth(resolveLabel(device)) : undefined;
+  };
   for (const { link, a, b } of drawable) {
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     const ca = iconCenter(positions.get(a.device) as Position);
     const cb = iconCenter(positions.get(b.device) as Position);
-    const aName = ifName(a.iface);
-    const bName = ifName(b.iface);
+    const aLabel = ifLabel(a.iface, interfaceInfo(t.devices.get(a.device), a.iface), labelOptions);
+    const bLabel = ifLabel(b.iface, interfaceInfo(t.devices.get(b.device), b.iface), labelOptions);
+    const aLines = aLabel ? ifLabelLines(aLabel) : [];
+    const bLines = bLabel ? ifLabelLines(bLabel) : [];
     let path: string;
     let ends: { a: Point; b: Point };
     let center: Point;
     if (a.device === b.device) {
-      const loop = selfLoop(ca, slot.index, link.label);
+      const loop = selfLoop(ca, slot.index, link.label, { a: aLines, b: bLines });
       path = loop.path;
       ends = { a: loop.labelA, b: loop.labelB };
       center = loop.label;
@@ -248,17 +282,17 @@ export function renderSvg(
     } else {
       const line = offsetLine(ca, cb, slotOffset(slot), a.device > b.device);
       path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
-      ends = endLabelPositions(line.a, line.b, aName, bName, slot);
+      ends = endLabelPositions(line.a, line.b, aLines, bLines, slot, {
+        a: nameWidthOf(a.device),
+        b: nameWidthOf(b.device),
+      });
       center = midpoint(line.a, line.b);
     }
     lines.push(
       `<path d="${path}" fill="none" stroke-width="2" ${MEDIA_STYLES[linkMedia(link, t, catalog)]}/>`,
     );
-    if (showIfLabels) {
-      const style = { font: MONO_FONT, fontSize: 10, color: THEME.text, border: true };
-      linkLabels.push(label(ends.a, aName, estimateLabelSize(aName), style, bounds));
-      linkLabels.push(label(ends.b, bName, estimateLabelSize(bName), style, bounds));
-    }
+    if (aLabel) linkLabels.push(ifLabelSvg(ends.a, aLabel, bounds));
+    if (bLabel) linkLabels.push(ifLabelSvg(ends.b, bLabel, bounds));
     if (link.label) {
       const style = { font: FONT, fontSize: 11, color: THEME.textMuted, border: false };
       linkLabels.push(label(center, link.label, estimateLabelSize(link.label), style, bounds));
@@ -288,7 +322,7 @@ export function renderSvg(
         label(
           nameCenter,
           name,
-          { width: nameWidth(name), height: NAME_HEIGHT },
+          { width: estimateNameWidth(name), height: NAME_HEIGHT },
           { font: FONT, fontSize: NAME_FONT, color: THEME.text, border: false },
           bounds,
         ) +

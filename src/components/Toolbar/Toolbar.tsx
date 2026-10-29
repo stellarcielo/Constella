@@ -98,6 +98,24 @@ export function Toolbar() {
         >
           長い名前
         </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-pressed={view.showIp}
+          title="IF 名ラベルの下に IP アドレスを表示する"
+          onClick={() => uiStore.getState().setView({ showIp: !view.showIp })}
+        >
+          IP
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-pressed={view.showVlan}
+          title="IF 名ラベルの下に VLAN(access は VLAN 番号、trunk は通す VLAN)を表示する"
+          onClick={() => uiStore.getState().setView({ showVlan: !view.showVlan })}
+        >
+          VLAN
+        </button>
       </div>
     </header>
   );

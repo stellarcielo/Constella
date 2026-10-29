@@ -20,3 +20,4 @@ export * from "./linkGeometry";
 export * from "./icons";
 export * from "./render";
 export * from "./groupFrames";
+export * from "./ifLabel";

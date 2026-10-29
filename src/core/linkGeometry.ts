@@ -12,14 +12,39 @@ export const PARALLEL_GAP = 18;
 /** IF 名ラベルの大きさの見積もり(Canvas.css の .link-if-label と合わせる) */
 const CHAR_WIDTH = 6.2;
 const LABEL_PADDING_X = 8;
-const LABEL_HEIGHT = 15;
+/** 1 行の高さと、上下の枠線の分 */
+const LINE_HEIGHT = 13;
+const LABEL_BORDER = 2;
 
-/**
- * アイコンの中心から見た、ラベルを置いてはいけない範囲。
- * アイコン(52px 角)と、その下のデバイス名のラベルを覆う。
- */
-const AVOID = { left: 30, right: 30, top: 30, bottom: 50 };
+/** ラベルを置いてはいけない範囲(アイコンの中心から見た座標) */
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** アイコン(52px 角)の箱 */
+const ICON_BOX: Box = { left: -30, top: -30, right: 30, bottom: 30 };
+/** アイコンの下のデバイス名の上端と下端。左右は名前の幅で決まる */
+const NAME_TOP = 26;
+const NAME_BOTTOM = 50;
+/** デバイス名の幅が分からないときは、アイコンと同じ幅とみなす */
+const DEFAULT_NAME_WIDTH = 60;
 const LABEL_GAP = 4;
+
+/** デバイス名(12px)の幅の見積もり。全角は 12px、半角は 7px、左右の余白が 12px */
+export function estimateNameWidth(text: string): number {
+  let width = 12;
+  for (const ch of text) width += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? 12 : 7;
+  return width;
+}
+
+/** アイコンと、その下のデバイス名の範囲 */
+function avoidBoxes(nameWidth = DEFAULT_NAME_WIDTH): Box[] {
+  const half = Math.max(nameWidth, DEFAULT_NAME_WIDTH) / 2;
+  return [ICON_BOX, { left: -half, top: NAME_TOP, right: half, bottom: NAME_BOTTOM }];
+}
 
 export interface Slot {
   /** 同じ 2 台の間のリンクのうち何本目か(0 始まり) */
@@ -73,19 +98,59 @@ export function offsetLine(
   return { a: { x: a.x + nx, y: a.y + ny }, b: { x: b.x + nx, y: b.y + ny } };
 }
 
-export function estimateLabelSize(text: string): { width: number; height: number } {
-  return { width: text.length * CHAR_WIDTH + LABEL_PADDING_X, height: LABEL_HEIGHT };
-}
-
-/** 中心から向き (ux, uy) に進んだとき、AVOID の範囲を抜けるまでの距離 */
-function exitDistance(ux: number, uy: number): number {
-  const tx = ux > 0 ? AVOID.right / ux : ux < 0 ? AVOID.left / -ux : Infinity;
-  const ty = uy > 0 ? AVOID.bottom / uy : uy < 0 ? AVOID.top / -uy : Infinity;
-  return Math.min(tx, ty);
+/** ラベルの大きさ。複数行(IF 名の下の IP・VLAN など)は行の配列で渡す */
+export function estimateLabelSize(text: string | readonly string[]): {
+  width: number;
+  height: number;
+} {
+  const lines = typeof text === "string" ? [text] : text;
+  const longest = Math.max(0, ...lines.map((line) => line.length));
+  return {
+    width: longest * CHAR_WIDTH + LABEL_PADDING_X,
+    height: lines.length * LINE_HEIGHT + LABEL_BORDER,
+  };
 }
 
 /**
- * 両端の IF 名ラベルの中心。線の上の、アイコン(とデバイス名)のすぐ外側に置く(Q1)。
+ * 中心から向き (ux, uy) に進んだとき、大きさ size のラベル(中心がその点)が、
+ * アイコンとデバイス名のどちらとも LABEL_GAP 以上離れる最短の距離。
+ * ラベルの中心が入ってはいけない範囲は、各範囲をラベルの半分の大きさと隙間の分だけ広げたもの
+ */
+function clearDistance(
+  ux: number,
+  uy: number,
+  size: { width: number; height: number },
+  boxes: Box[],
+): number {
+  const grown = boxes.map((b) => ({
+    left: b.left - size.width / 2 - LABEL_GAP,
+    top: b.top - size.height / 2 - LABEL_GAP,
+    right: b.right + size.width / 2 + LABEL_GAP,
+    bottom: b.bottom + size.height / 2 + LABEL_GAP,
+  }));
+  const EPS = 1e-6;
+  let d = 0;
+  // 範囲の中にいれば、その範囲を抜けるところまで進む(範囲は 2 つなので数回で止まる)
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (const g of grown) {
+      const x = ux * d;
+      const y = uy * d;
+      if (x > g.left + EPS && x < g.right - EPS && y > g.top + EPS && y < g.bottom - EPS) {
+        const tx = ux > 0 ? g.right / ux : ux < 0 ? g.left / ux : Infinity;
+        const ty = uy > 0 ? g.bottom / uy : uy < 0 ? g.top / uy : Infinity;
+        d = Math.min(tx, ty);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return d;
+}
+
+/**
+ * 両端の IF 名ラベルの中心。線の上の、アイコンとデバイス名のすぐ外側に置く(Q1)。
+ * デバイス名の幅(nameWidths)を渡すと、アイコンより幅の広い名前にも重ならないようにする。
  * 並行リンクでラベルが隣の線のラベルと横に重なる向き(縦や斜めの線)なら、
  * 何本目かに応じて線に沿って段違いにずらす。
  * 機器同士が近くてラベルがぶつかるときは、線の長さに合わせて内側に寄せる。
@@ -93,9 +158,10 @@ function exitDistance(ux: number, uy: number): number {
 export function endLabelPositions(
   a: Point,
   b: Point,
-  aText: string,
-  bText: string,
+  aText: string | readonly string[],
+  bText: string | readonly string[],
   slot: Slot = { index: 0, count: 1 },
+  nameWidths: { a?: number; b?: number } = {},
 ): { a: Point; b: Point } {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -114,8 +180,10 @@ export function endLabelPositions(
   const halfB = along(sizeB);
   const overlaps = slot.count > 1 && Math.max(across(sizeA), across(sizeB)) * 2 > PARALLEL_GAP;
   const stagger = overlaps ? slot.index : 0;
-  let da = exitDistance(ux, uy) + LABEL_GAP + halfA + stagger * (2 * halfA + LABEL_GAP);
-  let db = exitDistance(-ux, -uy) + LABEL_GAP + halfB + stagger * (2 * halfB + LABEL_GAP);
+  let da =
+    clearDistance(ux, uy, sizeA, avoidBoxes(nameWidths.a)) + stagger * (2 * halfA + LABEL_GAP);
+  let db =
+    clearDistance(-ux, -uy, sizeB, avoidBoxes(nameWidths.b)) + stagger * (2 * halfB + LABEL_GAP);
   // 2 つのラベルが重なる(または線より長い)なら、比率を保って内側に寄せる。
   // 重ならない条件: (da + halfA) + (db + halfB) <= len
   const room = len - 2 * (halfA + halfB);
@@ -137,12 +205,14 @@ export function midpoint(a: Point, b: Point): Point {
 /**
  * 自分自身へのリンクの輪(Q5)。アイコンの右側に描き、2 本目以降は少しずつ大きくする。
  * 上流の機器を上に置くレイアウト(SPEC 9章)では上下からのリンクが多いので、横に出す。
- * labelA / labelB は輪の上側と下側、label は輪の右端の外側(label 文字列の幅だけ右へ)。
+ * labelA / labelB は輪の上側と下側(ends のラベルの高さだけ離す)、
+ * label は輪の右端の外側(label 文字列の幅だけ右へ)。
  */
 export function selfLoop(
   c: Point,
   index: number,
   labelText = "",
+  ends: { a?: string | readonly string[]; b?: string | readonly string[] } = {},
 ): { path: string; labelA: Point; labelB: Point; label: Point } {
   const right = c.x + 26;
   // 外側の輪ほど縦に広げ、上下のラベルが内側の輪のラベルとラベルの高さ以上ずれるようにする
@@ -155,14 +225,14 @@ export function selfLoop(
   const p3 = { x: right, y: c.y + spread };
   const path = `M ${p0.x},${p0.y} C ${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`;
   const at = (t: number) => cubic(p0, p1, p2, p3, t);
-  const labelGap = LABEL_HEIGHT / 2 + 3;
+  const gap = (text: string | readonly string[] = "") => estimateLabelSize(text).height / 2 + 3;
   const upper = at(0.25);
   const lower = at(0.75);
   const tip = at(0.5);
   return {
     path,
-    labelA: { x: upper.x, y: upper.y - labelGap },
-    labelB: { x: lower.x, y: lower.y + labelGap },
+    labelA: { x: upper.x, y: upper.y - gap(ends.a) },
+    labelB: { x: lower.x, y: lower.y + gap(ends.b) },
     label: { x: tip.x + LABEL_GAP + estimateLabelSize(labelText).width / 2, y: tip.y },
   };
 }

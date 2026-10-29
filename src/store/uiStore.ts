@@ -31,6 +31,10 @@ export interface ViewOptions {
   showYaml: boolean;
   /** グループの枠を表示する(フェーズ3-1 Q5) */
   showGroups: boolean;
+  /** IF 名ラベルの下に IP を表示する(フェーズ3-2 Q2) */
+  showIp: boolean;
+  /** IF 名ラベルの下に VLAN を表示する(フェーズ3-2 Q2) */
+  showVlan: boolean;
 }
 
 export const DEFAULT_VIEW: ViewOptions = {
@@ -38,6 +42,8 @@ export const DEFAULT_VIEW: ViewOptions = {
   longIfNames: false,
   showYaml: true,
   showGroups: true,
+  showIp: true,
+  showVlan: true,
 };
 const VIEW_STORAGE_KEY = "constella.view";
 
@@ -165,12 +171,17 @@ function loadView(storage?: ViewStorage): ViewOptions {
   try {
     const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
     if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
-    const { showIfLabels, longIfNames, showYaml, showGroups } = saved as Record<string, unknown>;
+    const { showIfLabels, longIfNames, showYaml, showGroups, showIp, showVlan } = saved as Record<
+      string,
+      unknown
+    >;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
       showYaml: typeof showYaml === "boolean" ? showYaml : DEFAULT_VIEW.showYaml,
       showGroups: typeof showGroups === "boolean" ? showGroups : DEFAULT_VIEW.showGroups,
+      showIp: typeof showIp === "boolean" ? showIp : DEFAULT_VIEW.showIp,
+      showVlan: typeof showVlan === "boolean" ? showVlan : DEFAULT_VIEW.showVlan,
     };
   } catch {
     return DEFAULT_VIEW;

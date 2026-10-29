@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   endLabelPositions,
   estimateLabelSize,
+  estimateNameWidth,
   offsetLine,
   PARALLEL_GAP,
   parallelSlots,
@@ -134,5 +135,63 @@ describe("selfLoop(Q5)", () => {
     const short = selfLoop({ x: 0, y: 0 }, 0, "a");
     const long = selfLoop({ x: 0, y: 0 }, 0, "a long label");
     expect(long.label.x).toBeGreaterThan(short.label.x);
+  });
+});
+
+describe("複数行のラベル(IF 名の下の IP・VLAN。フェーズ3-2)", () => {
+  const lines = ["Gi0/1", "192.168.10.1/24", "VLAN 10"];
+
+  it("幅はいちばん長い行、高さは行数で見積もる", () => {
+    expect(estimateLabelSize(lines)).toEqual({
+      width: estimateLabelSize("192.168.10.1/24").width,
+      height: 3 * 13 + 2,
+    });
+    expect(estimateLabelSize(["Gi0/1"])).toEqual(estimateLabelSize("Gi0/1"));
+  });
+
+  it("下へ出る線でも、ラベルがアイコンと名前に重ならない", () => {
+    const { a } = endLabelPositions({ x: 0, y: 0 }, { x: 0, y: 400 }, lines, "eth0");
+    // アイコンの中心から下 50 までがアイコンとデバイス名
+    expect(a.y - estimateLabelSize(lines).height / 2).toBeGreaterThanOrEqual(50);
+  });
+
+  it("横の並行リンクでも、背の高いラベルは段違いにして重ねない", () => {
+    const left = { x: 0, y: 0 };
+    const right = { x: 600, y: 0 };
+    const first = endLabelPositions(left, right, lines, lines, { index: 0, count: 2 });
+    const second = endLabelPositions(left, right, lines, lines, { index: 1, count: 2 });
+    expect(second.a.x - first.a.x).toBeGreaterThanOrEqual(estimateLabelSize(lines).width);
+  });
+
+  it("自分自身への輪の上下のラベルは、高さの分だけ輪から離す", () => {
+    const single = selfLoop({ x: 0, y: 0 }, 0);
+    const tall = selfLoop({ x: 0, y: 0 }, 0, "", { a: lines, b: lines });
+    const extra = (estimateLabelSize(lines).height - estimateLabelSize("x").height) / 2;
+    expect(tall.labelA.y).toBeCloseTo(single.labelA.y - extra);
+    expect(tall.labelB.y).toBeCloseTo(single.labelB.y + extra);
+  });
+});
+
+describe("デバイス名を避ける(フェーズ3-2)", () => {
+  it("斜め下へ出る線のラベルは、アイコンより幅の広いデバイス名にも重ならない", () => {
+    const lines = ["Te1/1/1", "trunk 10,20,30"];
+    const name = estimateNameWidth("コアスイッチ");
+    const size = estimateLabelSize(lines);
+    const overlapsName = (at: { x: number; y: number }) =>
+      at.x - size.width / 2 < name / 2 &&
+      at.x + size.width / 2 > -name / 2 &&
+      at.y - size.height / 2 < 50 &&
+      at.y + size.height / 2 > 26;
+    const from = { x: 0, y: 0 };
+    const to = { x: -300, y: 150 };
+    // 名前の幅を知らなければ(アイコンの幅とみなすので)名前に重なる
+    expect(overlapsName(endLabelPositions(from, to, lines, "Te0/25").a)).toBe(true);
+    const { a } = endLabelPositions(from, to, lines, "Te0/25", undefined, { a: name });
+    expect(overlapsName(a)).toBe(false);
+  });
+
+  it("名前の幅は、全角を 12px・半角を 7px として見積もる", () => {
+    expect(estimateNameWidth("rt1")).toBe(12 + 3 * 7);
+    expect(estimateNameWidth("コア")).toBe(12 + 2 * 12);
   });
 });

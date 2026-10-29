@@ -11,8 +11,14 @@ export const PNG_SCALE = 2;
 export interface ExportCommandDeps {
   platform: Pick<Platform, "chooseExportPath" | "writeTextFile" | "writeBinaryFile">;
   store: TopologyStore;
-  /** ツールバーの IF 名・グループの表示設定(書き出しにも反映する) */
-  view(): { showIfLabels: boolean; longIfNames: boolean; showGroups: boolean };
+  /** ツールバーの表示設定(IF 名・IP・VLAN・グループ。書き出しにも反映する) */
+  view(): {
+    showIfLabels: boolean;
+    longIfNames: boolean;
+    showGroups: boolean;
+    showIp: boolean;
+    showVlan: boolean;
+  };
   /** SVG を PNG のバイト列にする(width × height を scale 倍した大きさ) */
   rasterize(
     svg: string,

@@ -104,6 +104,36 @@ describe("renderSvg", () => {
     );
   });
 
+  it("IF 名の下に IP・VLAN を描き、表示の切り替えに従う(フェーズ3-2)", () => {
+    const t = load(`constella: 1
+devices:
+  r1:
+    model: generic-router-4
+    interfaces:
+      Gi0/0: { ip: [ 192.0.2.1/30, 2001:db8::1/64 ], mode: routed }
+  sw:
+    role: l2switch
+    interfaces:
+      p1: { mode: access, vlan: 10 }
+links:
+  - { a: r1:Gi0/0, b: sw:p1 }
+layout:
+  r1: { x: 0, y: 0 }
+  sw: { x: 0, y: 300 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    for (const text of ["Gi0/0", "192.0.2.1/30", "2001:db8::1/64", "p1", "VLAN 10"]) {
+      expect(svg).toContain(`>${text}</text>`);
+    }
+    // IP・VLAN の行は IF 名より薄い色
+    expect(svg).toContain('fill="#646b75">192.0.2.1/30</text>');
+    expect(renderSvg(t, testCatalog, { showIp: false }).svg).not.toContain("192.0.2.1/30");
+    expect(renderSvg(t, testCatalog, { showVlan: false }).svg).not.toContain("VLAN 10");
+    const noNames = renderSvg(t, testCatalog, { showIfLabels: false }).svg;
+    expect(noNames).not.toContain(">Gi0/0</text>");
+    expect(noNames).toContain(">192.0.2.1/30</text>");
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

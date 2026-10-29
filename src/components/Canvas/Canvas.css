@@ -150,6 +150,7 @@
 
 .link-if-label {
   border: 1px solid var(--border);
+  text-align: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   line-height: 13px;
@@ -158,6 +159,16 @@
 .link-label {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* IF 名の下の IP・VLAN(フェーズ3-2)。IF 名より目立たないよう薄い色にする */
+.link-if-detail {
+  color: var(--text-muted);
+}
+
+.link-if-label.selected .link-if-detail {
+  color: inherit;
+  opacity: 0.8;
 }
 
 .link-if-label.selected,
