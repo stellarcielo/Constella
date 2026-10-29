@@ -1,0 +1,66 @@
+# macOS 版をビルドする(配布の準備。SPEC 2章)。
+# - v で始まるタグ(v0.1.0 など)を push すると、ユニバーサル版の DMG を「下書き」の Release に載せる。
+#   中身を確かめてから、GitHub の画面で公開する
+# - 手動実行(Actions の画面の「Run workflow」)では Release は作らず、DMG を成果物(Artifacts)として残す
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # 配る前に、いつもの確認を通す
+      - run: npm run typecheck && npm run lint && npm test && npm run format:check
+
+      - name: Build and upload to a draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Constella ${{ github.ref_name }}
+          releaseBody: |
+            macOS 13.3 以降(Apple Silicon・Intel)用です。
+
+            1. `Constella_*_universal.dmg` をダウンロードして開き、Constella を「アプリケーション」フォルダにドラッグします。
+            2. 初めて開くと「開発元を確認できない」という表示が出ます(Apple の Developer ID での署名・公証をしていないため)。システム設定 > プライバシーとセキュリティ の下にある「このまま開く」を押してください。
+
+            詳しくは README のインストールの手順を見てください。
+          releaseDraft: true
+          args: --target universal-apple-darwin
+
+      - name: Build (manual run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run build:mac
+
+      - name: Upload the DMG
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Constella-macos-universal
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg

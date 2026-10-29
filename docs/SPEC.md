@@ -45,6 +45,7 @@
 - 各ライブラリはプロジェクト作成時点の最新安定版を使う。
 - Rust 側は最小限にする(ファイル入出力・ダイアログは Tauri 公式プラグイン `fs` / `dialog` を利用)。ロジックは基本的に TypeScript 側に置く。
 - OS 固有の処理を書く場合は必ず抽象化し、Windows / Linux 対応を妨げないこと。
+- macOS 版は、Apple Silicon・Intel の両方で動くユニバーサル版を、DMG で GitHub Releases に配布する。対応は macOS 13.3 以降。署名は簡易署名(ad-hoc。Apple の Developer ID による署名・公証はしない)。
 
 ---
 
@@ -367,6 +368,7 @@ ports:
 - [x] ユーザーモデルの追加 UI
 
 ### フェーズ4以降(候補)
+- [x] macOS 版の配布準備(簡易署名・ユニバーサル版・アイコン・GitHub Releases)
 - Windows / Linux ビルドとインストーラ
 - CLI / MCP サーバー
 - LLDP / SNMP からの取り込み、containerlab / NetBox との連携

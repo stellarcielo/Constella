@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "build:mac": "tauri build --target universal-apple-darwin",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

@@ -1,0 +1,48 @@
+<!--
+  Constella のアイコンの元(macOS のアイコンの枠に合わせ、1024 の中に 824 の角丸の四角を置く)。
+  変えたら `npx tauri icon src-tauri/icons/icon.svg -o <作業用のフォルダ>` で各サイズを作り、
+  このフォルダにある同じ名前のファイル(PNG・icns・ico)を置き換える。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#25467f"/>
+      <stop offset="1" stop-color="#0c1833"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#ffd166" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffd166" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- 夜空 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <g fill="#ffffff" opacity="0.35">
+    <circle cx="190" cy="230" r="6"/>
+    <circle cx="820" cy="210" r="5"/>
+    <circle cx="250" cy="820" r="5"/>
+    <circle cx="860" cy="780" r="7"/>
+    <circle cx="470" cy="190" r="4"/>
+    <circle cx="800" cy="520" r="4"/>
+  </g>
+  <!-- リンク: 中心の星から周りの 5 つへ放射状に、外側どうしも一部つなぐ -->
+  <g stroke="#9cc3ff" stroke-width="22" stroke-linecap="round" opacity="0.9">
+    <line x1="512" y1="520" x2="512" y2="265"/>
+    <line x1="512" y1="520" x2="755" y2="441"/>
+    <line x1="512" y1="520" x2="662" y2="726"/>
+    <line x1="512" y1="520" x2="362" y2="726"/>
+    <line x1="512" y1="520" x2="269" y2="441"/>
+    <line x1="512" y1="265" x2="755" y2="441"/>
+    <line x1="662" y1="726" x2="362" y2="726"/>
+  </g>
+  <!-- 機器 -->
+  <g fill="#ffffff">
+    <circle cx="512" cy="265" r="44"/>
+    <circle cx="755" cy="441" r="44"/>
+    <circle cx="662" cy="726" r="44"/>
+    <circle cx="362" cy="726" r="44"/>
+    <circle cx="269" cy="441" r="44"/>
+  </g>
+  <!-- 中心の星 -->
+  <circle cx="512" cy="520" r="172.5" fill="url(#glow)"/>
+  <path d="M 512,405 Q 530.4,501.6 627,520 Q 530.4,538.4 512,635 Q 493.6,538.4 397,520 Q 493.6,501.6 512,405 Z" fill="#ffd166"/>
+</svg>
