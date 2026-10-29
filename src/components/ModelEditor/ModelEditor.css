@@ -1,0 +1,126 @@
+/* モデルの追加・編集ダイアログ(フェーズ3-4)。枠やボタンは ConfirmDialog.css のものを使う */
+.dialog.model-editor {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.model-editor-fields {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.model-editor-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.model-editor-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.model-editor-row > select {
+  width: auto;
+}
+
+.model-editor-check {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.model-editor-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--warning-text);
+}
+
+.model-editor-heading {
+  margin: 16px 0 2px;
+  font-size: 13px;
+}
+
+.model-editor-hint {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.model-editor-ports {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+
+.model-editor-ports th {
+  padding: 0 4px 4px 0;
+  font-size: 11px;
+  font-weight: normal;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+.model-editor-ports td {
+  padding: 0 4px 6px 0;
+  vertical-align: top;
+}
+
+.model-editor-ports td:nth-child(1) {
+  width: 55%;
+}
+
+.model-editor-ports td:nth-child(3) {
+  width: 15%;
+}
+
+.model-editor-summary {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.model-editor-remove {
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.model-editor-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.model-editor-issues {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.model-editor-issues .error {
+  color: var(--error);
+}
+
+.model-editor-issues .warning {
+  color: var(--warning-text);
+}
+
+.model-editor-spacer {
+  flex: 1;
+}
+
+.dialog-button.danger-text {
+  color: var(--error);
+}
+
+.dialog-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

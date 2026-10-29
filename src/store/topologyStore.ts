@@ -108,6 +108,8 @@ export interface TopologyState {
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
+  /** モデルの一覧を差し替え、検証をやり直す(ユーザーモデルの読み込み・変更。フェーズ3-4) */
+  setCatalog(catalog: ModelCatalog): void;
   /** 全デバイスを並べ直して layout に書く(SPEC 9章の「自動整列」。1 ステップで取り消せる) */
   autoArrange(): Promise<void>;
 }
@@ -139,7 +141,12 @@ interface Snapshot {
   yamlIssues: Issue[];
 }
 
-export function createTopologyStore(catalog: ModelCatalog, options: TopologyStoreOptions = {}) {
+export function createTopologyStore(
+  initialCatalog: ModelCatalog,
+  options: TopologyStoreOptions = {},
+) {
+  /** モデルの一覧。ユーザーモデルを読み込んだり変えたりすると差し替わる(setCatalog) */
+  let catalog = initialCatalog;
   let confirming = false;
   let past: Snapshot[] = [];
   let future: Snapshot[] = [];
@@ -438,6 +445,20 @@ export function createTopologyStore(catalog: ModelCatalog, options: TopologyStor
 
       setSelection(selection) {
         if (!sameSelection(get().selection, selection)) set({ selection });
+      },
+
+      setCatalog(next) {
+        catalog = next;
+        const { topology, base, yamlIssues, yamlErrors } = get();
+        const issues = computeIssues(topology, next, base, yamlIssues);
+        set({
+          catalog: next,
+          // 構文エラーの間は、最後に正しく読めた図の問題の位置を外す(applyText と同じ)
+          issues:
+            yamlErrors.length > 0
+              ? [...yamlErrors, ...issues.map((i) => ({ ...i, range: undefined }))]
+              : issues,
+        });
       },
 
       async autoArrange() {

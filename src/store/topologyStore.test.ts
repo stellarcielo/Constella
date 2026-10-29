@@ -526,3 +526,21 @@ links:
     expect(store.getState().topology.layout.size).toBe(0);
   });
 });
+
+describe("モデルの一覧の差し替え(フェーズ3-4)", () => {
+  it("差し替えると検証をやり直し、新しいモデルの機器を置ける", () => {
+    const store = setup();
+    store.getState().openText("constella: 1\ndevices:\n  sw9: { model: my-switch }\n");
+    expect(store.getState().issues.map((i) => i.code)).toEqual(["unknown-model"]);
+    const mySwitch = {
+      id: "my-switch",
+      role: "l2switch" as const,
+      flexible: false,
+      ports: [{ name: "eth1", type: "rj45" as const }],
+    };
+    store.getState().setCatalog(new Map([...testCatalog, [mySwitch.id, mySwitch]]));
+    expect(store.getState().issues).toEqual([]);
+    expect(store.getState().catalog.has("my-switch")).toBe(true);
+    expect(store.getState().addDevice("my-switch", { x: 0, y: 0 })).toBe("sw10");
+  });
+});

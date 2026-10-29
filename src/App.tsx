@@ -1,5 +1,6 @@
 import { Canvas } from "./components/Canvas/Canvas";
 import { DialogHost } from "./components/Dialog/DialogHost";
+import { ModelEditorHost } from "./components/ModelEditor/ModelEditor";
 import { Inspector } from "./components/Inspector/Inspector";
 import { Palette } from "./components/Palette/Palette";
 import { ProblemsPanel } from "./components/ProblemsPanel/ProblemsPanel";
@@ -36,6 +37,7 @@ function App() {
       </div>
       {problemsOpen && <ProblemsPanel />}
       <StatusBar />
+      <ModelEditorHost />
       <DialogHost />
     </div>
   );

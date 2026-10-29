@@ -364,7 +364,7 @@ ports:
 - [x] グループ(site / rack / vlan / subnet / as)の枠表示
 - [x] IF の IP / VLAN 情報をラベルに表示
 - [x] L1 / L2 / L3 表示切り替え
-- [ ] ユーザーモデルの追加 UI
+- [x] ユーザーモデルの追加 UI
 
 ### フェーズ4以降(候補)
 - Windows / Linux ビルドとインストーラ

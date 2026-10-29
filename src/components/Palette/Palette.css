@@ -6,8 +6,16 @@
   background: var(--panel);
 }
 
-.palette-search {
+.palette-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   margin: 10px;
+}
+
+.palette-search {
+  flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -68,4 +76,75 @@
 .palette-empty {
   margin: 12px 6px;
   color: var(--text-muted);
+}
+
+/* ユーザーモデルの追加・複製・編集(フェーズ3-4) */
+.palette-add {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.palette-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.palette-item-text {
+  flex: 1;
+}
+
+.palette-badge {
+  margin-right: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.palette-actions {
+  display: none;
+  gap: 2px;
+}
+
+.palette-item:hover .palette-actions,
+.palette-item:focus-within .palette-actions {
+  display: flex;
+}
+
+.palette-actions button {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.palette-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.palette-broken {
+  margin: 0 10px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  background: none;
+  color: var(--warning-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }

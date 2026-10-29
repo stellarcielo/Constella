@@ -39,7 +39,16 @@ export function loadBuiltinModels(): BuiltinModels {
   return { models, problems };
 }
 
-/** 組み込みモデルだけのカタログ。ユーザーモデルはフェーズ3で buildCatalog に追加で渡す */
+/** 組み込みモデルだけのカタログ。ユーザーモデルは buildCatalog に後から渡す(store/index.ts) */
 export function builtinCatalog(): ModelCatalog {
   return buildCatalog(loadBuiltinModels().models);
+}
+
+/** 組み込みモデルの定義の YAML(ポートは連番のパターンのまま)。複製して作るときに使う */
+export function builtinModelText(id: string): string | undefined {
+  for (const text of Object.values(files)) {
+    const result = parseModelDefinition(text);
+    if (result.ok && result.model.id === id) return text;
+  }
+  return undefined;
 }

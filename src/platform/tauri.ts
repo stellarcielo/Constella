@@ -5,7 +5,16 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { dataDir, join } from "@tauri-apps/api/path";
+import {
+  exists,
+  mkdir,
+  readDir,
+  readTextFile,
+  remove,
+  writeFile,
+  writeTextFile,
+} from "@tauri-apps/plugin-fs";
 import type { ImageFormat, MenuCommands, Platform, RecentFileItem } from "./types";
 
 const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "yml"] }];
@@ -13,6 +22,17 @@ const IMAGE_FILTERS: Record<ImageFormat, { name: string; extensions: string[] }[
   svg: [{ name: "SVG 画像", extensions: ["svg"] }],
   png: [{ name: "PNG 画像", extensions: ["png"] }],
 };
+
+/**
+ * ユーザーモデルのフォルダ(SPEC 5.2)。データ用フォルダの下の Constella/models
+ * (macOS では ~/Library/Application Support/Constella/models)。
+ * 読み書きの許可は、このフォルダの中だけ(capabilities/default.json の fs:scope)
+ */
+async function userModelsDir(): Promise<string> {
+  return join(await dataDir(), "Constella", "models");
+}
+
+const isModelFile = (name: string) => /\.ya?ml$/i.test(name);
 
 // メニューの「最近使った項目を開く」(setupMenu で作り、setRecentFiles で中身を入れ替える)
 let recentMenu: Submenu | undefined;
@@ -80,6 +100,26 @@ export const tauriPlatform: Platform = {
 
   async writeBinaryFile(path, data) {
     await writeFile(path, data);
+  },
+
+  async listUserModels() {
+    const dir = await userModelsDir();
+    if (!(await exists(dir))) return [];
+    const entries = await readDir(dir);
+    const files = entries.filter((e) => e.isFile && isModelFile(e.name)).map((e) => e.name);
+    return Promise.all(
+      files.map(async (file) => ({ file, text: await readTextFile(await join(dir, file)) })),
+    );
+  },
+
+  async writeUserModel(file, text) {
+    const dir = await userModelsDir();
+    await mkdir(dir, { recursive: true });
+    await writeTextFile(await join(dir, file), text);
+  },
+
+  async removeUserModel(file) {
+    await remove(await join(await userModelsDir(), file));
   },
 
   setTitle(title) {

@@ -2,12 +2,17 @@
 
 import { useStore } from "zustand";
 import { askDialog } from "../components/Dialog/dialogs";
-import { builtinCatalog } from "../library";
+import { buildCatalog } from "../core";
+import { loadBuiltinModels } from "../library";
+import { platform } from "../platform";
 import { createRecentFilesStore } from "./recentFiles";
 import { createTopologyStore, type TopologyState } from "./topologyStore";
 import { createUiStore, type UiState } from "./uiStore";
+import { createUserModelsStore, type UserModelsState, userModelCatalog } from "./userModels";
 
-export const topologyStore = createTopologyStore(builtinCatalog(), {
+const builtinModels = loadBuiltinModels().models;
+
+export const topologyStore = createTopologyStore(buildCatalog(builtinModels), {
   // YAML に構文エラーがある間に GUI で編集しようとしたとき(SPEC 8.3)
   async confirmOverwrite() {
     const choice = await askDialog({
@@ -20,6 +25,19 @@ export const topologyStore = createTopologyStore(builtinCatalog(), {
   },
 });
 export const uiStore = createUiStore(localStorageIfAvailable());
+
+/** ユーザーモデル(SPEC 5.2)。起動時に読み込み、変わったらカタログを作り直す(フェーズ3-4) */
+export const userModelsStore = createUserModelsStore({
+  list: () => platform.listUserModels(),
+  write: (file, text) => platform.writeUserModel(file, text),
+  remove: (file) => platform.removeUserModel(file),
+});
+userModelsStore.subscribe((state, prev) => {
+  if (state.files !== prev.files) {
+    topologyStore.getState().setCatalog(userModelCatalog(builtinModels, state.files));
+  }
+});
+void userModelsStore.getState().reload();
 export const recentFilesStore = createRecentFilesStore(localStorageIfAvailable());
 
 // 接続モードに入ったら選択を外す(接続モードでは選択できないため)
@@ -35,6 +53,10 @@ export function useTopology<T>(selector: (state: TopologyState) => T): T {
 
 export function useUi<T>(selector: (state: UiState) => T): T {
   return useStore(uiStore, selector);
+}
+
+export function useUserModels<T>(selector: (state: UserModelsState) => T): T {
+  return useStore(userModelsStore, selector);
 }
 
 export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";

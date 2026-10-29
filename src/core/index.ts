@@ -21,3 +21,4 @@ export * from "./icons";
 export * from "./render";
 export * from "./groupFrames";
 export * from "./ifLabel";
+export * from "./modelForm";

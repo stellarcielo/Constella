@@ -29,6 +29,22 @@ function download(name: string, blob: Blob): void {
   URL.revokeObjectURL(url);
 }
 
+/** ブラウザ版では、ユーザーモデルのファイルの代わりに localStorage に入れる(開発中の確認用) */
+const USER_MODELS_KEY = "constella.userModels";
+
+function loadUserModels(): Record<string, string> {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(USER_MODELS_KEY) ?? "{}");
+    return typeof saved === "object" && saved !== null ? (saved as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function storeUserModels(files: Record<string, string>): void {
+  window.localStorage.setItem(USER_MODELS_KEY, JSON.stringify(files));
+}
+
 export const browserPlatform: Platform = {
   hasNativeMenu: false,
 
@@ -56,6 +72,22 @@ export const browserPlatform: Platform = {
 
   async writeBinaryFile(path, data) {
     download(path, new Blob([data], { type: fileType(path) }));
+  },
+
+  async listUserModels() {
+    return Object.entries(loadUserModels())
+      .filter(([, text]) => typeof text === "string")
+      .map(([file, text]) => ({ file, text }));
+  },
+
+  async writeUserModel(file, text) {
+    storeUserModels({ ...loadUserModels(), [file]: text });
+  },
+
+  async removeUserModel(file) {
+    storeUserModels(
+      Object.fromEntries(Object.entries(loadUserModels()).filter(([name]) => name !== file)),
+    );
   },
 
   setTitle(title) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTopology, validateTopology } from "../core";
 import { specExample } from "../core/testFixtures";
-import { builtinCatalog, loadBuiltinModels } from "./index";
+import { builtinCatalog, builtinModelText, loadBuiltinModels } from "./index";
 
 describe("組み込みモデル", () => {
   const { models, problems } = loadBuiltinModels();
@@ -71,5 +71,12 @@ describe("組み込みモデル", () => {
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     expect(result.issues).toEqual([]);
     expect(validateTopology(result.topology, catalog, result.base)).toEqual([]);
+  });
+});
+
+describe("builtinModelText(フェーズ3-4)", () => {
+  it("組み込みモデルの定義の YAML を、連番のパターンのまま返す(複製して作るとき用)", () => {
+    expect(builtinModelText("cisco-c2960-24tt-l")).toContain('name: "FastEthernet0/{1-24}"');
+    expect(builtinModelText("no-such-model")).toBeUndefined();
   });
 });

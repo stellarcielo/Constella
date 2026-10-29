@@ -48,6 +48,13 @@ export interface Platform {
   /** 画像の書き出し先を選ぶ。キャンセルなら null */
   chooseExportPath(defaultName: string, format: ImageFormat): Promise<string | null>;
   writeBinaryFile(path: string, data: Uint8Array<ArrayBuffer>): Promise<void>;
+  /**
+   * ユーザーモデル(SPEC 5.2)のフォルダの YAML ファイルを読む。フォルダが無ければ空。
+   * file はフォルダの中のファイル名(`<id>.yaml`)
+   */
+  listUserModels(): Promise<{ file: string; text: string }[]>;
+  writeUserModel(file: string, text: string): Promise<void>;
+  removeUserModel(file: string): Promise<void>;
   setTitle(title: string): void;
   /** システムのクリップボードの文字列 */
   readClipboardText(): Promise<string>;
