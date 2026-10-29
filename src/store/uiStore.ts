@@ -1,7 +1,15 @@
 // 画面の状態(モード、作りかけの接続、表示オプション)。トポロジとは分けて持ち、Undo の対象にしない。
 
 import { createStore } from "zustand/vanilla";
-import type { Endpoint, PortType, SourceRange, Viewport } from "../core";
+import {
+  type Endpoint,
+  GROUP_KINDS,
+  type GroupKind,
+  type PortType,
+  type SourceRange,
+  type Viewport,
+} from "../core";
+import { LAYER_GROUP_KINDS, LAYER_PRESETS, type ViewLayer } from "./viewLayers";
 
 export type Mode = "select" | "connect";
 
@@ -35,6 +43,8 @@ export interface ViewOptions {
   showIp: boolean;
   /** IF 名ラベルの下に VLAN を表示する(フェーズ3-2 Q2) */
   showVlan: boolean;
+  /** 枠を表示するグループの種類(種類なし・custom は常に表示。フェーズ3-3) */
+  groupKinds: GroupKind[];
 }
 
 export const DEFAULT_VIEW: ViewOptions = {
@@ -44,6 +54,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   showGroups: true,
   showIp: true,
   showVlan: true,
+  groupKinds: [...LAYER_GROUP_KINDS],
 };
 const VIEW_STORAGE_KEY = "constella.view";
 
@@ -73,6 +84,8 @@ export interface UiState {
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
   clickPane(): void;
   setView(view: Partial<ViewOptions>): void;
+  /** 表示レイヤーを選ぶ(表示オプションをまとめて設定する。フェーズ3-3) */
+  setLayer(layer: ViewLayer): void;
   requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
   setProblemsOpen(open: boolean): void;
   jumpToYaml(range: SourceRange): void;
@@ -142,6 +155,10 @@ export function createUiStore(storage?: ViewStorage) {
       set({ view: { ...get().view, ...view } });
     },
 
+    setLayer(layer) {
+      get().setView(LAYER_PRESETS[layer]);
+    },
+
     requestView(request = {}) {
       set({ viewRequest: { ...request, id: get().viewRequest.id + 1 } });
     },
@@ -171,10 +188,8 @@ function loadView(storage?: ViewStorage): ViewOptions {
   try {
     const saved: unknown = JSON.parse(storage?.getItem(VIEW_STORAGE_KEY) ?? "null");
     if (typeof saved !== "object" || saved === null) return DEFAULT_VIEW;
-    const { showIfLabels, longIfNames, showYaml, showGroups, showIp, showVlan } = saved as Record<
-      string,
-      unknown
-    >;
+    const { showIfLabels, longIfNames, showYaml, showGroups, showIp, showVlan, groupKinds } =
+      saved as Record<string, unknown>;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
@@ -182,6 +197,9 @@ function loadView(storage?: ViewStorage): ViewOptions {
       showGroups: typeof showGroups === "boolean" ? showGroups : DEFAULT_VIEW.showGroups,
       showIp: typeof showIp === "boolean" ? showIp : DEFAULT_VIEW.showIp,
       showVlan: typeof showVlan === "boolean" ? showVlan : DEFAULT_VIEW.showVlan,
+      groupKinds: Array.isArray(groupKinds)
+        ? GROUP_KINDS.filter((kind) => groupKinds.includes(kind))
+        : DEFAULT_VIEW.groupKinds,
     };
   } catch {
     return DEFAULT_VIEW;

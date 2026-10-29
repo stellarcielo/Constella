@@ -171,7 +171,15 @@ export const tauriPlatform: Platform = {
     });
     const view = await Submenu.new({
       text: "表示",
-      items: [await PredefinedMenuItem.new({ item: "Fullscreen", text: "フルスクリーンにする" })],
+      items: [
+        // 表示レイヤー(フェーズ3-3)。ラベルの行とグループの枠をまとめて切り替える
+        await command("すべてのレイヤー", "CmdOrCtrl+0", () => commands.showLayer("all")),
+        await command("L1(物理)", "CmdOrCtrl+1", () => commands.showLayer("l1")),
+        await command("L2(データリンク)", "CmdOrCtrl+2", () => commands.showLayer("l2")),
+        await command("L3(ネットワーク)", "CmdOrCtrl+3", () => commands.showLayer("l3")),
+        await separator(),
+        await PredefinedMenuItem.new({ item: "Fullscreen", text: "フルスクリーンにする" }),
+      ],
     });
     const windowMenu = await Submenu.new({
       text: "ウインドウ",

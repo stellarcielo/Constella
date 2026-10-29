@@ -1,7 +1,15 @@
 // 上端のツールバー。ボタンは各機能のタスクで追加する(SPEC 6章)。
 
 import { fileCommands } from "../../commands";
-import { type Mode, topologyStore, uiStore, useUi } from "../../store";
+import {
+  currentLayer,
+  LAYER_LABELS,
+  type Mode,
+  topologyStore,
+  uiStore,
+  useUi,
+  VIEW_LAYERS,
+} from "../../store";
 import "./Toolbar.css";
 
 const FILE_BUTTONS = [
@@ -68,6 +76,20 @@ export function Toolbar() {
         >
           YAML
         </button>
+      </div>
+      <div className="toolbar-group" role="group" aria-label="表示レイヤー">
+        {VIEW_LAYERS.map((layer, i) => (
+          <button
+            key={layer}
+            type="button"
+            className="toolbar-button"
+            aria-pressed={currentLayer(view) === layer}
+            title={`${LAYER_LABELS[layer].title}(⌘${i})`}
+            onClick={() => uiStore.getState().setLayer(layer)}
+          >
+            {LAYER_LABELS[layer].short}
+          </button>
+        ))}
       </div>
       <div className="toolbar-group" role="group" aria-label="表示">
         <button

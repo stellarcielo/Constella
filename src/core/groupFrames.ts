@@ -47,15 +47,26 @@ export function groupTitle(group: Group): string {
 }
 
 /**
- * グループの枠を、描く順(外側の枠が先)に返す。
+ * 枠を出す種類で絞り込む条件(表示レイヤー。フェーズ3-3)。種類なし・custom はいつも出す
+ */
+export function groupKindFilter(kinds: readonly GroupKind[]): (group: Group) => boolean {
+  return (group) =>
+    group.kind === undefined || group.kind === "custom" || kinds.includes(group.kind);
+}
+
+/**
+ * グループの枠を、描く順(外側の枠が先)に返す。visible で絞り込んだグループだけを描き、
+ * 隠したグループは入れ子の余白にも数えない。
  * ほかのグループのメンバーをすべて含むグループは、その外側に余白を足して入れ子に見せる(フェーズ3-1 Q3)。
  * メンバーが同じなら、YAML で先に書いたほうを外側にする。座標のあるメンバーが無いグループは描かない
  */
 export function groupFrames(
   t: Topology,
   positionOf: (deviceId: string) => Position | undefined,
+  visible: (group: Group) => boolean = () => true,
 ): GroupFrame[] {
   const drawable = t.groups.flatMap((group, index) => {
+    if (!visible(group)) return [];
     const members = [...new Set(group.members)].filter(
       (id) => t.devices.has(id) && positionOf(id) !== undefined,
     );

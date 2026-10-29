@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { documentName, editCommands, exportCommands, fileCommands } from "../commands";
 import { platform } from "../platform";
-import { recentFilesStore, topologyStore, useTopology } from "../store";
+import { recentFilesStore, topologyStore, uiStore, useTopology, VIEW_LAYERS } from "../store";
 import { recentLabels } from "../store/recentFiles";
 
 export function useDocumentShell(): void {
@@ -29,6 +29,7 @@ export function useDocumentShell(): void {
       exportPng: () => void exportCommands.exportImage("png"),
       openRecent: (path) => void fileCommands.openRecent(path),
       clearRecent: () => recentFilesStore.getState().clear(),
+      showLayer: (layer) => uiStore.getState().setLayer(layer),
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,
@@ -62,6 +63,10 @@ export function useDocumentShell(): void {
       } else if (key === "e") {
         e.preventDefault();
         void exportCommands.exportImage(e.shiftKey ? "png" : "svg");
+      } else if (/^[0-3]$/.test(key) && !e.shiftKey) {
+        // 表示レイヤー: ⌘0 = すべて、⌘1〜⌘3 = L1〜L3
+        e.preventDefault();
+        uiStore.getState().setLayer(VIEW_LAYERS[Number(key)]);
       }
     };
     window.addEventListener("keydown", onKeyDown);

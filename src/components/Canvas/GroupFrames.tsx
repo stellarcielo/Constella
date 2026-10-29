@@ -3,7 +3,13 @@
 // ラベルのクリックでメンバーをまとめて選択する。ReactFlow の子として置く(フローの座標変換を使うため)。
 
 import { EdgeLabelRenderer, useNodes, ViewportPortal } from "@xyflow/react";
-import { type GroupFrame, groupFrames, groupTitle, type Position } from "../../core";
+import {
+  type GroupFrame,
+  groupFrames,
+  groupKindFilter,
+  groupTitle,
+  type Position,
+} from "../../core";
 import { topologyStore, uiStore, useTopology, useUi } from "../../store";
 import type { DeviceNodeType } from "./DeviceNode";
 
@@ -16,6 +22,7 @@ function selectMembers(frame: GroupFrame): void {
 export function GroupFrames() {
   const topology = useTopology((s) => s.topology);
   const show = useUi((s) => s.view.showGroups);
+  const kinds = useUi((s) => s.view.groupKinds);
   const nodes = useNodes<DeviceNodeType>();
   if (!show || topology.groups.length === 0) return null;
 
@@ -24,7 +31,8 @@ export function GroupFrames() {
   for (const node of nodes) {
     if (!node.hidden) positions.set(node.id, node.position);
   }
-  const frames = groupFrames(topology, (id) => positions.get(id));
+  // 表示レイヤーで選んだ種類の枠だけを描く(フェーズ3-3)
+  const frames = groupFrames(topology, (id) => positions.get(id), groupKindFilter(kinds));
   if (frames.length === 0) return null;
   const kindOf = (frame: GroupFrame) => `kind-${frame.group.kind ?? "none"}`;
 

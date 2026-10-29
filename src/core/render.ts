@@ -1,7 +1,7 @@
 // トポロジを SVG の文字列にする(SVG / PNG の書き出し。将来の CLI の `constella render` でも使う)。
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
-import { groupFrames, groupTitle } from "./groupFrames";
+import { groupFrames, groupKindFilter, groupTitle } from "./groupFrames";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import {
@@ -32,6 +32,8 @@ export interface RenderOptions {
   showVlan?: boolean;
   /** グループの枠を描くか(ツールバーの「グループ」) */
   showGroups?: boolean;
+  /** 枠を描くグループの種類(表示レイヤー。省略すればすべて。種類なし・custom はいつも描く) */
+  groupKinds?: readonly GroupKind[];
   /** 図のまわりの余白 */
   padding?: number;
 }
@@ -223,7 +225,8 @@ export function renderSvg(
   const frames: string[] = [];
   const frameLabels: string[] = [];
   if (options.showGroups ?? true) {
-    for (const frame of groupFrames(t, (id) => positions.get(id))) {
+    const visible = options.groupKinds ? groupKindFilter(options.groupKinds) : undefined;
+    for (const frame of groupFrames(t, (id) => positions.get(id), visible)) {
       const kind = frame.group.kind ?? "none";
       bounds.add(frame.x, frame.y, frame.x + frame.width, frame.y + frame.height);
       frames.push(

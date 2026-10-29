@@ -18,7 +18,12 @@ export interface MenuCommands {
   openRecent(path: string): void;
   /** 「最近使った項目を開く」の「メニューを消去」 */
   clearRecent(): void;
+  /** 表示レイヤーを選ぶ(「表示」メニュー。フェーズ3-3) */
+  showLayer(layer: MenuLayer): void;
 }
+
+/** 「表示」メニューで選べる表示レイヤー */
+export type MenuLayer = "all" | "l1" | "l2" | "l3";
 
 /** メニューの「最近使った項目を開く」に出すファイル */
 export interface RecentFileItem {

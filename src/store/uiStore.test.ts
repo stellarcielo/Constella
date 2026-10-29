@@ -96,6 +96,7 @@ describe("uiStore: 表示オプション", () => {
       showGroups: true,
       showIp: true,
       showVlan: true,
+      groupKinds: ["site", "rack", "vlan", "subnet", "as"],
     });
   });
 
@@ -111,9 +112,33 @@ describe("uiStore: 表示オプション", () => {
       showGroups: false,
       showIp: false,
       showVlan: true,
+      groupKinds: ["site", "rack", "vlan", "subnet", "as"],
     };
     expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual(saved);
     expect(createUiStore(storage).getState().view).toEqual(saved);
+  });
+
+  it("枠の種類は、知っている種類だけを読み込む", () => {
+    const view = createUiStore(memoryStorage('{"groupKinds":["vlan","floor",3]}')).getState().view;
+    expect(view.groupKinds).toEqual(["vlan"]);
+    expect(
+      createUiStore(memoryStorage('{"groupKinds":"vlan"}')).getState().view.groupKinds,
+    ).toEqual(DEFAULT_VIEW.groupKinds);
+  });
+
+  it("表示レイヤーを選ぶと、表示オプションをまとめて設定し、長い名前などはそのまま(フェーズ3-3)", () => {
+    const store = createUiStore();
+    store.getState().setView({ longIfNames: true, showYaml: false });
+    store.getState().setLayer("l2");
+    expect(store.getState().view).toEqual({
+      showIfLabels: true,
+      longIfNames: true,
+      showYaml: false,
+      showGroups: true,
+      showIp: false,
+      showVlan: true,
+      groupKinds: ["vlan"],
+    });
   });
 
   it("保存された内容が壊れていたら既定値を使う", () => {

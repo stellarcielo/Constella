@@ -104,6 +104,17 @@ describe("renderSvg", () => {
     );
   });
 
+  it("枠は、選んだ種類だけを描く(表示レイヤー。種類なし・custom はいつも描く)", () => {
+    const t = load(
+      `${twoRouters}groups:\n  - { id: dc, kind: site, members: [ r1, r2 ] }\n  - { id: v10, kind: vlan, members: [ r1 ] }\n  - { id: misc, kind: custom, label: その他, members: [ r2 ] }\n`,
+    );
+    const svg = renderSvg(t, testCatalog, { groupKinds: ["vlan"] }).svg;
+    expect(svg).toContain(">VLAN: v10</text>");
+    expect(svg).toContain(">その他</text>");
+    expect(svg).not.toContain(">拠点: dc</text>");
+    expect(renderSvg(t, testCatalog).svg).toContain(">拠点: dc</text>");
+  });
+
   it("IF 名の下に IP・VLAN を描き、表示の切り替えに従う(フェーズ3-2)", () => {
     const t = load(`constella: 1
 devices:

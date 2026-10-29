@@ -1,6 +1,6 @@
 // 図を SVG / PNG に書き出す(フェーズ2-4)。SVG は core の renderSvg で作り、PNG はそれを画像にする。
 
-import { renderSvg } from "../core";
+import { type GroupKind, renderSvg } from "../core";
 import { basename, type ImageFormat, type Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 import { defaultFileName } from "./files";
@@ -18,6 +18,7 @@ export interface ExportCommandDeps {
     showGroups: boolean;
     showIp: boolean;
     showVlan: boolean;
+    groupKinds: GroupKind[];
   };
   /** SVG を PNG のバイト列にする(width × height を scale 倍した大きさ) */
   rasterize(

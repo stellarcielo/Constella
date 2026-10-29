@@ -4,6 +4,7 @@ import {
   GROUP_LABEL_BAND,
   GROUP_PADDING,
   groupFrames,
+  groupKindFilter,
   groupTitle,
 } from "./groupFrames";
 import { parseTopology } from "./parse";
@@ -78,6 +79,19 @@ describe("groupFrames", () => {
     );
     const frames = groupFrames(t, at(t));
     expect(frames.map((f) => [f.group.id, f.members])).toEqual([["g", ["a"]]]);
+  });
+
+  it("表示する種類で絞り込み、隠したグループは入れ子の余白に数えない(フェーズ3-3)", () => {
+    const t = load(
+      "  - { id: rack, kind: rack, members: [ a, c ] }\n  - { id: site, kind: site, members: [ a, b, c ] }\n  - { id: v10, kind: vlan, members: [ a ] }\n  - { id: misc, kind: custom, members: [ b ] }\n  - { id: plain, members: [ c ] }\n",
+    );
+    const frames = groupFrames(t, at(t), groupKindFilter(["site"]));
+    // 種類なし・custom はいつも出す
+    expect(frames.map((f) => f.group.id).sort()).toEqual(["misc", "plain", "site"]);
+    // ラックを隠したので、拠点は入れ子にならない(ただし種類なしの plain は拠点の内側)
+    expect(frames.find((f) => f.group.id === "site")?.inner).toBe(1);
+    const onlySite = groupFrames(t, at(t), (g) => g.kind === "site");
+    expect(onlySite.map((f) => [f.group.id, f.inner])).toEqual([["site", 0]]);
   });
 
   it("位置は渡した関数で決める(自動配置の位置を使える)", () => {

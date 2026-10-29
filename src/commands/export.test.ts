@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { GroupKind } from "../core";
 import { specExample, testCatalog } from "../core/testFixtures";
 import { createTopologyStore } from "../store/topologyStore";
 import { createExportCommands, exportFileName, PNG_SCALE } from "./export";
@@ -13,6 +14,7 @@ function setup(choose: string | null = "/tmp/out.svg") {
     showGroups: true,
     showIp: true,
     showVlan: true,
+    groupKinds: ["site", "rack", "vlan", "subnet", "as"] as GroupKind[],
   };
   const deps = {
     platform: {
