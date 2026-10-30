@@ -6,3 +6,7 @@ package-lock.json
 
 # 仕様書は手書きのまま保つ
 *.md
+
+# サンプルは、アプリが書き出す形のまま保つ(往復のテストで同じ文字列になることを確かめている。
+# 配列の書き方 [ a, b ] が Prettier の [a, b] と違う)
+examples/*.constella.yaml

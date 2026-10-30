@@ -141,9 +141,9 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
           </button>
         )}
         {exact?.use && <p className="port-picker-error">「{exact.name}」は使用中です</p>}
-        {groups.map(({ type, entries: group }) => (
-          <section key={type ?? "none"}>
-            <h4 className="port-picker-group">{type ? PORT_TYPE_LABELS[type] : "種別なし"}</h4>
+        {groups.map(({ key, label, entries: group }) => (
+          <section key={key}>
+            <h4 className="port-picker-group">{label}</h4>
             {group.map((entry) => {
               const option = options.find((o) => o.kind === "port" && o.entry === entry);
               const mismatch =
@@ -175,6 +175,9 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
                       {entry.use.peer ? `→ ${endpointToString(entry.use.peer)}` : "接続中"}
                     </span>
                   )}
+                  {entry.bridge && entry.bridge.links > 0 && (
+                    <span className="port-picker-use">{entry.bridge.links} 本</span>
+                  )}
                 </button>
               );
             })}
@@ -190,9 +193,19 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
   );
 }
 
-function groupByType(entries: PortEntry[]): { type?: PortType; entries: PortEntry[] }[] {
+/** ポート種別ごとのまとまり。ブリッジ(SPEC 4.6)は最後に「ブリッジ」としてまとめる */
+function groupByType(entries: PortEntry[]): { key: string; label: string; entries: PortEntry[] }[] {
   const order: (PortType | undefined)[] = [...PORT_TYPES, undefined];
-  return order
-    .map((type) => ({ type, entries: entries.filter((e) => e.type === type) }))
-    .filter((g) => g.entries.length > 0);
+  return [
+    ...order.map((type) => ({
+      key: type ?? "none",
+      label: type ? PORT_TYPE_LABELS[type] : "種別なし",
+      entries: entries.filter((e) => !e.bridge && e.type === type),
+    })),
+    {
+      key: "bridge",
+      label: "ブリッジ(何本でもつなげる)",
+      entries: entries.filter((e) => e.bridge),
+    },
+  ].filter((g) => g.entries.length > 0);
 }

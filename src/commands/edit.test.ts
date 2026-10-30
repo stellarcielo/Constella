@@ -98,6 +98,15 @@ describe("すべて選択・取り消し", () => {
     expect(env.s().selection.links).toHaveLength(3);
   });
 
+  it("ブリッジの箱も選択する(フェーズ4-2)", () => {
+    const env = setup();
+    env.s().edit((t) => {
+      t.devices.get("srv1")?.interfaces.set("br0", { type: "bridge", extra: {} });
+    });
+    env.commands.selectAll();
+    expect(env.s().selection.devices).toEqual(["rt1", "core-sw1", "srv1", "isp", "srv1:br0"]);
+  });
+
   it("入力欄にフォーカスがあれば、入力欄の取り消しに回す", () => {
     const env = setup();
     env.s().addDevice("generic-router-4", { x: 0, y: 0 });

@@ -1,5 +1,6 @@
 // ポートの使用状況と、ポート選択に出す一覧(SPEC 7.2)。
 
+import { bridgeLinks, findBridge } from "./bridges";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { findModel } from "./topology";
 import type { Device, Endpoint, ModelCatalog, PortType, Topology } from "./types";
@@ -58,13 +59,16 @@ export interface PortEntry {
   speed?: string;
   /** モデルに定義されたポートか(フレキシブルデバイスで使われているだけの IF は false) */
   defined: boolean;
-  /** 使用中なら使用状況 */
+  /** 使用中なら使用状況(ブリッジは何本でもつなげるので、使用中にしない) */
   use?: PortUse;
+  /** ブリッジ(SPEC 4.6)なら、つながっているリンクの本数 */
+  bridge?: { links: number };
 }
 
 /**
  * デバイスのポート一覧。モデルのポートを定義順に並べ、
  * その後ろにモデルに無いが使われている IF(interfaces とリンクに書かれたもの)を出てきた順に並べる。
+ * ブリッジは使用中にせず、つながっているリンクの本数を添える。
  * reserved は作りかけの接続で押さえているポート(自分自身へつなぐとき用)。
  */
 export function listDevicePorts(
@@ -103,10 +107,32 @@ export function listDevicePorts(
     const key = ifNameKey(name);
     if (name === "" || seen.has(key)) continue;
     seen.add(key);
+    if (findBridge(device, name) !== undefined) {
+      entries.push({
+        name,
+        defined: false,
+        bridge: { links: bridgeLinks(t, device.id, name).length },
+      });
+      continue;
+    }
     const use = usageOf(key);
     entries.push(use ? { name, defined: false, use } : { name, defined: false });
   }
   return entries;
+}
+
+/**
+ * ブリッジの members にできる IF(SPEC 4.6)。物理的な IF(モデルのポートと、使われている IF)と、
+ * bond・VLAN インターフェース。ブリッジは除く
+ */
+export function bridgeMemberCandidates(
+  device: Device,
+  t: Topology,
+  catalog: ModelCatalog,
+): string[] {
+  return listDevicePorts(device, t, catalog)
+    .filter((entry) => !entry.bridge)
+    .map((entry) => entry.name);
 }
 
 /** 先頭の空いている(モデルに定義された)ポート */

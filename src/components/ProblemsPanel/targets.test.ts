@@ -78,3 +78,28 @@ describe("issueFocus", () => {
     expect(issueFocus({ kind: "group", index: 5 }, grouped)).toBeUndefined();
   });
 });
+
+describe("issueFocus: ブリッジ(フェーズ4-2)", () => {
+  const t = load(`constella: 1
+devices:
+  pve1:
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vmbr0 }
+`);
+
+  it("ブリッジの IF と layout のキーはブリッジの箱を選び、リンクはブリッジの箱に表示を合わせる", () => {
+    expect(issueFocus({ kind: "interface", device: "pve1", name: "vmbr0" }, t)).toEqual({
+      selection: { devices: ["pve1:vmbr0"], links: [] },
+      devices: ["pve1:vmbr0"],
+    });
+    expect(issueFocus({ kind: "layout", id: "pve1:vmbr0" }, t)?.devices).toEqual(["pve1:vmbr0"]);
+    expect(issueFocus({ kind: "layout", id: "pve1:vmbr9" }, t)).toBeUndefined();
+    expect(issueFocus({ kind: "link", id: t.links[0].id }, t)?.devices).toEqual([
+      "vm1",
+      "pve1:vmbr0",
+    ]);
+  });
+});

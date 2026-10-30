@@ -1,6 +1,7 @@
 // コピー&ペースト用の断片(SPEC 7.4)。断片は小さなトポロジで、クリップボードには YAML の文字列で入れる。
 // 外で書いた(AI に書かせた)YAML の断片も貼り付けられる。
 
+import { bridgeKey, parseBridgeKey } from "./bridges";
 import { nextDeviceId, roundPosition } from "./edit";
 import { resolveGuest } from "./hosts";
 import { parseTopology } from "./parse";
@@ -8,7 +9,10 @@ import { serializeTopology } from "./serialize";
 import { createEmptyTopology, createLinkId, createUid, resolveRole } from "./topology";
 import type { ModelCatalog, Position, Topology } from "./types";
 
-/** 選んだデバイスと、その間で完結するリンク(両端とも選んだデバイスにある)と座標を取り出す */
+/**
+ * 選んだデバイスと、その間で完結するリンク(両端とも選んだデバイスにある)と座標を取り出す。
+ * ホストのブリッジの位置も一緒に取り出す
+ */
 export function extractFragment(t: Topology, deviceIds: Iterable<string>): Topology {
   const ids = new Set(deviceIds);
   const fragment = createEmptyTopology();
@@ -21,7 +25,8 @@ export function extractFragment(t: Topology, deviceIds: Iterable<string>): Topol
     )
     .map((l) => structuredClone(l));
   for (const [id, pos] of t.layout) {
-    if (fragment.devices.has(id)) fragment.layout.set(id, { ...pos });
+    const owner = parseBridgeKey(id)?.host ?? id;
+    if (fragment.devices.has(owner)) fragment.layout.set(id, { ...pos });
   }
   return fragment;
 }
@@ -61,8 +66,14 @@ export function pasteFragment(
     const id = nextDeviceId(t, resolveRole(device, catalog), resolveGuest(device, catalog));
     ids.set(device.id, id);
     t.devices.set(id, { ...structuredClone(device), id, uid: createUid() });
+    const shift = (pos: Position) => roundPosition({ x: pos.x + offset.x, y: pos.y + offset.y });
     const pos = fragment.layout.get(device.id);
-    if (pos) t.layout.set(id, roundPosition({ x: pos.x + offset.x, y: pos.y + offset.y }));
+    if (pos) t.layout.set(id, shift(pos));
+    // ブリッジの位置は、新しいホストの ID で置き直す
+    for (const [key, at] of fragment.layout) {
+      const bridge = parseBridgeKey(key);
+      if (bridge?.host === device.id) t.layout.set(bridgeKey(id, bridge.bridge), shift(at));
+    }
   }
   for (const id of ids.values()) {
     const device = t.devices.get(id);

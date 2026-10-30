@@ -1,6 +1,7 @@
 // リンクの media(ケーブルの種類)。書かれていなければ両端のポート種別から推定する(SPEC 4.3)。
 // 推定した値は YAML には書き込まない。
 
+import { isBridgeEndpoint } from "./bridges";
 import { ifNameKey } from "./ifname";
 import { findModel } from "./topology";
 import type { Endpoint, Link, Media, ModelCatalog, PortType, Topology } from "./types";
@@ -28,10 +29,12 @@ export function portTypeOf(t: Topology, ep: Endpoint, catalog: ModelCatalog): Po
 
 /**
  * ポート種別から media を推定する。
- * どちらかが無線なら wireless、仮想なら virtual。それ以外は分かる側の種別で決め、両方分からなければ copper。
+ * どちらかが無線なら wireless、仮想(ブリッジへのリンクを含む。SPEC 4.3)なら virtual。
+ * それ以外は分かる側の種別で決め、両方分からなければ copper。
  * dac は見た目で光ファイバーと区別できないので推定では選ばない(YAML に書いたときだけ使う)。
  */
 export function inferMedia(link: Link, t: Topology, catalog: ModelCatalog): Media {
+  if ([link.a, link.b].some((ep) => ep && isBridgeEndpoint(t, ep))) return "virtual";
   const types = [link.a, link.b]
     .map((ep) => (ep ? portTypeOf(t, ep, catalog) : undefined))
     .filter((type): type is PortType => type !== undefined);

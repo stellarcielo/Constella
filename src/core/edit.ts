@@ -1,6 +1,7 @@
 // トポロジの編集操作(SPEC 7章)。
 // 引数のトポロジを直接書き換える。ストアでは Immer の produce の中で呼ぶ。
 
+import { bridgeKey, parseBridgeKey, resolveBridgeKey } from "./bridges";
 import { resolveGuest } from "./hosts";
 import { ifNameKey } from "./ifname";
 import { canonicalIfName } from "./ports";
@@ -75,15 +76,16 @@ export function addDevice(t: Topology, spec: NewDevice, catalog: ModelCatalog): 
   return device.id;
 }
 
-/** デバイスの座標を更新する(ドラッグを終えたときに 1 回呼ぶ) */
+/** デバイスとブリッジ(箱の ID で渡す)の座標を更新する(ドラッグを終えたときに 1 回呼ぶ) */
 export function moveDevices(t: Topology, positions: Iterable<[string, Position]>): void {
   for (const [id, pos] of positions) {
-    if (t.devices.has(id)) t.layout.set(id, roundPosition(pos));
+    const key = t.devices.has(id) ? id : resolveBridgeKey(t, id);
+    if (key !== undefined) t.layout.set(key, roundPosition(pos));
   }
 }
 
 /**
- * デバイスを削除する。接続していたリンク、layout、グループのメンバーからも取り除く。
+ * デバイスを削除する。接続していたリンク、layout(ブリッジの位置を含む)、グループのメンバーからも取り除く。
  * ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
  */
 export function removeDevices(t: Topology, ids: Iterable<string>): void {
@@ -92,6 +94,10 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
   for (const id of removed) {
     t.devices.delete(id);
     t.layout.delete(id);
+  }
+  for (const key of t.layout.keys()) {
+    const bridge = parseBridgeKey(key);
+    if (bridge && removed.has(bridge.host)) t.layout.delete(key);
   }
   t.links = t.links.filter(
     (l) => !(l.a && removed.has(l.a.device)) && !(l.b && removed.has(l.b.device)),
@@ -139,7 +145,10 @@ export function checkDeviceId(t: Topology, id: string, currentId?: string): stri
   return undefined;
 }
 
-/** デバイスID を変える。リンク・layout・グループ・ゲストの host の参照もすべて書き換える */
+/**
+ * デバイスID を変える。リンク・layout(ブリッジの位置のキーを含む)・グループ・ゲストの host の参照も
+ * すべて書き換える
+ */
 export function renameDevice(t: Topology, oldId: string, newId: string): void {
   if (oldId === newId) return;
   const device = t.devices.get(oldId);
@@ -149,7 +158,13 @@ export function renameDevice(t: Topology, oldId: string, newId: string): void {
 
   device.id = newId;
   t.devices = renameKey(t.devices, oldId, newId);
-  if (t.layout.has(oldId)) t.layout = renameKey(t.layout, oldId, newId);
+  t.layout = new Map(
+    [...t.layout].map(([key, pos]) => {
+      if (key === oldId) return [newId, pos];
+      const bridge = parseBridgeKey(key);
+      return [bridge?.host === oldId ? bridgeKey(newId, bridge.bridge) : key, pos];
+    }),
+  );
   for (const link of t.links) {
     for (const end of ["a", "b"] as const) {
       const ep = link[end];

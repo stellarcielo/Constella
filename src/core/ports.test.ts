@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTopology } from "./parse";
 import {
+  bridgeMemberCandidates,
   buildPortUsage,
   canonicalIfName,
   firstFreePort,
@@ -116,5 +117,41 @@ describe("canonicalIfName", () => {
     const t = load(specExample);
     expect(canonicalIfName(t, "isp", "GigabitEthernet9/9", testCatalog)).toBe("Gi9/9");
     expect(canonicalIfName(t, "isp", " uplink ", testCatalog)).toBe("uplink");
+  });
+});
+
+describe("ブリッジ(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ] }
+      vmbr0: { type: bridge, members: [ bond0 ] }
+  vm1: { model: generic-vm, host: pve1 }
+  vm2: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vmbr0 }
+  - { a: vm2:net0, b: pve1:vmbr0 }
+`;
+
+  it("ブリッジは使用中にせず、つながっているリンクの本数を添える", () => {
+    const t = load(text);
+    const entries = listDevicePorts(device(t, "pve1"), t, testCatalog);
+    const vmbr0 = entries.find((e) => e.name === "vmbr0");
+    expect(vmbr0).toEqual({ name: "vmbr0", defined: false, bridge: { links: 2 } });
+    // 「次の空きポート」には選ばない
+    expect(firstFreePort(entries)?.name).toBe("eno1");
+  });
+
+  it("members の候補は、物理的な IF と bond(ブリッジは除く)", () => {
+    const t = load(text);
+    expect(bridgeMemberCandidates(device(t, "pve1"), t, testCatalog)).toEqual([
+      "eno1",
+      "eno2",
+      "eno3",
+      "eno4",
+      "bond0",
+    ]);
   });
 });

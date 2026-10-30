@@ -1,6 +1,7 @@
 // リンクの線(SPEC 7.3)。デバイスのアイコンの中心同士を直線で結ぶ(フローティングエッジ)。
 // 両端に IF 名(その下に IP・VLAN。フェーズ3-2)、中央にリンクのラベルを出し、
 // 同じ 2 台の間の複数リンクは平行にずらす。線の色と種類は media で決まる(Canvas.css)。
+// ブリッジへのリンクはブリッジの箱につなぎ、ブリッジ側の端には IF 名を出さない(箱に名前があるため)。
 
 import {
   BaseEdge,
@@ -25,8 +26,9 @@ import {
   slotOffset,
 } from "../../core";
 import { useUi } from "../../store";
-import { DEVICE_NODE_WIDTH, type DeviceNodeType } from "./DeviceNode";
+import { DEVICE_NODE_WIDTH } from "./DeviceNode";
 import { iconCenter } from "./geometry";
+import type { CanvasNode } from "./nodes";
 
 export type LinkEdgeData = {
   media: Media;
@@ -41,13 +43,16 @@ export type LinkEdgeData = {
   /** 同じ 2 台の間(自分自身へのリンクなら同じデバイス)のリンクのうち何本目か */
   slotIndex: number;
   slotCount: number;
+  /** その端がブリッジか(IF 名を出さない) */
+  aBridge?: boolean;
+  bBridge?: boolean;
 };
 
 export type LinkEdgeType = Edge<LinkEdgeData, "link">;
 
 export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkEdgeType>) {
-  const s = useInternalNode<DeviceNodeType>(source);
-  const t = useInternalNode<DeviceNodeType>(target);
+  const s = useInternalNode<CanvasNode>(source);
+  const t = useInternalNode<CanvasNode>(target);
   const view = useUi((state) => state.view);
   if (!s || !t || !data) return null;
 
@@ -57,8 +62,8 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     showIp: view.showIp,
     showVlan: view.showVlan,
   };
-  const aLabel = ifLabel(data.aName, data.aInfo, options);
-  const bLabel = ifLabel(data.bName, data.bInfo, options);
+  const aLabel = data.aBridge ? undefined : ifLabel(data.aName, data.aInfo, options);
+  const bLabel = data.bBridge ? undefined : ifLabel(data.bName, data.bInfo, options);
   const aLines = aLabel ? ifLabelLines(aLabel) : [];
   const bLines = bLabel ? ifLabelLines(bLabel) : [];
 
@@ -76,10 +81,11 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     const line = offsetLine(iconCenter(s), iconCenter(t), slotOffset(slot), source > target);
     path = `M ${line.a.x},${line.a.y} L ${line.b.x},${line.b.y}`;
     // デバイス名はノードの幅で切れて表示される(Canvas.css)ので、それより広くはならない
-    const nameWidth = (label: string) => Math.min(estimateNameWidth(label), DEVICE_NODE_WIDTH);
+    const nameWidth = ({ data }: { data: CanvasNode["data"] }) =>
+      "label" in data ? Math.min(estimateNameWidth(data.label), DEVICE_NODE_WIDTH) : undefined;
     ends = endLabelPositions(line.a, line.b, aLines, bLines, slot, {
-      a: nameWidth(s.data.label),
-      b: nameWidth(t.data.label),
+      a: nameWidth(s),
+      b: nameWidth(t),
     });
     center = midpoint(line.a, line.b);
   }

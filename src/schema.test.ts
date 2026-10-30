@@ -6,11 +6,13 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import schema from "../schema/constella.schema.json";
 import {
+  BOND_MODES,
   DEVICE_ID_PATTERN,
   FORMAT_VERSION,
   GROUP_KINDS,
   GUEST_KINDS,
   INTERFACE_MODES,
+  LOGICAL_IF_TYPES,
   MEDIA,
   parseTopology,
   ROLES,
@@ -85,7 +87,10 @@ describe("JSON Schema", () => {
     expect(schema.definitions.deviceId.pattern).toBe(DEVICE_ID_PATTERN.source);
     expect(Object.keys(schema.properties.layout.patternProperties)).toEqual([
       DEVICE_ID_PATTERN.source,
+      `${DEVICE_ID_PATTERN.source.replace(/\$$/, "")}:\\S+$`,
     ]);
+    expect(schema.definitions.interface.properties.type.enum).toEqual([...LOGICAL_IF_TYPES]);
+    expect(schema.definitions.interface.properties["bond-mode"].enum).toEqual([...BOND_MODES]);
     expect(schema.definitions.endpoint.pattern).toBe(
       `${DEVICE_ID_PATTERN.source.replace(/\$$/, "")}:\\s*\\S`,
     );
@@ -130,6 +135,23 @@ groups:
 `,
     ],
     [
+      "ブリッジ",
+      `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ], bond-mode: 802.3ad }
+      vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true, vlans: "10,20" }
+      vmbr0.10: { type: vlan, vlan-raw-device: vmbr0, vlan: 10, ip: [ 192.0.2.2/24 ] }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vmbr0 }
+layout:
+  pve1:vmbr0: { x: 0, y: 100 }
+`,
+    ],
+    [
       "ゲスト",
       "constella: 1\ndevices:\n  pve1: { role: hypervisor }\n  vm1: { host: pve1, guest: container, vmid: 999999999 }\n",
     ],
@@ -162,6 +184,22 @@ groups:
     ["不正な kind", "constella: 1\ngroups:\n  - { id: g1, kind: floor }\n"],
     ["不正な guest", "constella: 1\ndevices:\n  vm1: { guest: lxc }\n"],
     ["範囲外の vmid", "constella: 1\ndevices:\n  vm1: { vmid: 99 }\n"],
+    [
+      "不正な IF の type",
+      "constella: 1\ndevices:\n  r1:\n    interfaces:\n      e0: { type: switch }\n",
+    ],
+    [
+      "不正な bond-mode",
+      "constella: 1\ndevices:\n  r1:\n    interfaces:\n      b0: { bond-mode: lacp }\n",
+    ],
+    [
+      "真偽値でない vlan-aware",
+      "constella: 1\ndevices:\n  r1:\n    interfaces:\n      v0: { vlan-aware: yes }\n",
+    ],
+    [
+      "配列でない members",
+      "constella: 1\ndevices:\n  r1:\n    interfaces:\n      v0: { members: eno1 }\n",
+    ],
     ["空の host", 'constella: 1\ndevices:\n  vm1: { host: "" }\n'],
   ];
 

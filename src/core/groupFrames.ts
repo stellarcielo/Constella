@@ -2,6 +2,7 @@
 // メンバーの機器を囲む四角を、機器の位置から計算する。
 // キャンバスと SVG の書き出しで共有する。枠の位置は YAML に書かない(機器を動かせば枠も動く)。
 
+import { bridgeKey, bridgesOf, resolveBridgeKey } from "./bridges";
 import { guestsBelow, hostTree, resolveGuest } from "./hosts";
 import type { Group, GroupKind, ModelCatalog, Position, Topology } from "./types";
 
@@ -24,7 +25,7 @@ export interface GroupFrame extends FrameBox {
   group: Group;
 }
 
-/** ホストの枠。ホストと、その上で動くゲスト(入れ子のゲストも)を囲む */
+/** ホストの枠。ホストと、そのブリッジと、その上で動くゲスト(入れ子のゲストとそのブリッジも)を囲む */
 export interface HostFrame extends FrameBox {
   type: "host";
   /** ホストのデバイスID */
@@ -63,8 +64,9 @@ export function groupTitle(group: Group): string {
   return kind ? `${kind}: ${name}` : name;
 }
 
-/** ホストの枠のラベル。直接のゲストの数を種類ごとに書く(「VM 2・CT 1」) */
+/** ホストの枠のラベル。直接のゲストの数を種類ごとに書く(「VM 2・CT 1」。ゲストがいなければ「ゲストなし」) */
 export function hostFrameTitle(t: Topology, catalog: ModelCatalog, frame: HostFrame): string {
+  if (frame.guests.length === 0) return "ゲストなし";
   let vm = 0;
   let container = 0;
   for (const id of frame.guests) {
@@ -91,7 +93,7 @@ export function groupKindFilter(kinds: readonly GroupKind[]): (group: Group) => 
  * ほかの枠のメンバーをすべて含む枠は、その外側に余白を足して入れ子に見せる(フェーズ3-1 Q3)。
  * メンバーが同じなら、YAML で先に書いたグループを外側に、ホストの枠をいちばん内側にする。
  * 座標のあるメンバーが無いグループは描かない。
- * ホストの枠は、座標のあるゲストがいるホストにだけ描く(ゲストを隠しているときは描かない)。
+ * ホストの枠は、座標のあるゲストかブリッジがあるホストにだけ描く(ゲストを隠しているときは描かない)。
  * グループのメンバーにホストがあれば、グループの枠はそのホストの枠を丸ごと囲む(SPEC 7.3)
  */
 export function groupFrames(
@@ -100,9 +102,16 @@ export function groupFrames(
   visible: (group: Group) => boolean = () => true,
 ): Frame[] {
   const tree = hostTree(t);
-  const placed = (id: string) => t.devices.has(id) && positionOf(id) !== undefined;
-  /** 機器と、その上で動くゲスト(座標のあるものだけ) */
-  const withGuests = (id: string) => [id, ...guestsBelow(tree, id).filter(placed)];
+  /** 座標のある機器かブリッジ(ブリッジは箱の ID で渡す) */
+  const placed = (id: string) =>
+    (t.devices.has(id) || resolveBridgeKey(t, id) === id) && positionOf(id) !== undefined;
+  const bridgeKeys = (id: string) =>
+    bridgesOf(t.devices.get(id))
+      .map((bridge) => bridgeKey(id, bridge))
+      .filter(placed);
+  /** 機器と、そのブリッジと、その上で動くゲスト(ゲストのブリッジも。座標のあるものだけ) */
+  const withGuests = (id: string) =>
+    [id, ...guestsBelow(tree, id)].filter(placed).flatMap((x) => [x, ...bridgeKeys(x)]);
 
   type Entry = { frame: GroupFrame | HostFrame; order: number; members: Set<string> };
   const box = { x: 0, y: 0, width: 0, height: 0, inner: 0, members: [] };
@@ -114,9 +123,9 @@ export function groupFrames(
       drawable.push({ frame: { ...box, type: "group", index, group }, order: index, members });
     }
   });
-  for (const [host, guests] of tree.guestsOf) {
-    const shown = guests.filter(placed);
-    if (!placed(host) || shown.length === 0) continue;
+  for (const host of t.devices.keys()) {
+    const shown = (tree.guestsOf.get(host) ?? []).filter(placed);
+    if (!placed(host) || (shown.length === 0 && bridgeKeys(host).length === 0)) continue;
     drawable.push({
       frame: { ...box, type: "host", host, guests: shown },
       order: t.groups.length + drawable.length,

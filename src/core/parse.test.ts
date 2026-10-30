@@ -331,3 +331,73 @@ devices:
     expect(issues[0].message).toContain("host, guest, vmid");
   });
 });
+
+describe("parseTopology: 論理的な IF(SPEC 4.3・4.6)", () => {
+  it("type・members・bond-mode・vlan-aware・vlan-raw-device を読み、IF 名の表記をそろえる", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ ENO1, eno2 ], bond-mode: 802.3ad }
+      vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true }
+      vlan10: { type: vlan, vlan-raw-device: vmbr0, vlan: 10 }
+layout:
+  pve1:VMBR0: { x: 1, y: 2 }
+`);
+    expect(issues).toEqual([]);
+    const ifs = topology.devices.get("pve1")?.interfaces;
+    expect(ifs?.get("bond0")).toEqual({
+      type: "bond",
+      members: ["eno1", "eno2"],
+      bondMode: "802.3ad",
+      extra: {},
+    });
+    expect(ifs?.get("vmbr0")).toEqual({
+      type: "bridge",
+      members: ["bond0"],
+      vlanAware: true,
+      extra: {},
+    });
+    // type を書いた IF の名前は、Cisco の略称にしない(vlan10 を Vl10 にしない)
+    expect(ifs?.get("vlan10")?.vlanRawDevice).toBe("vmbr0");
+    // layout のブリッジのキーも、ブリッジの表記にそろえる
+    expect([...topology.layout.keys()]).toEqual(["pve1:vmbr0"]);
+  });
+
+  it("不正な値はエラーにして値を残す", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  r1:
+    interfaces:
+      x: { type: switch, members: eno1, bond-mode: lacp, vlan-aware: yes, vlan-raw-device: "" }
+`);
+    expect(codes(issues)).toEqual(Array(5).fill("invalid-value"));
+    expect(topology.devices.get("r1")?.interfaces.get("x")?.extra).toEqual({
+      type: "switch",
+      members: "eno1",
+      "bond-mode": "lacp",
+      "vlan-aware": "yes",
+      "vlan-raw-device": "",
+    });
+  });
+});
+
+describe("parseTopology: 論理的な IF の名前(SPEC 4.4)", () => {
+  it("type を書いた IF の名前は書いたとおりに保ち、リンクと members もその表記にそろえる", () => {
+    const { topology } = parseOk(`constella: 1
+devices:
+  pve1:
+    interfaces:
+      vlan10: { type: vlan, vlan-raw-device: vmbr0 }
+      vmbr1: { type: bridge, members: [ Vlan10 ] }
+      Vlan20: { description: Cisco の SVI と同じ書き方 }
+links:
+  - { a: pve1:VLAN10, b: sw:e0 }
+`);
+    const pve1 = topology.devices.get("pve1");
+    expect([...(pve1?.interfaces.keys() ?? [])]).toEqual(["vlan10", "vmbr1", "Vl20"]);
+    expect(pve1?.interfaces.get("vmbr1")?.members).toEqual(["vlan10"]);
+    expect(topology.links[0].a).toEqual({ device: "pve1", iface: "vlan10" });
+  });
+});

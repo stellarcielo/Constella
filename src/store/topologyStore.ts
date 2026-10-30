@@ -9,9 +9,12 @@
 import { enableMapSet, produce } from "immer";
 import { createStore } from "zustand/vanilla";
 import {
+  addBridge,
   addDevice,
   addLink,
   adoptIdentity,
+  allBridges,
+  bridgeKey,
   checkDeviceId,
   computeLayout,
   createEmptyTopology,
@@ -20,12 +23,16 @@ import {
   type Issue,
   type ModelCatalog,
   moveDevices,
+  parseBridgeKey,
   parseTopology,
   placeMissing,
+  placeNearHost,
   type Position,
   rebaseOnText,
+  removeBridges,
   removeDevices,
   removeLinks,
+  resolveBridgeKey,
   renameDevice,
   SCHEMA_COMMENT,
   serializeTopology,
@@ -37,8 +44,31 @@ import {
 enableMapSet();
 
 export interface Selection {
+  /** デバイスID と、ブリッジの箱の ID(`ホストのデバイスID:ブリッジ名`。SPEC 4.6) */
   devices: string[];
   links: string[];
+}
+
+/**
+ * 自動で並べた位置(autoPositions)のキー。デバイスは uid、ブリッジは「ホストの uid:ブリッジ名」
+ * (ID を変えても位置が変わらないように)。無いデバイス・ブリッジなら undefined
+ */
+export function autoPositionKey(t: Topology, id: string): string | undefined {
+  const device = t.devices.get(id);
+  if (device) return device.uid;
+  const bridge = resolveBridgeKey(t, id) === id ? parseBridgeKey(id) : undefined;
+  const host = bridge && t.devices.get(bridge.host);
+  return bridge && host ? `${host.uid}:${bridge.bridge}` : undefined;
+}
+
+/** デバイスかブリッジ(箱の ID)の今の位置。layout に無ければ自動で並べた位置 */
+export function nodePosition(
+  t: Topology,
+  autoPositions: ReadonlyMap<string, Position>,
+  id: string,
+): Position | undefined {
+  const key = autoPositionKey(t, id);
+  return key === undefined ? undefined : (t.layout.get(id) ?? autoPositions.get(key));
 }
 
 /** YAML 文字列を変えた出どころ。"yaml" はエディタ自身の内容なので、エディタに書き戻さない */
@@ -73,7 +103,7 @@ export interface TopologyState {
   canUndo: boolean;
   canRedo: boolean;
   /**
-   * 座標の無いデバイスを自動で並べた位置(キー = デバイスの uid。ID を変えても位置が変わらないように)。
+   * 座標の無いデバイスとブリッジを自動で並べた位置(キーは autoPositionKey)。
    * 表示だけに使い、YAML には書かない。そのデバイスを動かしたときに初めて layout に書く
    */
   autoPositions: ReadonlyMap<string, Position>;
@@ -100,12 +130,14 @@ export interface TopologyState {
   redo(): void;
   /** host を渡すと、そのホストのゲストにする(フェーズ4-1 Q2) */
   addDevice(modelId: string, position: Position, host?: string): string;
+  /** ホストにブリッジを足してホストの下に置き、選ぶ。足したブリッジの箱の ID を返す(フェーズ4-2 Q1) */
+  addBridge(host: string): string | undefined;
   moveDevices(positions: Iterable<[string, Position]>, options?: EditOptions): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
   /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
   renameDevice(oldId: string, newId: string): string | undefined;
-  /** 指定したデバイスとリンクを削除する(デバイスにつながるリンクも消える) */
+  /** 指定したデバイス(ブリッジを含む)とリンクを削除する(デバイスにつながるリンクも消える) */
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
@@ -394,6 +426,26 @@ export function createTopologyStore(
         return id;
       },
 
+      addBridge(host) {
+        const { topology, autoPositions, catalog: models } = get();
+        const device = topology.devices.get(host);
+        if (!device) return undefined;
+        // ホストの下の段に、ほかのホストの枠や機器と重ならないように置く
+        const position = placeNearHost(
+          topology,
+          (id) => nodePosition(topology, autoPositions, id),
+          host,
+          "bridge",
+        );
+        let key: string | undefined;
+        get().edit((t) => {
+          const name = addBridge(t, host, models, position);
+          if (name !== undefined) key = bridgeKey(host, name);
+        });
+        if (key !== undefined) get().setSelection({ devices: [key], links: [] });
+        return key;
+      },
+
       moveDevices(positions, moveOptions) {
         const list = [...positions];
         const { layout } = get().topology;
@@ -436,6 +488,10 @@ export function createTopologyStore(
         if (devices.length === 0 && links.length === 0) return;
         get().edit((t) => {
           removeLinks(t, links);
+          removeBridges(
+            t,
+            devices.filter((id) => !t.devices.has(id)),
+          );
           removeDevices(t, devices);
         });
       },
@@ -471,13 +527,16 @@ export function createTopologyStore(
     };
   });
 
-  // 座標の無いデバイスが現れたら並べる。並べている間にまた現れたら、終わってからもう一度並べる
+  // 座標の無いデバイスとブリッジが現れたら並べる。並べている間にまた現れたら、終わってからもう一度並べる
   let placingRun: Promise<void> | undefined;
   let again = false;
   const missingDevices = () => {
     const { topology, autoPositions } = store.getState();
-    return [...topology.devices.values()].filter(
-      (d) => !topology.layout.has(d.id) && !autoPositions.has(d.uid),
+    return [...topology.devices.keys(), ...allBridges(topology).map((bridge) => bridge.key)].filter(
+      (id) => {
+        const key = autoPositionKey(topology, id);
+        return !topology.layout.has(id) && key !== undefined && !autoPositions.has(key);
+      },
     );
   };
   const placeAll = async () => {
@@ -487,20 +546,14 @@ export function createTopologyStore(
         const missing = missingDevices();
         if (missing.length === 0) break;
         const { topology, autoPositions } = store.getState();
-        const positionOf = (id: string) => {
-          const device = topology.devices.get(id);
-          return device && (topology.layout.get(id) ?? autoPositions.get(device.uid));
-        };
-        const laid = await placeMissing(
-          topology,
-          catalog,
-          missing.map((d) => d.id),
-          positionOf,
+        const laid = await placeMissing(topology, catalog, missing, (id) =>
+          nodePosition(topology, autoPositions, id),
         );
         const next = new Map(store.getState().autoPositions);
-        for (const device of missing) {
-          const pos = laid.get(device.id);
-          if (pos) next.set(device.uid, pos);
+        for (const id of missing) {
+          const pos = laid.get(id);
+          const key = autoPositionKey(topology, id);
+          if (pos && key !== undefined) next.set(key, pos);
         }
         store.setState({ autoPositions: next });
       } while (again);
@@ -563,7 +616,9 @@ function targetExists(issue: Issue, t: Topology): boolean {
 
 /** 消えた要素を選択から外す */
 function keepExisting(selection: Selection, t: Topology): Selection {
-  const devices = selection.devices.filter((id) => t.devices.has(id));
+  const devices = selection.devices.filter(
+    (id) => t.devices.has(id) || resolveBridgeKey(t, id) === id,
+  );
   const links = selection.links.filter((id) => t.links.some((l) => l.id === id));
   return sameSelection(selection, { devices, links }) ? selection : { devices, links };
 }

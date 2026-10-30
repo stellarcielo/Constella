@@ -71,7 +71,73 @@
   color: #fff;
 }
 
+/* ブリッジ(ホストの中の仮想スイッチ。SPEC 7.3)。幅は機器と同じにして、箱を真ん中に置く。
+   箱の大きさは core の BRIDGE_BOX と合わせる */
+.bridge-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 96px;
+}
+
+.bridge-node-box {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 80px;
+  height: 26px;
+  border: 1.5px solid var(--group-host);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.bridge-node.selected .bridge-node-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.bridge-node.problem-warning .bridge-node-box {
+  box-shadow: 0 0 0 3px var(--warning);
+}
+
+.bridge-node.problem-error .bridge-node-box {
+  box-shadow: 0 0 0 3px var(--error);
+}
+
+/* VLAN aware の印。箱の右上に重ねる(ゲストの VM / CT の印と同じ形) */
+.bridge-vlan-badge {
+  position: absolute;
+  top: -6px;
+  right: -9px;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--label-bg);
+  color: var(--text-muted);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.bridge-node-ip {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--label-bg);
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 /* React Flow のノード既定の枠を消す */
+.react-flow__node-bridge,
 .react-flow__node-device {
   border: none;
   background: none;

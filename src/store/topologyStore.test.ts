@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { specExample, testCatalog } from "../core/testFixtures";
-import { createTopologyStore, EMPTY_YAML } from "./topologyStore";
+import { createTopologyStore, EMPTY_YAML, nodePosition } from "./topologyStore";
 
 function setup() {
   return createTopologyStore(testCatalog);
@@ -542,5 +542,63 @@ describe("モデルの一覧の差し替え(フェーズ3-4)", () => {
     expect(store.getState().issues).toEqual([]);
     expect(store.getState().catalog.has("my-switch")).toBe(true);
     expect(store.getState().addDevice("my-switch", { x: 0, y: 0 })).toBe("sw10");
+  });
+});
+
+describe("ブリッジ(SPEC 4.6・フェーズ4-2)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ] }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vmbr0 }
+layout:
+  pve1: { x: 100, y: 0 }
+`;
+  const placed = async (store: ReturnType<typeof setup>) =>
+    vi.waitFor(() => expect(store.getState().placing).toBe(false));
+
+  it("座標の無いブリッジも自動で並べる(ホストの下)。位置はホストの ID を変えても変わらない", async () => {
+    const store = setup();
+    store.getState().openText(text);
+    await placed(store);
+    const position = () =>
+      nodePosition(store.getState().topology, store.getState().autoPositions, "pve-a:vmbr0");
+    const before = nodePosition(
+      store.getState().topology,
+      store.getState().autoPositions,
+      "pve1:vmbr0",
+    );
+    expect(before).toEqual({ x: 100, y: 112 });
+    store.getState().renameDevice("pve1", "pve-a");
+    await placed(store);
+    expect(position()).toEqual(before);
+  });
+
+  it("ブリッジを足すと、ホストの下に置いて選ぶ。続けて足すと右に並べる", () => {
+    const store = setup();
+    store
+      .getState()
+      .openText(text.replace("layout:\n", "layout:\n  pve1:vmbr0: { x: 100, y: 112 }\n"));
+    expect(store.getState().addBridge("pve1")).toBe("pve1:vmbr1");
+    const s = store.getState();
+    expect(s.selection).toEqual({ devices: ["pve1:vmbr1"], links: [] });
+    expect(s.topology.layout.get("pve1:vmbr1")).toEqual({ x: 296, y: 112 });
+    expect(s.yamlText).toContain("      vmbr1:\n        type: bridge\n");
+    expect(store.getState().addBridge("ghost")).toBeUndefined();
+  });
+
+  it("選んだブリッジを削除すると、つながっていたリンクも消え、選択からも外れる", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setSelection({ devices: ["pve1:vmbr0"], links: [] });
+    store.getState().deleteSelection();
+    const s = store.getState();
+    expect(s.topology.devices.get("pve1")?.interfaces.has("vmbr0")).toBe(false);
+    expect(s.topology.links).toEqual([]);
+    expect(s.selection).toEqual({ devices: [], links: [] });
   });
 });

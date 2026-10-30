@@ -2,7 +2,7 @@
 
 import { DEVICE_BOX, groupFrames } from "./groupFrames";
 import { guestsBelow, hostTree } from "./hosts";
-import { guestPositions } from "./layout";
+import { placeNearHost } from "./placement";
 import { resolveRole } from "./topology";
 import type { ModelCatalog, Position, Topology } from "./types";
 
@@ -16,6 +16,7 @@ export interface GuestDrop {
 /**
  * point(図の座標)に落としたゲストを、どのホストのゲストにするか。
  * - ハイパーバイザ(またはゲストのいるホスト)の機器の上: そのホストのゲストにし、ホストの下に並べる
+ *   (ほかのホストの枠や機器と重ならない場所を探す)
  * - ホストの枠の中: そのホストのゲストにする(いちばん内側の枠。位置は落とした所)
  * - それ以外: undefined(ホストなし)
  * positionOf は今の機器の位置(隠している機器は undefined)
@@ -35,11 +36,7 @@ export function guestDropTarget(
     if (!pos || !inside(point, pos.x, pos.y, DEVICE_BOX.width, DEVICE_BOX.height)) continue;
     const isHost = resolveRole(device, catalog) === "hypervisor" || tree.guestsOf.has(device.id);
     if (!isHost) break;
-    const placed = (tree.guestsOf.get(device.id) ?? []).flatMap((id) => {
-      const p = positionOf(id);
-      return p ? [p] : [];
-    });
-    return { host: device.id, position: guestPositions(pos, placed, 1)[0] };
+    return { host: device.id, position: placeNearHost(t, positionOf, device.id, "guest") };
   }
 
   // 枠は外側から順に並んでいるので、後ろから探すといちばん内側の枠が見つかる

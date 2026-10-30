@@ -492,3 +492,63 @@ devices:
     );
   });
 });
+
+describe("serializeTopology: ブリッジ(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ] }
+layout:
+  pve1: { x: 0, y: 0 }
+  # ブリッジの位置
+  pve1:vmbr0: { x: 0, y: 120 }
+`;
+
+  it("論理的な IF の項目を、type を先にして書く(members は 1 行の配列)", () => {
+    const { topology, base } = load(text);
+    topology.devices.get("pve1")?.interfaces.set("bond0", {
+      type: "bond",
+      members: ["eno2", "eno3"],
+      bondMode: "802.3ad",
+      description: "LAG",
+      extra: {},
+    });
+    const vmbr0 = topology.devices.get("pve1")?.interfaces.get("vmbr0");
+    if (!vmbr0) throw new Error();
+    vmbr0.vlanAware = true;
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain(
+      "      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true }\n" +
+        "      bond0:\n" +
+        "        type: bond\n" +
+        "        members: [ eno2, eno3 ]\n" +
+        "        bond-mode: 802.3ad\n" +
+        "        description: LAG\n",
+    );
+  });
+
+  it("ホストの ID を変えると、ブリッジの位置のキーも、位置とコメントを保って書き換える", () => {
+    const { topology, base } = load(text);
+    renameDevice(topology, "pve1", "pve-a");
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain(
+      "layout:\n  pve-a: { x: 0, y: 0 }\n  # ブリッジの位置\n  pve-a:vmbr0: { x: 0, y: 120 }\n",
+    );
+  });
+
+  it("ホストを削除すると、ブリッジの位置も消える", () => {
+    const { topology, base } = load(text);
+    removeDevices(topology, ["pve1"]);
+    expect(serializeTopology(topology, base).text).not.toContain("vmbr0: { x");
+  });
+
+  it("キーの IF 名の書き方が違っても、同じブリッジの位置として書き換える", () => {
+    const { topology, base } = load(text.replace("pve1:vmbr0:", "pve1:VMBR0:"));
+    topology.layout.set("pve1:vmbr0", { x: 5, y: 125 });
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain("  pve1:vmbr0: { x: 5, y: 125 }\n");
+    expect(out).not.toContain("VMBR0");
+  });
+});

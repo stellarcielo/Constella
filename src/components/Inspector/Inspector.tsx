@@ -1,8 +1,9 @@
 // 右側のインスペクタ(SPEC 6章)。選んでいるものに合わせて表示を切り替える。
 // 何も選んでいないときは、トポロジ全体のタイトルと説明(meta)を編集できる。
 
-import { type Device, type Link, updateMeta } from "../../core";
+import { type Device, type Link, parseBridgeKey, resolveBridgeKey, updateMeta } from "../../core";
 import { topologyStore, useTopology } from "../../store";
+import { BridgeInspector } from "./BridgeInspector";
 import { DeviceInspector } from "./DeviceInspector";
 import { CommitInput, CommitTextarea, Field } from "./fields";
 import { LinkInspector } from "./LinkInspector";
@@ -17,29 +18,49 @@ export function Inspector() {
   const links = selection.links
     .map((id) => topology.links.find((l) => l.id === id))
     .filter((l): l is Link => l !== undefined);
+  // デバイスでない ID はブリッジの箱(SPEC 4.6)
+  const bridges = selection.devices.flatMap((id) => {
+    const parsed = resolveBridgeKey(topology, id) === id ? parseBridgeKey(id) : undefined;
+    const host = parsed && topology.devices.get(parsed.host);
+    return parsed && host ? [{ host, bridge: parsed.bridge }] : [];
+  });
 
   let body;
-  if (devices.length === 1 && links.length === 0) {
+  if (bridges.length === 1 && devices.length === 0 && links.length === 0) {
+    const { host, bridge } = bridges[0];
+    body = <BridgeInspector key={`${host.uid}:${bridge}`} host={host} bridge={bridge} />;
+  } else if (devices.length === 1 && links.length === 0 && bridges.length === 0) {
     // ID を変えても開いている IF などの状態が消えないよう、内部の識別子で区別する
     body = <DeviceInspector key={devices[0].uid} device={devices[0]} />;
-  } else if (links.length === 1 && devices.length === 0) {
+  } else if (links.length === 1 && devices.length === 0 && bridges.length === 0) {
     body = <LinkInspector key={links[0].id} link={links[0]} />;
-  } else if (devices.length + links.length > 1) {
-    body = <SelectionSummary devices={devices.length} links={links.length} />;
+  } else if (devices.length + bridges.length + links.length > 1) {
+    body = (
+      <SelectionSummary devices={devices.length} bridges={bridges.length} links={links.length} />
+    );
   } else {
     body = <TopologyInspector />;
   }
   return <div className="inspector">{body}</div>;
 }
 
-function SelectionSummary({ devices, links }: { devices: number; links: number }) {
+function SelectionSummary({
+  devices,
+  bridges,
+  links,
+}: {
+  devices: number;
+  bridges: number;
+  links: number;
+}) {
   return (
     <>
       <header className="inspector-header">
         <div className="inspector-heading">
           <div className="inspector-title">複数選択</div>
           <div className="inspector-subtitle">
-            デバイス {devices} 台、リンク {links} 本を選択中
+            デバイス {devices} 台、{bridges > 0 ? `ブリッジ ${bridges} 個、` : ""}リンク {links}{" "}
+            本を選択中
           </div>
         </div>
       </header>

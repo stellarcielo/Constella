@@ -439,3 +439,46 @@ devices:
     expect(t.devices.get("ct1")).not.toHaveProperty("vmid");
   });
 });
+
+describe("ブリッジの位置(SPEC 4.6)", () => {
+  const bridged = () => {
+    const result = parseTopology(
+      `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  sw1: { model: generic-l2switch-24 }
+layout:
+  pve1: { x: 0, y: 0 }
+  pve1:vmbr0: { x: 0, y: 120 }
+`,
+      { catalog: testCatalog },
+    );
+    if (!result.ok) throw new Error();
+    return result.topology;
+  };
+
+  it("moveDevices: ブリッジの箱の ID でも動かせる(無いブリッジは無視する)", () => {
+    const t = bridged();
+    moveDevices(t, [
+      ["pve1:vmbr0", { x: 10.4, y: 130.6 }],
+      ["pve1:vmbr9", { x: 1, y: 1 }],
+    ]);
+    expect(t.layout.get("pve1:vmbr0")).toEqual({ x: 10, y: 131 });
+    expect(t.layout.has("pve1:vmbr9")).toBe(false);
+  });
+
+  it("ホストの ID を変えると、ブリッジの位置のキーも変え、順序は保つ", () => {
+    const t = bridged();
+    renameDevice(t, "pve1", "pve-a");
+    expect([...t.layout.keys()]).toEqual(["pve-a", "pve-a:vmbr0"]);
+  });
+
+  it("ホストを削除すると、ブリッジの位置も消える", () => {
+    const t = bridged();
+    removeDevices(t, ["pve1"]);
+    expect([...t.layout.keys()]).toEqual([]);
+  });
+});

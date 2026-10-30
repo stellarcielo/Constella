@@ -21,7 +21,11 @@ import {
 import "@xyflow/react/dist/style.css";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  allBridges,
+  bridgeKey,
   type Endpoint,
+  endpointNodeId,
+  findBridge,
   findModel,
   guestDropTarget,
   type Issue,
@@ -37,17 +41,27 @@ import {
   type Severity,
   type Topology,
 } from "../../core";
-import { type Selection, topologyStore, uiStore, useTopology, useUi } from "../../store";
+import {
+  nodePosition,
+  type Selection,
+  topologyStore,
+  uiStore,
+  useTopology,
+  useUi,
+} from "../../store";
 import { MODEL_DRAG_TYPE } from "../dnd";
 import { isTyping, releaseInputFocus } from "../shortcuts";
+import { BridgeNode, type BridgeNodeType } from "./BridgeNode";
 import { ConnectOverlay } from "./ConnectOverlay";
 import { GroupFrames } from "./GroupFrames";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
+import type { CanvasEdge, CanvasNode } from "./nodes";
+import { UplinkEdge, type UplinkEdgeType } from "./UplinkEdge";
 import "./Canvas.css";
 
-const nodeTypes: NodeTypes = { device: DeviceNode };
-const edgeTypes: EdgeTypes = { link: LinkEdge };
+const nodeTypes: NodeTypes = { device: DeviceNode, bridge: BridgeNode };
+const edgeTypes: EdgeTypes = { link: LinkEdge, uplink: UplinkEdge };
 // 描画のたびに新しい配列を渡すと React Flow が更新を繰り返すので定数にする
 const DELETE_KEYS = ["Backspace", "Delete"];
 const MULTI_SELECT_KEYS = ["Shift", "Meta"];
@@ -60,7 +74,15 @@ const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
     devices: nodes.map((n) => n.id),
     links: edges.map((e) => e.id),
   });
-const onNodeClick: NodeMouseHandler = (_e, node) => uiStore.getState().clickDevice(node.id);
+/** 接続モードでブリッジの箱をクリックしたら、ポートを選ばずにそのブリッジを端にする(フェーズ4-2) */
+const onNodeClick: NodeMouseHandler<CanvasNode> = (_e, node) => {
+  if (node.type !== "bridge") {
+    uiStore.getState().clickDevice(node.id);
+    return;
+  }
+  const link = uiStore.getState().clickBridge({ device: node.data.host, iface: node.data.name });
+  if (link) topologyStore.getState().addLink(link.a, link.b);
+};
 
 /** 矢印キーで選択中の機器を動かす量(⇧キーを押していれば 4 倍) */
 const ARROW_STEP = 5;
@@ -138,7 +160,7 @@ function CanvasInner() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [getNodes]);
 
-  // ゲストを隠したら、選択からも外す(見えないゲストを delete キーで消さないように)
+  // ゲストを隠したら、ゲストとブリッジを選択からも外す(見えないものを delete キーで消さないように)
   useEffect(() => {
     if (showGuests) return;
     const { selection, topology, catalog } = topologyStore.getState();
@@ -146,7 +168,8 @@ function CanvasInner() {
       const device = id === undefined ? undefined : topology.devices.get(id);
       return device !== undefined && resolveGuest(device, catalog) !== undefined;
     };
-    const devices = selection.devices.filter((id) => !isGuest(id));
+    // デバイスでない ID はブリッジの箱
+    const devices = selection.devices.filter((id) => topology.devices.has(id) && !isGuest(id));
     const links = selection.links.filter((id) => {
       const link = topology.links.find((l) => l.id === id);
       return !isGuest(link?.a?.device) && !isGuest(link?.b?.device);
@@ -165,8 +188,8 @@ function CanvasInner() {
   );
 
   // ストア側が変わったら作り直す。React Flow が測ったノードの大きさは引き継ぐ
-  const [nodes, setNodes] = useState<DeviceNodeType[]>(derived.nodes);
-  const [edges, setEdges] = useState<LinkEdgeType[]>(derived.edges);
+  const [nodes, setNodes] = useState<CanvasNode[]>(derived.nodes);
+  const [edges, setEdges] = useState<CanvasEdge[]>(derived.edges);
   const [prevDerived, setPrevDerived] = useState(derived);
   // GUI の編集が取りやめになったとき(YAML の構文エラー中など)も、ストアの位置に戻す
   const [prevRejected, setPrevRejected] = useState(rejectedEdits);
@@ -200,7 +223,7 @@ function CanvasInner() {
     }
   }
 
-  const onNodesChange = useCallback((changes: NodeChange<DeviceNodeType>[]) => {
+  const onNodesChange = useCallback((changes: NodeChange<CanvasNode>[]) => {
     setNodes((ns) => applyNodeChanges(changes, ns));
     // ドラッグを終えたときは dragging: false の位置の変化が届く(onNodeDragStop と同じ内容。保存は 1 回だけになる)
     const moved: [string, Position][] = [];
@@ -211,7 +234,7 @@ function CanvasInner() {
     }
     if (moved.length > 0) topologyStore.getState().moveDevices(moved);
   }, []);
-  const onEdgesChange = useCallback((changes: EdgeChange<LinkEdgeType>[]) => {
+  const onEdgesChange = useCallback((changes: EdgeChange<CanvasEdge>[]) => {
     setEdges((es) => applyEdgeChanges(changes, es));
   }, []);
 
@@ -301,13 +324,17 @@ function buildNodes(
   catalog: ModelCatalog,
   issues: Issue[],
   showGuests: boolean,
-): DeviceNodeType[] {
-  const problems = worstProblems(issues, (target) =>
-    target.kind === "device" ? target.id : target.kind === "interface" ? target.device : undefined,
-  );
-  return [...t.devices.values()].map((device) => {
+): CanvasNode[] {
+  // ブリッジの IF の問題は、ホストではなくブリッジの箱に出す
+  const problems = worstProblems(issues, (target) => {
+    if (target.kind === "device") return target.id;
+    if (target.kind !== "interface") return undefined;
+    const bridge = findBridge(t.devices.get(target.device), target.name);
+    return bridge === undefined ? target.device : bridgeKey(target.device, bridge);
+  });
+  const devices = [...t.devices.values()].map((device): DeviceNodeType => {
     const model = findModel(device, catalog);
-    const position = t.layout.get(device.id) ?? autoPositions.get(device.uid);
+    const position = nodePosition(t, autoPositions, device.id);
     const guest = resolveGuest(device, catalog);
     return {
       id: device.id,
@@ -326,31 +353,60 @@ function buildNodes(
       },
     };
   });
+  // ブリッジの箱(SPEC 4.6)。ゲストと一緒に隠す
+  const bridges = allBridges(t).map(({ key, host, bridge }): BridgeNodeType => {
+    const info = t.devices.get(host)?.interfaces.get(bridge);
+    const position = nodePosition(t, autoPositions, key);
+    return {
+      id: key,
+      type: "bridge",
+      position: position ?? { x: 0, y: 0 },
+      hidden: !position || !showGuests,
+      data: {
+        name: bridge,
+        host,
+        vlanAware: info?.vlanAware === true,
+        vlans: info?.vlans,
+        ip: info?.ip ?? [],
+        problem: problems.get(key),
+      },
+    };
+  });
+  return [...devices, ...bridges];
 }
 
-function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): LinkEdgeType[] {
+function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): CanvasEdge[] {
   const problems = worstProblems(issues, (target) =>
     target.kind === "link" ? target.id : undefined,
   );
-  // 端が不正なリンクや、存在しないデバイスへのリンクは描けない(問題パネルに出る)
-  const drawable: { link: (typeof t.links)[number]; a: Endpoint; b: Endpoint }[] = [];
+  // 端が不正なリンクや、存在しないデバイスへのリンクは描けない(問題パネルに出る)。
+  // ブリッジへのリンクは、ブリッジの箱につなぐ
+  const drawable: {
+    link: (typeof t.links)[number];
+    a: Endpoint;
+    b: Endpoint;
+    na: string;
+    nb: string;
+  }[] = [];
   for (const link of t.links) {
     if (link.a && link.b && t.devices.has(link.a.device) && t.devices.has(link.b.device)) {
-      drawable.push({ link, a: link.a, b: link.b });
+      const na = endpointNodeId(t, link.a);
+      const nb = endpointNodeId(t, link.b);
+      drawable.push({ link, a: link.a, b: link.b, na, nb });
     }
   }
   const slots = parallelSlots(
-    drawable.map(({ link, a, b }) => ({ id: link.id, source: a.device, target: b.device })),
+    drawable.map(({ link, na, nb }) => ({ id: link.id, source: na, target: nb })),
   );
-  return drawable.map(({ link, a, b }) => {
+  const links = drawable.map(({ link, a, b, na, nb }): LinkEdgeType => {
     const media = linkMedia(link, t, catalog);
     const problem = problems.get(link.id);
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     return {
       id: link.id,
       type: "link",
-      source: a.device,
-      target: b.device,
+      source: na,
+      target: nb,
       className: problem ? `media-${media} problem-${problem}` : `media-${media}`,
       data: {
         media,
@@ -361,9 +417,30 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): LinkEd
         label: link.label,
         slotIndex: slot.index,
         slotCount: slot.count,
+        aBridge: na !== a.device,
+        bBridge: nb !== b.device,
       },
     };
   });
+  // ブリッジとホストの間の線(フェーズ4-2 Q3)。members の無いブリッジは、ホストの中だけのネットワーク
+  const uplinks = allBridges(t).flatMap(({ key, host, bridge }): UplinkEdgeType[] => {
+    const members = t.devices.get(host)?.interfaces.get(bridge)?.members ?? [];
+    if (members.length === 0) return [];
+    return [
+      {
+        id: `uplink:${key}`,
+        type: "uplink",
+        source: key,
+        target: host,
+        className: "media-virtual uplink",
+        selectable: false,
+        deletable: false,
+        focusable: false,
+        data: { members },
+      },
+    ];
+  });
+  return [...links, ...uplinks];
 }
 
 /** 対象ごとに、いちばん重い問題を求める(赤 = エラー、黄 = 警告) */

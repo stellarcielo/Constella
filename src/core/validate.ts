@@ -1,6 +1,7 @@
 // 意味のチェック(SPEC 4.5)。パース時に分かる問題(重複・不正な値など)は parse.ts で出す。
 
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
+import { findBridge, parseBridgeKey } from "./bridges";
 import { hostTree } from "./hosts";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
@@ -50,8 +51,9 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       });
     }
     if (isFlexibleDevice(device, catalog)) continue;
-    for (const name of device.interfaces.keys()) {
-      if (!portsOf(device).has(ifNameKey(name))) {
+    for (const [name, info] of device.interfaces) {
+      // 論理的な IF(bond・ブリッジ・VLAN インターフェース)は、モデルに無い名前でもよい(SPEC 4.3)
+      if (info.type === undefined && !portsOf(device).has(ifNameKey(name))) {
         add(
           "error",
           "unknown-interface",
@@ -62,6 +64,39 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
             name,
           },
         );
+      }
+    }
+  }
+
+  // bond・ブリッジの members(SPEC 4.6): 無い IF と、2 つの bond・ブリッジに入っている IF
+  for (const device of t.devices.values()) {
+    const flexible = isFlexibleDevice(device, catalog);
+    const names = new Set([...device.interfaces.keys()].map(ifNameKey));
+    /** members の IF → それを members に書いた最初の IF */
+    const owners = new Map<string, string>();
+    for (const [name, info] of device.interfaces) {
+      for (const member of new Set(info.members ?? [])) {
+        const target: IssueTarget = { kind: "interface", device: device.id, name };
+        const key = ifNameKey(member);
+        if (!flexible && !portsOf(device).has(key) && !names.has(key)) {
+          add(
+            "error",
+            "unknown-interface",
+            `${device.id} の ${name} の members にある IF「${member}」はありません`,
+            target,
+          );
+        }
+        const first = owners.get(key);
+        if (first === undefined) {
+          owners.set(key, name);
+        } else if (first !== name) {
+          add(
+            "error",
+            "member-in-use",
+            `${device.id} の ${member} が、${first} と ${name} の両方の members に入っています`,
+            target,
+          );
+        }
       }
     }
   }
@@ -111,6 +146,17 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   }
 
+  /** ブリッジ(bridge)と相手(other)を結ぶリンクの問題。問題が無ければ undefined(SPEC 4.6) */
+  const bridgeLinkProblem = (bridge: Endpoint, other: Endpoint): string | undefined => {
+    if (!t.devices.has(other.device)) return undefined; // 存在しないデバイスは別のエラーで知らせる
+    if (findBridge(t.devices.get(other.device), other.iface) !== undefined) {
+      return `ブリッジどうしはつなげません(${endpointToString(bridge)} と ${endpointToString(other)})`;
+    }
+    const host = tree.hostOf.get(other.device);
+    if (host === bridge.device) return undefined;
+    return `${bridge.device} のブリッジ ${bridge.iface} につなげるのは、${bridge.device} の上で動くゲストだけです(${other.device} の host: ${host ?? "なし"})`;
+  };
+
   /** キー = デバイスID + IF 名 → 最初に使ったリンクの相手側 */
   const used = new Map<string, Endpoint | undefined>();
   for (const link of t.links) {
@@ -125,7 +171,10 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
         continue;
       }
       const port = portsOf(device).get(ifNameKey(ep.iface));
-      if (!port && !isFlexibleDevice(device, catalog)) {
+      const logical = [...device.interfaces].some(
+        ([name, info]) => info.type !== undefined && ifNameKey(name) === ifNameKey(ep.iface),
+      );
+      if (!port && !logical && !isFlexibleDevice(device, catalog)) {
         add(
           "error",
           "unknown-interface",
@@ -134,6 +183,15 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
         );
       }
       types[end === "a" ? 0 : 1] = port?.type;
+
+      // ブリッジには何本でもつなげる(SPEC 4.3)。つなげるのは、そのホストの上で動くゲストの IF だけ
+      if (findBridge(device, ep.iface) !== undefined) {
+        const other = end === "a" ? link.b : link.a;
+        const otherEnd = end === "a" ? "b" : "a";
+        const reason = other && bridgeLinkProblem(ep, other);
+        if (reason) add("error", "invalid-bridge-link", reason, { ...target, end: otherEnd });
+        continue;
+      }
 
       const key = `${ep.device}\u0000${ifNameKey(ep.iface)}`;
       if (used.has(key)) {
@@ -168,7 +226,13 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
   }
 
   for (const id of t.layout.keys()) {
-    if (!t.devices.has(id)) {
+    const bridge = parseBridgeKey(id);
+    if (bridge && findBridge(t.devices.get(bridge.host), bridge.bridge) === undefined) {
+      add("warning", "unknown-layout-device", `layout の「${id}」に対応するブリッジがありません`, {
+        kind: "layout",
+        id,
+      });
+    } else if (!bridge && !t.devices.has(id)) {
       add("warning", "unknown-layout-device", `layout の「${id}」に対応するデバイスがありません`, {
         kind: "layout",
         id,

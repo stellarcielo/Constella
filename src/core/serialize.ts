@@ -13,6 +13,7 @@ import {
   YAMLMap,
   YAMLSeq,
 } from "yaml";
+import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey } from "./ifname";
 import { parseTopology, type YamlBase } from "./parse";
 import { endpointToString } from "./topology";
@@ -155,6 +156,15 @@ class Writer {
     }
   }
 
+  /** layout のキーの、書き出し後のキー(デバイスが削除されていれば undefined) */
+  private layoutKeyAfter(key: string): string | undefined {
+    const bridge = parseBridgeKey(key);
+    if (!bridge) return this.idAfter.has(key) ? this.idAfter.get(key) : key;
+    if (!this.idAfter.has(bridge.host)) return key;
+    const host = this.idAfter.get(bridge.host);
+    return host === undefined ? undefined : bridgeKey(host, bridge.bridge);
+  }
+
   meta(root: YAMLMap, meta: Meta): void {
     const fields: Fields = [
       ["title", meta.title],
@@ -277,14 +287,29 @@ class Writer {
     else if (layout.size === 0 && !viewport) return;
     else map = this.setSection(root, "layout", new YAMLMap());
 
-    // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)
+    // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)。
+    // ブリッジのキー(pve1:vmbr0)は、IF 名の書き方の違いを同じとみなす
+    const after = new Set([...layout.keys()].map(layoutKeyNorm));
+    const before = new Set([...this.before.layout.keys()].map(layoutKeyNorm));
     map.items = map.items.filter((pair) => {
       const key = keyText(pair.key);
       if (key === "_viewport") return viewport !== undefined || this.before.viewport === undefined;
-      const id = this.idAfter.has(key) ? this.idAfter.get(key) : key;
-      return (id !== undefined && layout.has(id)) || !this.before.layout.has(key);
+      const id = this.layoutKeyAfter(key);
+      return (id !== undefined && after.has(layoutKeyNorm(id))) || !before.has(layoutKeyNorm(key));
     });
-    this.renameKeys(map);
+    // デバイスID の変更に合わせてキーを書き換え、ブリッジのキーは IF 名の表記もそろえる
+    const byNorm = new Map([...layout.keys()].map((id) => [layoutKeyNorm(id), id]));
+    const done = new Set<string>();
+    for (const pair of map.items) {
+      const key = keyText(pair.key);
+      if (key === "_viewport") continue;
+      const moved = this.layoutKeyAfter(key) ?? key;
+      const next = byNorm.get(layoutKeyNorm(moved)) ?? moved;
+      if (next === key || done.has(next)) continue;
+      done.add(next);
+      if (isScalar(pair.key)) pair.key.value = next;
+      else pair.key = this.doc.createNode(next);
+    }
 
     const entries: [string, Fields][] = [...layout].map(([id, pos]) => [
       id,
@@ -355,8 +380,10 @@ class Writer {
 
   private infoNode(info: InterfaceInfo): YAMLMap {
     const map = this.newMap(infoFields(info), info.extra);
-    const ip = map.get("ip", true);
-    if (isSeq(ip)) ip.flow = true;
+    for (const key of ["ip", "members"]) {
+      const seq = map.get(key, true);
+      if (isSeq(seq)) seq.flow = true;
+    }
     return map;
   }
 
@@ -439,6 +466,11 @@ function deviceFields(device: Device): Fields {
 
 function infoFields(info: InterfaceInfo): Fields {
   return [
+    ["type", info.type],
+    ["members", info.members],
+    ["bond-mode", info.bondMode],
+    ["vlan-aware", info.vlanAware],
+    ["vlan-raw-device", info.vlanRawDevice],
     ["description", info.description],
     ["ip", info.ip],
     ["mode", info.mode],
@@ -463,6 +495,12 @@ function groupFields(group: Group): Fields {
     ["label", group.label],
     ["members", group.members],
   ];
+}
+
+/** layout のキーを比べるための形。ブリッジのキーは IF 名の書き方の違いをならす */
+function layoutKeyNorm(key: string): string {
+  const bridge = parseBridgeKey(key);
+  return bridge ? `${bridge.host}\u0000${ifNameKey(bridge.bridge)}` : key;
 }
 
 function hasContent(fields: Fields, extra: Extra): boolean {

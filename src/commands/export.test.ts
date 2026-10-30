@@ -15,6 +15,7 @@ function setup(choose: string | null = "/tmp/out.svg") {
     showIp: true,
     showVlan: true,
     groupKinds: ["site", "rack", "vlan", "subnet", "as"] as GroupKind[],
+    showGuests: true,
   };
   const deps = {
     platform: {

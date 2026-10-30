@@ -3,8 +3,8 @@
 
 import { Panel, useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
 import { useEffect, useState } from "react";
-import { endpointToString } from "../../core";
-import { type ChosenPort, topologyStore, uiStore, useUi } from "../../store";
+import { endpointNodeId, endpointToString } from "../../core";
+import { type ChosenPort, topologyStore, uiStore, useTopology, useUi } from "../../store";
 import { PortPicker } from "../PortPicker/PortPicker";
 import { iconCenter } from "./geometry";
 
@@ -13,6 +13,7 @@ const PICKER_GAP = 12;
 export function ConnectOverlay() {
   const mode = useUi((s) => s.mode);
   const connect = useUi((s) => s.connect);
+  const topology = useTopology((s) => s.topology);
   const { getInternalNode, flowToScreenPosition, screenToFlowPosition } = useReactFlow();
   // 画面のスクロールや拡大縮小に合わせてポップアップと破線を動かす
   useViewport();
@@ -34,10 +35,11 @@ export function ConnectOverlay() {
     if (link) topologyStore.getState().addLink(link.a, link.b);
   };
 
-  // 作りかけの接続の破線: A のアイコンから、カーソル(B 待ち)または B のアイコン(B のポート選択中)まで
+  // 作りかけの接続の破線: A のアイコン(A がブリッジなら、その箱)から、
+  // カーソル(B 待ち)または B のアイコン(B のポート選択中)まで
   let line: { from: { x: number; y: number }; to: { x: number; y: number } } | undefined;
   if (connect.stage === "awaitB" || connect.stage === "pickB") {
-    const a = getInternalNode(connect.a.endpoint.device);
+    const a = getInternalNode(endpointNodeId(topology, connect.a.endpoint));
     const b = connect.stage === "pickB" ? getInternalNode(connect.device) : undefined;
     const to = b ? iconCenter(b) : cursor;
     if (a && to) line = { from: iconCenter(a), to };
@@ -83,11 +85,11 @@ export function ConnectOverlay() {
 function hint(connect: ReturnType<typeof uiStore.getState>["connect"]): string {
   switch (connect.stage) {
     case "idle":
-      return "接続元のデバイスをクリック(Esc で選択モードに戻る)";
+      return "接続元のデバイスかブリッジをクリック(Esc で選択モードに戻る)";
     case "pickA":
       return "接続元のポートを選択(Esc で取りやめ)";
     case "awaitB":
-      return `${endpointToString(connect.a.endpoint)} から: 接続先のデバイスをクリック(Esc で取りやめ)`;
+      return `${endpointToString(connect.a.endpoint)} から: 接続先のデバイスかブリッジをクリック(Esc で取りやめ)`;
     case "pickB":
       return `${endpointToString(connect.a.endpoint)} から: 接続先のポートを選択(Esc で取りやめ)`;
   }

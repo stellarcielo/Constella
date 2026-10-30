@@ -2,7 +2,7 @@
 // クリップボードには選択部分を YAML の断片として入れる(フェーズ2-2 Q2)。
 // 取り消し・やり直しは、入力欄(YAML エディタ以外)にフォーカスがあれば、その入力欄の文字の取り消しに回す。
 
-import { extractFragment, fragmentToText, parseFragment, pasteFragment } from "../core";
+import { allBridges, extractFragment, fragmentToText, parseFragment, pasteFragment } from "../core";
 import type { Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 
@@ -87,7 +87,7 @@ export function createEditCommands(deps: EditCommandDeps): EditCommands {
     selectAll() {
       const { topology } = store.getState();
       store.getState().setSelection({
-        devices: [...topology.devices.keys()],
+        devices: [...topology.devices.keys(), ...allBridges(topology).map((b) => b.key)],
         links: topology.links.map((l) => l.id),
       });
     },

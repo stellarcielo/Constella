@@ -117,3 +117,34 @@ devices:
     expect(t.devices.get(devices[0])).not.toHaveProperty("host");
   });
 });
+
+describe("ブリッジのコピー&ペースト(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vmbr0 }
+layout:
+  pve1: { x: 0, y: 0 }
+  pve1:vmbr0: { x: 0, y: 120 }
+  vm1: { x: 0, y: 240 }
+`;
+
+  it("ホストと一緒にブリッジの位置を取り出し、新しいホストの ID で置き直す", () => {
+    const t = load(text);
+    const fragment = extractFragment(t, ["pve1", "vm1"]);
+    expect([...fragment.layout.keys()]).toEqual(["pve1", "pve1:vmbr0", "vm1"]);
+    const { devices, links } = pasteFragment(t, fragment, testCatalog, { x: 30, y: 30 });
+    expect(devices).toEqual(["hv1", "vm2"]);
+    expect(t.layout.get("hv1:vmbr0")).toEqual({ x: 30, y: 150 });
+    const pasted = t.links.find((l) => l.id === links[0]);
+    expect([pasted?.a, pasted?.b]).toEqual([
+      { device: "vm2", iface: "net0" },
+      { device: "hv1", iface: "vmbr0" },
+    ]);
+  });
+});

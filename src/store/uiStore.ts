@@ -82,6 +82,11 @@ export interface UiState {
   clickDevice(id: string): void;
   /** ポートを選んだ。B 側まで選び終えたら、作るリンクの両端を返す */
   choosePort(port: ChosenPort): { a: Endpoint; b: Endpoint } | undefined;
+  /**
+   * 接続モードでブリッジの箱をクリックした。ポートを選ぶ画面は出さず、そのブリッジを端にする
+   * (フェーズ4-2)。B 側だったら、作るリンクの両端を返す
+   */
+  clickBridge(bridge: Endpoint): { a: Endpoint; b: Endpoint } | undefined;
   /** Esc。作りかけの接続があれば取りやめ、無ければ選択モードに戻る */
   escape(): void;
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
@@ -141,6 +146,17 @@ export function createUiStore(storage?: ViewStorage) {
         set({ connect: IDLE });
         return { a: connect.a.endpoint, b: port.endpoint };
       }
+      return undefined;
+    },
+
+    clickBridge(bridge) {
+      const { mode, connect } = get();
+      if (mode !== "connect") return undefined;
+      if (connect.stage === "awaitB" || connect.stage === "pickB") {
+        set({ connect: IDLE });
+        return { a: connect.a.endpoint, b: bridge };
+      }
+      set({ connect: { stage: "awaitB", a: { endpoint: bridge } } });
       return undefined;
     },
 

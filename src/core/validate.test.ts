@@ -193,3 +193,80 @@ devices:
     expect(r?.start).toBeGreaterThan(text.indexOf("vm2:"));
   });
 });
+
+describe("validateTopology: ブリッジ(SPEC 4.6)", () => {
+  const bridges = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true }
+      vmbr1: { type: bridge }
+  pve2:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { model: generic-vm, host: pve1 }
+  vm2: { model: generic-vm, host: pve1 }
+  vm3: { model: generic-vm, host: pve2 }
+  sw1: { model: generic-l2switch-24 }
+links:
+`;
+
+  it("モデルに無い名前でも、type を付けた IF はよい。ブリッジには何本でもつなげる", () => {
+    const { issues } = check(
+      `${bridges}  - { a: vm1:net0, b: pve1:vmbr0 }\n  - { a: vm2:net0, b: pve1:vmbr0 }\n  - { a: vm1:net1, b: pve1:vmbr1 }\n`,
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("ブリッジにつなげるのは、そのホストの上で動くゲストだけ。ブリッジどうしもつなげない", () => {
+    const { issues, text } = check(
+      `${bridges}  - { a: vm3:net0, b: pve1:vmbr0 }\n  - { a: sw1:Gi0/1, b: pve1:vmbr0 }\n  - { a: pve1:vmbr1, b: pve2:vmbr0 }\n`,
+    );
+    expect(summary(issues)).toEqual([
+      ["error", "invalid-bridge-link"],
+      ["error", "invalid-bridge-link"],
+      ["error", "invalid-bridge-link"],
+      ["error", "invalid-bridge-link"],
+    ]);
+    expect(issues[0].message).toContain("vm3 の host: pve2");
+    expect(issues[1].message).toContain("sw1 の host: なし");
+    expect(issues[2].message).toContain("ブリッジどうし");
+    // 問題はブリッジでない側の端を指す
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("vm3:net0");
+  });
+
+  it("members の IF が無い、または 2 つのブリッジに入っている", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1, eno9 ] }
+      vmbr1: { type: bridge, members: [ eno1 ] }
+  flex:
+    interfaces:
+      br0: { type: bridge, members: [ anything ] }
+`);
+    expect(summary(issues)).toEqual([
+      ["error", "unknown-interface"],
+      ["error", "member-in-use"],
+    ]);
+    expect(issues[0].message).toContain("eno9");
+    expect(issues[1].message).toContain("vmbr0 と vmbr1");
+    expect(issues[1].target).toEqual({ kind: "interface", device: "pve1", name: "vmbr1" });
+  });
+
+  it("layout のブリッジのキー。無いブリッジは警告", () => {
+    const { issues } = check(
+      `${bridges}layout:\n  pve1:vmbr0: { x: 0, y: 0 }\n  pve1:vmbr9: { x: 0, y: 0 }\n  ghost:vmbr0: { x: 0, y: 0 }\n`,
+    );
+    expect(summary(issues)).toEqual([
+      ["warning", "unknown-layout-device"],
+      ["warning", "unknown-layout-device"],
+    ]);
+    expect(issues[0].message).toBe("layout の「pve1:vmbr9」に対応するブリッジがありません");
+  });
+});

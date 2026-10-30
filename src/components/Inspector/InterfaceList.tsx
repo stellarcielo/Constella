@@ -27,8 +27,9 @@ export function InterfaceList({ device }: { device: Device }) {
   const [open, setOpen] = useState<string | null>(null);
 
   const flexible = isFlexibleDevice(device, catalog);
+  // ブリッジは、別の「ブリッジ」の欄に出す(フェーズ4-2)
   const entries = useMemo(
-    () => listDevicePorts(device, topology, catalog),
+    () => listDevicePorts(device, topology, catalog).filter((e) => !e.bridge),
     [device, topology, catalog],
   );
   const infoOf = (name: string): InterfaceInfo | undefined => {

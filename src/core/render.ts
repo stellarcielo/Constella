@@ -1,10 +1,12 @@
 // トポロジを SVG の文字列にする(SVG / PNG の書き出し。将来の CLI の `constella render` でも使う)。
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
+import { allBridges, BRIDGE_BOX, endpointNodeId, parseBridgeKey } from "./bridges";
 import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
 import { resolveGuest } from "./hosts";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
+import { expandIfName } from "./ifname";
 import {
   endLabelPositions,
   estimateLabelSize,
@@ -18,7 +20,16 @@ import {
 } from "./linkGeometry";
 import { linkMedia } from "./media";
 import { resolveLabel, resolveRole } from "./topology";
-import type { GroupKind, GuestKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
+import type {
+  GroupKind,
+  GuestKind,
+  InterfaceInfo,
+  Media,
+  ModelCatalog,
+  Position,
+  Role,
+  Topology,
+} from "./types";
 
 export interface RenderOptions {
   /** layout に座標の無いデバイスの位置(キャンバスの自動配置。キー = デバイスID) */
@@ -123,9 +134,9 @@ const NAME_TOP = ICON_BOX + 4;
 const NAME_HEIGHT = 18;
 const NAME_FONT = 12;
 
-/** ゲストの印。アイコンの箱の右上の角(right, top)に重ねる */
-function guestBadge(right: number, top: number, text: string, bounds: Bounds): string {
-  const width = 20;
+/** 小さな印(ゲストの VM / CT、ブリッジの VLAN)。箱の右上の角(right, top)に重ねる */
+function badge(right: number, top: number, text: string, bounds: Bounds): string {
+  const width = Math.max(20, 8 + text.length * 6);
   const height = 13;
   const x = right - width + 9;
   const y = top - 6;
@@ -141,6 +152,45 @@ function guestBadge(right: number, top: number, text: string, bounds: Bounds): s
 /** ノードの左上の座標から、アイコンの中心へ(キャンバスのリンクの端と同じ点) */
 function iconCenter(p: Position): Point {
   return { x: p.x + NODE_WIDTH / 2, y: p.y + ICON_BOX / 2 };
+}
+
+/** ブリッジの箱の中心(キャンバスと同じ点) */
+function bridgeCenter(p: Position): Point {
+  return { x: p.x + NODE_WIDTH / 2, y: p.y + BRIDGE_BOX.height / 2 };
+}
+
+/** ブリッジの箱。名前を中に、VLAN aware の印を右上に、IP を下に描く(Canvas.css の .bridge-node と合わせる) */
+function bridgeSvg(
+  name: string,
+  info: InterfaceInfo | undefined,
+  pos: Position,
+  showIp: boolean,
+  bounds: Bounds,
+): string {
+  const x = pos.x + (NODE_WIDTH - BRIDGE_BOX.width) / 2;
+  const center = bridgeCenter(pos);
+  bounds.add(x, pos.y, x + BRIDGE_BOX.width, pos.y + BRIDGE_BOX.height);
+  const ips = showIp ? (info?.ip ?? []) : [];
+  return (
+    `<g>` +
+    `<rect x="${n(x)}" y="${n(pos.y)}" width="${BRIDGE_BOX.width}" height="${BRIDGE_BOX.height}" rx="6" ` +
+    `fill="${THEME.panel}" stroke="${HOST_FRAME_TEXT_COLOR}" stroke-width="1.5"/>` +
+    `<text x="${n(center.x)}" y="${n(center.y + 11 * 0.35)}" text-anchor="middle" ` +
+    `font-family="${escapeXml(MONO_FONT)}" font-size="11" fill="${THEME.text}">${escapeXml(name)}</text>` +
+    (info?.vlanAware ? badge(x + BRIDGE_BOX.width, pos.y, "VLAN", bounds) : "") +
+    ips
+      .map((ip, i) =>
+        label(
+          { x: center.x, y: pos.y + BRIDGE_BOX.height + 9 + i * 14 },
+          ip,
+          { width: estimateLabelSize(ip).width, height: 14 },
+          { font: MONO_FONT, fontSize: 10, color: THEME.textMuted, border: false },
+          bounds,
+        ),
+      )
+      .join("") +
+    `</g>`
+  );
 }
 
 /** SVG の文字や属性に入れるため、特別な意味のある文字を置き換える */
@@ -249,6 +299,17 @@ export function renderSvg(
     const pos = t.layout.get(id) ?? options.fallbackPositions?.get(id);
     if (pos) positions.set(id, pos);
   }
+  // ブリッジ(箱の ID がキー)。ゲストを隠すときは描かない(SPEC 7.3)
+  if (showGuests) {
+    for (const { key, host } of allBridges(t)) {
+      const pos = t.layout.get(key) ?? options.fallbackPositions?.get(key);
+      if (pos && positions.has(host)) positions.set(key, pos);
+    }
+  }
+  const centerOf = (id: string) => {
+    const pos = positions.get(id) as Position;
+    return parseBridgeKey(id) ? bridgeCenter(pos) : iconCenter(pos);
+  };
 
   // グループとホストの枠(いちばん下。外側の枠から描く)。ラベルは背景を付けて線より手前に描く(キャンバスと同じ)。
   // ホストの枠は「グループ」の表示に関係なく、ゲストを描くときに描く
@@ -278,14 +339,16 @@ export function renderSvg(
     );
   }
 
-  // リンク(線は下、ラベルはデバイスより上に描く。キャンバスと同じ重なり)
-  const drawable = t.links.flatMap((link) =>
-    link.a && link.b && positions.has(link.a.device) && positions.has(link.b.device)
-      ? [{ link, a: link.a, b: link.b }]
-      : [],
-  );
+  // リンク(線は下、ラベルはデバイスより上に描く。キャンバスと同じ重なり)。
+  // ブリッジへのリンクはブリッジの箱につなぎ、ブリッジ側の端には IF 名を出さない(SPEC 7.3)
+  const drawable = t.links.flatMap((link) => {
+    if (!link.a || !link.b) return [];
+    const na = endpointNodeId(t, link.a);
+    const nb = endpointNodeId(t, link.b);
+    return positions.has(na) && positions.has(nb) ? [{ link, a: link.a, b: link.b, na, nb }] : [];
+  });
   const slots = parallelSlots(
-    drawable.map(({ link, a, b }) => ({ id: link.id, source: a.device, target: b.device })),
+    drawable.map(({ link, na, nb }) => ({ id: link.id, source: na, target: nb })),
   );
   const lines: string[] = [];
   const linkLabels: string[] = [];
@@ -293,18 +356,22 @@ export function renderSvg(
     const device = t.devices.get(id);
     return device ? estimateNameWidth(resolveLabel(device)) : undefined;
   };
-  for (const { link, a, b } of drawable) {
+  for (const { link, a, b, na, nb } of drawable) {
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
-    const ca = iconCenter(positions.get(a.device) as Position);
-    const cb = iconCenter(positions.get(b.device) as Position);
-    const aLabel = ifLabel(a.iface, interfaceInfo(t.devices.get(a.device), a.iface), labelOptions);
-    const bLabel = ifLabel(b.iface, interfaceInfo(t.devices.get(b.device), b.iface), labelOptions);
+    const ca = centerOf(na);
+    const cb = centerOf(nb);
+    const endLabel = (ep: typeof a, node: string) =>
+      node === ep.device
+        ? ifLabel(ep.iface, interfaceInfo(t.devices.get(ep.device), ep.iface), labelOptions)
+        : undefined;
+    const aLabel = endLabel(a, na);
+    const bLabel = endLabel(b, nb);
     const aLines = aLabel ? ifLabelLines(aLabel) : [];
     const bLines = bLabel ? ifLabelLines(bLabel) : [];
     let path: string;
     let ends: { a: Point; b: Point };
     let center: Point;
-    if (a.device === b.device) {
+    if (na === nb) {
       const loop = selfLoop(ca, slot.index, link.label, { a: aLines, b: bLines });
       path = loop.path;
       ends = { a: loop.labelA, b: loop.labelB };
@@ -314,11 +381,11 @@ export function renderSvg(
       const height = 12 + slot.index * 18 + 18 + slot.index * 14;
       bounds.add(ca.x, ca.y - height, ca.x + 26 + width, ca.y + height);
     } else {
-      const line = offsetLine(ca, cb, slotOffset(slot), a.device > b.device);
+      const line = offsetLine(ca, cb, slotOffset(slot), na > nb);
       path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
       ends = endLabelPositions(line.a, line.b, aLines, bLines, slot, {
-        a: nameWidthOf(a.device),
-        b: nameWidthOf(b.device),
+        a: nameWidthOf(na),
+        b: nameWidthOf(nb),
       });
       center = midpoint(line.a, line.b);
     }
@@ -333,10 +400,32 @@ export function renderSvg(
     }
   }
 
-  // デバイス(角丸の箱の中のアイコンと、その下の名前)
+  // ブリッジとホストの間の線(点線)。ホスト側に、ブリッジの members を出す(SPEC 7.3)
+  for (const { key, host, bridge } of allBridges(t)) {
+    const members = t.devices.get(host)?.interfaces.get(bridge)?.members ?? [];
+    if (!positions.has(key) || !positions.has(host) || members.length === 0) continue;
+    const from = bridgeCenter(positions.get(key) as Position);
+    const to = iconCenter(positions.get(host) as Position);
+    lines.push(
+      `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
+    );
+    if (labelOptions.showIfName) {
+      const text = members.map((m) => (labelOptions.longIfNames ? expandIfName(m) : m)).join(", ");
+      const ends = endLabelPositions(from, to, [], [text], undefined, { b: nameWidthOf(host) });
+      linkLabels.push(ifLabelSvg(ends.b, { name: text, details: [] }, bounds));
+    }
+  }
+
+  // デバイス(角丸の箱の中のアイコンと、その下の名前)とブリッジの箱
   const nodes: string[] = [];
   const iconScale = ICON_SIZE / ROLE_ICON_VIEWBOX;
   for (const [id, pos] of positions) {
+    const bridge = parseBridgeKey(id);
+    if (bridge) {
+      const info = t.devices.get(bridge.host)?.interfaces.get(bridge.bridge);
+      nodes.push(bridgeSvg(bridge.bridge, info, pos, labelOptions.showIp, bounds));
+      continue;
+    }
     const device = t.devices.get(id);
     if (!device) continue;
     const role = resolveRole(device, catalog);
@@ -354,7 +443,7 @@ export function renderSvg(
         `<g transform="translate(${n(iconX)} ${n(iconY)}) scale(${iconScale.toFixed(4)})" ` +
         `fill="none" stroke="${ROLE_COLORS[role]}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
         `${ROLE_ICON_SVG[role]}</g>` +
-        (guest ? guestBadge(boxX + ICON_BOX, pos.y, GUEST_BADGE_TEXT[guest], bounds) : "") +
+        (guest ? badge(boxX + ICON_BOX, pos.y, GUEST_BADGE_TEXT[guest], bounds) : "") +
         label(
           nameCenter,
           name,

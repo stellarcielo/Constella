@@ -178,6 +178,42 @@ layout:
     expect(hidden.match(/<path d="M [^"]*" fill="none" stroke-width="2"/g)).toHaveLength(1);
   });
 
+  it("ブリッジの箱とホストとの点線を描き、ブリッジ側の端には IF 名を出さない(フェーズ4-2)", () => {
+    const t = load(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true, ip: [ 192.0.2.2/24 ] }
+      vmbr1: { type: bridge }
+  web01: { model: generic-vm, host: pve1 }
+links:
+  - { a: web01:net0, b: pve1:vmbr0 }
+layout:
+  pve1: { x: 0, y: 0 }
+  pve1:vmbr0: { x: 0, y: 120 }
+  pve1:vmbr1: { x: 200, y: 120 }
+  web01: { x: 0, y: 240 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    expect(svg).toContain('font-size="11" fill="#1f2328">vmbr0</text>');
+    expect(svg).toContain('font-size="11" fill="#1f2328">vmbr1</text>');
+    expect(svg).toContain(">VLAN</text>");
+    expect(svg).toContain(">192.0.2.2/24</text>");
+    // 線は、ゲストとブリッジのリンク 1 本と、vmbr0 とホストの点線 1 本(members の無い vmbr1 は線なし)
+    const lines = svg.match(/<path d="M [^"]*" fill="none" stroke-width="2"[^>]*>/g) ?? [];
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.includes('stroke-dasharray="2 4"'))).toBe(true);
+    // ゲスト側の IF 名は出し、ブリッジ側(vmbr0)は箱の名前だけ。ホスト側に members を出す
+    expect(svg).toContain(">net0</text>");
+    expect(svg).toContain(">eno1</text>");
+    expect(svg.match(/>vmbr0<\/text>/g)).toHaveLength(1);
+    // ゲストを隠すと、ブリッジも描かない
+    const hidden = renderSvg(t, testCatalog, { showGuests: false }).svg;
+    expect(hidden).not.toContain("vmbr0");
+    expect(hidden).not.toContain(">eno1</text>");
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

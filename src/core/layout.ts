@@ -1,7 +1,9 @@
 // 自動レイアウト(SPEC 9章)。elkjs の layered アルゴリズムで、上から下へ role の段に並べる。
-// ゲストは、ホストと一緒にひとかたまり(elk の入れ子のノード)にして、ホストの下に並べる(SPEC 4.6)。
+// ブリッジとゲストは、ホストと一緒にひとかたまり(elk の入れ子のノード)にして、
+// 上からホスト・ブリッジ・ゲストの順に並べる(SPEC 4.6)。
 
 import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
+import { allBridges, BRIDGE_NODE_SIZE, bridgeKey, bridgesOf, findBridge } from "./bridges";
 import { roundPosition } from "./edit";
 import { DEVICE_BOX, GROUP_LABEL_BAND, GROUP_NEST_GAP, GROUP_PADDING } from "./groupFrames";
 import { hostTree } from "./hosts";
@@ -26,7 +28,7 @@ export const ROLE_TIER: Record<Role, number> = {
 };
 
 export interface LayoutOptions {
-  /** 並べるデバイス。省略すれば全部 */
+  /** 並べるデバイスとブリッジ(箱の ID)。省略すれば全部 */
   devices?: Iterable<string>;
   /** デバイス 1 台の大きさ(ラベルを含む) */
   nodeSize?: { width: number; height: number };
@@ -35,7 +37,7 @@ export interface LayoutOptions {
 const DEFAULT_NODE_SIZE = { width: 96, height: 96 };
 
 /** ホストの中の間隔(ゲストどうしの横の間と、ホストからゲストの段までの縦の間) */
-const GUEST_SPACING = { x: 60, y: 80 };
+const GUEST_SPACING = { x: 100, y: 100 };
 /**
  * ホストの枠の上の部分(余白とラベルの帯)のうち、段と段の間(80)にはみ出してよい高さ。
  * ここまでは上の余白を取らないので、ホストが同じ段のほかの機器と同じ高さにそろう
@@ -48,15 +50,16 @@ const blockId = (host: string) => `\u0000${host}`;
 const elk = new ELK();
 
 /**
- * デバイスを並べた座標(左上)を返す。リンクは、並べるデバイスどうしのものだけを使う。
- * ゲストは、ホストも一緒に並べるときだけホストの下にまとめる。同じ入力なら同じ結果になる
+ * デバイスとブリッジを並べた座標(左上。ブリッジは箱の ID がキー)を返す。
+ * リンクは、並べるデバイスどうしのものだけを使う。
+ * ブリッジとゲストは、ホストも一緒に並べるときだけホストの下にまとめる。同じ入力なら同じ結果になる
  */
 export async function computeLayout(
   t: Topology,
   catalog: ModelCatalog,
   options: LayoutOptions = {},
 ): Promise<Map<string, Position>> {
-  const ids = options.devices ? new Set(options.devices) : new Set(t.devices.keys());
+  const ids = new Set(options.devices ?? [...t.devices.keys(), ...allBridges(t).map((b) => b.key)]);
   const size = options.nodeSize ?? DEFAULT_NODE_SIZE;
   const tree = hostTree(t);
   /** 一緒に並べるホスト(ホストも並べるときだけ) */
@@ -65,26 +68,61 @@ export async function computeLayout(
     return host !== undefined && ids.has(host) ? host : undefined;
   };
   const guestsOf = (id: string) => (tree.guestsOf.get(id) ?? []).filter((g) => ids.has(g));
+  const bridgesOfHost = (id: string) =>
+    bridgesOf(t.devices.get(id))
+      .map((bridge) => bridgeKey(id, bridge))
+      .filter((key) => ids.has(key));
+  /** ゲストがつながっている、ホストのブリッジ(箱の ID) */
+  const linkedBridges = (guest: string, host: string) => {
+    const keys: string[] = [];
+    for (const link of t.links) {
+      for (const [ep, other] of [
+        [link.a, link.b],
+        [link.b, link.a],
+      ]) {
+        if (ep?.device !== host || other?.device !== guest) continue;
+        const bridge = findBridge(t.devices.get(host), ep.iface);
+        const key = bridge === undefined ? undefined : bridgeKey(host, bridge);
+        if (key !== undefined && ids.has(key) && !keys.includes(key)) keys.push(key);
+      }
+    }
+    return keys;
+  };
   /** いちばん外側のかたまりのホスト(かたまりに入らないデバイスは自分) */
   const outermost = (id: string) => {
     let current = id;
     for (let host = hostOf(current); host !== undefined; host = hostOf(current)) current = host;
     return current;
   };
-  const nodeIdOf = (id: string) => (guestsOf(id).length > 0 ? blockId(id) : id);
+  const isBlock = (id: string) => guestsOf(id).length > 0 || bridgesOfHost(id).length > 0;
+  const nodeIdOf = (id: string) => (isBlock(id) ? blockId(id) : id);
 
-  const leaf = (id: string, partition: number): ElkNode => ({
+  const leaf = (id: string, partition: number, leafSize = size): ElkNode => ({
     id,
-    ...size,
+    ...leafSize,
     layoutOptions: { "elk.partitioning.partition": String(partition) },
   });
   /** 内側にあるかたまりの段数(枠の入れ子の余白を取るため) */
   const depthOf = (id: string): number =>
-    Math.max(-1, ...guestsOf(id).map((g) => (guestsOf(g).length > 0 ? depthOf(g) : -1))) + 1;
-  /** ホストとゲストのかたまり。上の段にホスト、下の段にゲスト(YAML に書いた順) */
+    Math.max(-1, ...guestsOf(id).map((g) => (isBlock(g) ? depthOf(g) : -1))) + 1;
+  /** ホストとブリッジとゲストのかたまり。上からホスト・ブリッジ・ゲストの段(段の中は YAML に書いた順) */
   const nodeOf = (id: string, partition: number): ElkNode => {
     const guests = guestsOf(id);
-    if (guests.length === 0) return leaf(id, partition);
+    const bridges = bridgesOfHost(id);
+    if (guests.length === 0 && bridges.length === 0) return leaf(id, partition);
+    const guestRow = bridges.length > 0 ? 2 : 1;
+    // ホストを、ブリッジとゲストの真ん中に置くための線(図には描かない)。
+    // ゲストは、つながっているブリッジの下に来るよう、ブリッジから引く
+    const inner: [string, string][] = [
+      ...bridges.map((key): [string, string] => [id, key]),
+      ...guests.flatMap((g) => {
+        const from = linkedBridges(g, id);
+        return (from.length > 0 ? from : [id]).map((source): [string, string] => [
+          source,
+          nodeIdOf(g),
+        ]);
+      }),
+    ];
     // かたまりの余白は、ホストの枠(groupFrames)が収まる大きさにする
     const depth = depthOf(id);
     const pad = GROUP_PADDING + GROUP_NEST_GAP * depth;
@@ -106,12 +144,15 @@ export async function computeLayout(
         "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
         "elk.padding": `[top=${top},left=${pad},bottom=${bottom},right=${pad}]`,
       },
-      children: [leaf(id, 0), ...guests.map((g) => nodeOf(g, 1))],
-      // ホストを、ゲストの段の中央寄りに置くための線(図には描かない)
-      edges: guests.map((g, i) => ({
+      children: [
+        leaf(id, 0),
+        ...bridges.map((key) => leaf(key, 1, BRIDGE_NODE_SIZE)),
+        ...guests.map((g) => nodeOf(g, guestRow)),
+      ],
+      edges: inner.map(([source, target], i) => ({
         id: `${blockId(id)}\u0000${i}`,
-        sources: [id],
-        targets: [nodeIdOf(g)],
+        sources: [source],
+        targets: [target],
       })),
     };
   };
@@ -207,12 +248,37 @@ export function boundsOf(
 /** 間を空けて、既にある座標の下に置くための縦の間隔 */
 const BELOW_GAP = 180;
 
+/** ホストの下(ゲストの段の上)に、新しいブリッジを置くときの、ホストからの縦の距離 */
+const BRIDGE_ROW_OFFSET = 112;
+
+/**
+ * ホストの下に、新しいブリッジを置く座標(count 個分。フェーズ4-2)。
+ * ホストに座標のあるブリッジがあれば、その右に続け、無ければホストを中心にして並べる
+ */
+export function bridgePositions(host: Position, placed: Position[], count: number): Position[] {
+  const step = BRIDGE_NODE_SIZE.width + GUEST_SPACING.x;
+  if (placed.length > 0) {
+    const y = Math.max(...placed.map((p) => p.y));
+    const right = Math.max(...placed.filter((p) => p.y === y).map((p) => p.x));
+    return Array.from({ length: count }, (_, i) => roundPosition({ x: right + step * (i + 1), y }));
+  }
+  const left = host.x - (step * (count - 1)) / 2;
+  const y = host.y + BRIDGE_ROW_OFFSET;
+  return Array.from({ length: count }, (_, i) => roundPosition({ x: left + step * i, y }));
+}
+
 /**
  * ホストの下に、新しいゲストを置く座標(count 台分。フェーズ4-1 Q1)。
- * ホストに座標のあるゲストがいれば、いちばん下の段の右に続け、いなければホストの下の段に、
- * ホストを中心にして並べる。座標のあるゲストは placed に渡す
+ * ホストに座標のあるゲストがいれば、いちばん下の段の右に続け、いなければホストの下の段
+ * (ブリッジがあれば、その下の段)に、ホストを中心にして並べる。
+ * 座標のあるゲストは placed に、ホストのブリッジの座標は bridges に渡す
  */
-export function guestPositions(host: Position, placed: Position[], count: number): Position[] {
+export function guestPositions(
+  host: Position,
+  placed: Position[],
+  count: number,
+  bridges: Position[] = [],
+): Position[] {
   const step = DEFAULT_NODE_SIZE.width + GUEST_SPACING.x;
   if (placed.length > 0) {
     const y = Math.max(...placed.map((p) => p.y));
@@ -220,13 +286,17 @@ export function guestPositions(host: Position, placed: Position[], count: number
     return Array.from({ length: count }, (_, i) => roundPosition({ x: right + step * (i + 1), y }));
   }
   const left = host.x - (step * (count - 1)) / 2;
-  const y = host.y + DEFAULT_NODE_SIZE.height + GUEST_SPACING.y;
+  const y =
+    Math.max(
+      host.y + DEFAULT_NODE_SIZE.height,
+      ...bridges.map((b) => b.y + BRIDGE_NODE_SIZE.height),
+    ) + GUEST_SPACING.y;
   return Array.from({ length: count }, (_, i) => roundPosition({ x: left + step * i, y }));
 }
 
 /**
- * 座標の無いデバイスだけを並べる(SPEC 9章)。今ある座標は positionOf で渡す。
- * - ホストに座標があるゲストは、ホストの下に並べる(フェーズ4-1 Q1)
+ * 座標の無いデバイスとブリッジ(箱の ID)だけを並べる(SPEC 9章)。今ある座標は positionOf で渡す。
+ * - ホストに座標があるブリッジとゲストは、ホストの下に並べる(フェーズ4-1 Q1・4-2)
  * - 残りはまとめて並べ、今ある座標の下に置く。座標のあるデバイスが無ければ、並べた結果をそのまま返す
  */
 export async function placeMissing(
@@ -245,6 +315,20 @@ export async function placeMissing(
   let progressed = true;
   while (progressed) {
     progressed = false;
+    for (const device of t.devices.values()) {
+      const hostPos = at(device.id);
+      const keys = bridgesOf(device).map((bridge) => bridgeKey(device.id, bridge));
+      const waiting = keys.filter((key) => todo.has(key) && !placed.has(key));
+      if (!hostPos || waiting.length === 0) continue;
+      const others = keys.flatMap((key) => {
+        const pos = waiting.includes(key) ? undefined : at(key);
+        return pos ? [pos] : [];
+      });
+      bridgePositions(hostPos, others, waiting.length).forEach((pos, i) =>
+        placed.set(waiting[i], pos),
+      );
+      progressed = true;
+    }
     for (const [host, guests] of tree.guestsOf) {
       const hostPos = at(host);
       const waiting = guests.filter((g) => todo.has(g) && !placed.has(g));
@@ -253,7 +337,11 @@ export async function placeMissing(
         const pos = waiting.includes(g) ? undefined : at(g);
         return pos ? [pos] : [];
       });
-      guestPositions(hostPos, others, waiting.length).forEach((pos, i) =>
+      const bridges = bridgesOf(t.devices.get(host)).flatMap((bridge) => {
+        const pos = at(bridgeKey(host, bridge));
+        return pos ? [pos] : [];
+      });
+      guestPositions(hostPos, others, waiting.length, bridges).forEach((pos, i) =>
         placed.set(waiting[i], pos),
       );
       progressed = true;
@@ -264,7 +352,7 @@ export async function placeMissing(
   if (rest.length === 0) return placed;
   const laid = await computeLayout(t, catalog, { ...options, devices: rest });
   const existing = boundsOf(
-    [...t.devices.keys()].flatMap((id) => {
+    [...t.devices.keys(), ...allBridges(t).map((b) => b.key)].flatMap((id) => {
       const pos = at(id);
       return pos ? [pos] : [];
     }),

@@ -13,7 +13,7 @@ import {
   type Position,
 } from "../../core";
 import { topologyStore, uiStore, useTopology, useUi } from "../../store";
-import type { DeviceNodeType } from "./DeviceNode";
+import type { CanvasNode } from "./nodes";
 
 /** 枠のラベルをクリックしたら、メンバーをまとめて選択する(そのままドラッグで一緒に動かせる) */
 function selectMembers(frame: Frame): void {
@@ -30,9 +30,9 @@ export function GroupFrames() {
   const catalog = useTopology((s) => s.catalog);
   const showGroups = useUi((s) => s.view.showGroups);
   const kinds = useUi((s) => s.view.groupKinds);
-  const nodes = useNodes<DeviceNodeType>();
+  const nodes = useNodes<CanvasNode>();
 
-  // 機器の今の位置(ドラッグ中の位置も含む)。まだ並べていない機器と、隠したゲストは除く
+  // 機器とブリッジの今の位置(ドラッグ中の位置も含む)。まだ並べていない機器と、隠したゲストは除く
   const positions = new Map<string, Position>();
   for (const node of nodes) {
     if (!node.hidden) positions.set(node.id, node.position);

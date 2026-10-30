@@ -11,6 +11,7 @@ import {
   parseDocument,
   type YAMLMap,
 } from "yaml";
+import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { yamlErrorMessage } from "./text";
 import { createLinkId, createUid, DEVICE_ID_PATTERN, parseEndpoint } from "./topology";
@@ -21,6 +22,7 @@ import {
   FORMAT_VERSION,
   GROUP_KINDS,
   type Group,
+  BOND_MODES,
   GUEST_KINDS,
   INTERFACE_MODES,
   type InterfaceInfo,
@@ -28,6 +30,7 @@ import {
   type IssueCode,
   type IssueTarget,
   type Link,
+  LOGICAL_IF_TYPES,
   MEDIA,
   type Meta,
   type ModelCatalog,
@@ -59,6 +62,18 @@ export interface ParseOptions {
 
 const TOP_LEVEL_KEYS = ["constella", "meta", "devices", "links", "layout", "groups"];
 const DEVICE_KEYS = ["model", "role", "label", "host", "guest", "vmid", "interfaces"];
+const INTERFACE_KEYS = [
+  "description",
+  "ip",
+  "mode",
+  "vlan",
+  "vlans",
+  "type",
+  "members",
+  "bond-mode",
+  "vlan-aware",
+  "vlan-raw-device",
+];
 
 export function parseTopology(text: string, options: ParseOptions = {}): ParseResult {
   const doc = parseDocument(text, { uniqueKeys: false });
@@ -290,7 +305,10 @@ class Parser {
     for (const pair of node.items) {
       const keyNode = pair.key as Node | null;
       const raw = this.keyText(keyNode);
-      const name = normalizeIfName(raw);
+      // 論理的な IF(type を書いたもの)の名前は Linux の名前なので、書いたとおりに保つ
+      // (Linux の VLAN インターフェース vlan10 を、Cisco の略称の Vl10 にしない。SPEC 4.4)
+      const logical = isMap(pair.value) && pair.value.has("type");
+      const name = logical ? raw.trim() : normalizeIfName(raw);
       const target: IssueTarget = { kind: "interface", device: deviceId, name };
       const first = seen.get(ifNameKey(name));
       if (first !== undefined) {
@@ -346,8 +364,37 @@ class Parser {
         case "vlans":
           this.setText(info, key, value, ctx);
           break;
+        case "type": {
+          const type = enumValue(value, LOGICAL_IF_TYPES);
+          if (type) info.type = type;
+          else this.invalid(info.extra, key, value, ctx, LOGICAL_IF_TYPES.join(" / "));
+          break;
+        }
+        case "members":
+          if (isSeq(value) && value.items.every((i) => isNonEmptyString(i as Node))) {
+            info.members = value.items.map((i) =>
+              normalizeIfName(String((i as { value: unknown }).value)),
+            );
+          } else {
+            this.invalid(info.extra, key, value, ctx, "IF 名の配列");
+          }
+          break;
+        case "bond-mode": {
+          const mode = enumValue(value, BOND_MODES);
+          if (mode) info.bondMode = mode;
+          else this.invalid(info.extra, key, value, ctx, BOND_MODES.join(" / "));
+          break;
+        }
+        case "vlan-aware":
+          if (isScalar(value) && typeof value.value === "boolean") info.vlanAware = value.value;
+          else this.invalid(info.extra, key, value, ctx, "true か false");
+          break;
+        case "vlan-raw-device":
+          if (isNonEmptyString(value)) info.vlanRawDevice = normalizeIfName(value.value);
+          else this.invalid(info.extra, key, value, ctx, "IF 名");
+          break;
         default:
-          this.unknownKey(key, keyNode, ctx, ["description", "ip", "mode", "vlan", "vlans"]);
+          this.unknownKey(key, keyNode, ctx, INTERFACE_KEYS);
           info.extra[key] = toJS(value);
       }
     }
@@ -637,6 +684,7 @@ class Parser {
 /**
  * IF 名の表記をそろえる。モデルのあるデバイスはモデル側の表記、
  * それ以外は最初に書かれた表記(interfaces → links の順)に合わせる。
+ * members・vlan-raw-device と、layout のブリッジのキー(pve1:vmbr0)の IF 名もそろえる。
  */
 function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
   const spellings = new Map<string, Map<string, string>>();
@@ -669,6 +717,23 @@ function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
       const ep = link[end];
       if (ep) link[end] = { device: ep.device, iface: canonical(ep.device, ep.iface) };
     }
+  }
+  for (const device of t.devices.values()) {
+    for (const info of device.interfaces.values()) {
+      if (info.members) info.members = info.members.map((m) => canonical(device.id, m));
+      if (info.vlanRawDevice !== undefined) {
+        info.vlanRawDevice = canonical(device.id, info.vlanRawDevice);
+      }
+    }
+  }
+  if ([...t.layout.keys()].some((key) => parseBridgeKey(key) !== undefined)) {
+    t.layout = new Map(
+      [...t.layout].map(([key, pos]) => {
+        const parsed = parseBridgeKey(key);
+        const same = !parsed || !t.devices.has(parsed.host);
+        return [same ? key : bridgeKey(parsed.host, canonical(parsed.host, parsed.bridge)), pos];
+      }),
+    );
   }
 }
 

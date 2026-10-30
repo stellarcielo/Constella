@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEVICE_BOX, groupFrames } from "./groupFrames";
-import { computeLayout, guestPositions, placeMissing } from "./layout";
+import { bridgePositions, computeLayout, guestPositions, placeMissing } from "./layout";
 import { parseTopology } from "./parse";
 import { testCatalog } from "./testFixtures";
 import type { Topology } from "./types";
@@ -221,19 +221,21 @@ links:
   it("guestPositions: ゲストがいなければホストを中心に下の段へ、いれば右に続ける", () => {
     const host = { x: 400, y: 100 };
     expect(guestPositions(host, [], 3)).toEqual([
-      { x: 244, y: 276 },
-      { x: 400, y: 276 },
-      { x: 556, y: 276 },
+      { x: 204, y: 296 },
+      { x: 400, y: 296 },
+      { x: 596, y: 296 },
     ]);
     const placed = [
-      { x: 300, y: 276 },
-      { x: 456, y: 276 },
-      { x: 300, y: 452 },
+      { x: 300, y: 296 },
+      { x: 496, y: 296 },
+      { x: 300, y: 492 },
     ];
     expect(guestPositions(host, placed, 2)).toEqual([
-      { x: 456, y: 452 },
-      { x: 612, y: 452 },
+      { x: 496, y: 492 },
+      { x: 692, y: 492 },
     ]);
+    // ブリッジがあれば、ブリッジの段の下に置く
+    expect(guestPositions(host, [], 1, [{ x: 400, y: 212 }])).toEqual([{ x: 400, y: 352 }]);
   });
 
   it("placeMissing: ホストに座標があるゲストは、ホストの下に並べる(フェーズ4-1 Q1)", async () => {
@@ -246,9 +248,63 @@ links:
     ]);
     const missing = ["fw01", "db01", "srv1"];
     const pos = await placeMissing(t, testCatalog, missing, (id) => placed.get(id));
-    expect(pos.get("fw01")).toEqual({ x: 556, y: 600 });
-    expect(pos.get("db01")).toEqual({ x: 712, y: 600 });
+    expect(pos.get("fw01")).toEqual({ x: 596, y: 600 });
+    expect(pos.get("db01")).toEqual({ x: 792, y: 600 });
     // ゲストでない機器は、今までどおり既にある座標の下に置く
     expect(pos.get("srv1")?.y).toBeGreaterThan(600);
+  });
+});
+
+describe("ブリッジ(SPEC 9章・4.6)", () => {
+  const lab = `constella: 1
+devices:
+  sw1: { model: generic-l2switch-24 }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ] }
+      vmbr1: { type: bridge, members: [ eno2 ] }
+  vm1: { model: generic-vm, host: pve1 }
+  vm2: { model: generic-vm, host: pve1 }
+  vm3: { model: generic-vm, host: pve1 }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+  - { a: vm1:net0, b: pve1:vmbr1 }
+  - { a: vm2:net0, b: pve1:vmbr0 }
+  - { a: vm3:net0, b: pve1:vmbr1 }
+`;
+
+  it("上からホスト・ブリッジ・ゲストの段に並べ、ゲストはつながっているブリッジの下に寄せる", async () => {
+    const pos = await computeLayout(load(lab), testCatalog);
+    const p = (id: string) => pos.get(id) ?? { x: NaN, y: NaN };
+    expect([...pos.keys()].sort()).toEqual(
+      ["pve1", "pve1:vmbr0", "pve1:vmbr1", "sw1", "vm1", "vm2", "vm3"].sort(),
+    );
+    expect(p("pve1:vmbr0").y).toBeGreaterThan(p("pve1").y);
+    expect(p("pve1:vmbr0").y).toBe(p("pve1:vmbr1").y);
+    expect(p("vm1").y).toBeGreaterThan(p("pve1:vmbr0").y);
+    // vm2 だけが vmbr0 につながる。vmbr0 は vmbr1 の左にあるので、vm2 はほかのゲストより左
+    expect(p("pve1:vmbr0").x).toBeLessThan(p("pve1:vmbr1").x);
+    expect(p("vm2").x).toBeLessThan(p("vm1").x);
+    expect(p("vm2").x).toBeLessThan(p("vm3").x);
+  });
+
+  it("bridgePositions: ホストの下に、ホストを中心にして並べ、あれば右に続ける", () => {
+    expect(bridgePositions({ x: 100, y: 0 }, [], 2)).toEqual([
+      { x: 2, y: 112 },
+      { x: 198, y: 112 },
+    ]);
+    expect(bridgePositions({ x: 100, y: 0 }, [{ x: 2, y: 112 }], 1)).toEqual([{ x: 198, y: 112 }]);
+  });
+
+  it("placeMissing: ホストに座標があるブリッジは、ホストの下に置く", async () => {
+    const t = load(lab);
+    const placed = new Map([
+      ["sw1", { x: 0, y: 0 }],
+      ["pve1", { x: 0, y: 200 }],
+      ["pve1:vmbr0", { x: -78, y: 312 }],
+    ]);
+    const pos = await placeMissing(t, testCatalog, ["pve1:vmbr1"], (id) => placed.get(id));
+    expect(pos.get("pve1:vmbr1")).toEqual({ x: 118, y: 312 });
   });
 });

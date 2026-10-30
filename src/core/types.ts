@@ -37,6 +37,22 @@ export type Media = (typeof MEDIA)[number];
 export const INTERFACE_MODES = ["access", "trunk", "routed"] as const;
 export type InterfaceMode = (typeof INTERFACE_MODES)[number];
 
+/** 論理的な IF の種類(SPEC 4.6): bond・ブリッジ・VLAN インターフェース */
+export const LOGICAL_IF_TYPES = ["bond", "bridge", "vlan"] as const;
+export type LogicalIfType = (typeof LOGICAL_IF_TYPES)[number];
+
+/** bond のモード(Linux の bonding のモード。SPEC 4.3) */
+export const BOND_MODES = [
+  "balance-rr",
+  "active-backup",
+  "balance-xor",
+  "broadcast",
+  "802.3ad",
+  "balance-tlb",
+  "balance-alb",
+] as const;
+export type BondMode = (typeof BOND_MODES)[number];
+
 export const GROUP_KINDS = ["site", "rack", "vlan", "subnet", "as", "custom"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
@@ -106,6 +122,16 @@ export interface InterfaceInfo {
   mode?: InterfaceMode;
   vlan?: number;
   vlans?: string;
+  /** 論理的な IF の種類。省略時は物理的な IF(SPEC 4.6) */
+  type?: LogicalIfType;
+  /** bond で束ねる IF、ブリッジにつなぐ IF(同じデバイスの IF 名) */
+  members?: string[];
+  /** YAML では bond-mode */
+  bondMode?: BondMode;
+  /** YAML では vlan-aware */
+  vlanAware?: boolean;
+  /** VLAN インターフェースの親の IF。YAML では vlan-raw-device */
+  vlanRawDevice?: string;
   extra: Extra;
 }
 
@@ -211,7 +237,9 @@ export type IssueCode =
   | "port-type-mismatch"
   | "unknown-layout-device"
   | "host-cycle"
-  | "duplicate-vmid";
+  | "duplicate-vmid"
+  | "member-in-use"
+  | "invalid-bridge-link";
 
 export type IssueTarget =
   | { kind: "document" }

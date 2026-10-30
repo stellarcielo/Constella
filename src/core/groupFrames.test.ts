@@ -190,3 +190,37 @@ ${groups}layout:
     expect(groupFrames(t, at(t), () => false).map(nameOf)).toEqual(["host:pve1"]);
   });
 });
+
+describe("groupFrames: ブリッジ(SPEC 4.6・7.3)", () => {
+  function load(devices: string, layout: string): Topology {
+    const result = parseTopology(`constella: 1\ndevices:\n${devices}layout:\n${layout}`, {
+      catalog: testCatalog,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return result.topology;
+  }
+
+  it("ホストの枠は、ブリッジも囲む", () => {
+    const t = load(
+      "  pve1:\n    interfaces:\n      vmbr0: { type: bridge }\n  vm1: { host: pve1 }\n",
+      "  pve1: { x: 0, y: 0 }\n  pve1:vmbr0: { x: 300, y: 120 }\n  vm1: { x: 0, y: 240 }\n",
+    );
+    const [frame] = groupFrames(t, (id) => t.layout.get(id));
+    expect(frame.members).toEqual(["pve1", "pve1:vmbr0", "vm1"]);
+    expect(frame.x + frame.width).toBe(300 + DEVICE_BOX.width + GROUP_PADDING);
+  });
+
+  it("ゲストがいなくても、ブリッジがあれば枠を描く(ラベルは「ゲストなし」)", () => {
+    const t = load(
+      "  pve1:\n    interfaces:\n      vmbr0: { type: bridge }\n",
+      "  pve1: { x: 0, y: 0 }\n  pve1:vmbr0: { x: 0, y: 120 }\n",
+    );
+    const frames = groupFrames(t, (id) => t.layout.get(id));
+    expect(frames.map((f) => f.members)).toEqual([["pve1", "pve1:vmbr0"]]);
+    expect(frames[0].type === "host" && hostFrameTitle(t, testCatalog, frames[0])).toBe(
+      "ゲストなし",
+    );
+    // ブリッジを隠せば(ゲストを隠したとき)、枠も描かない
+    expect(groupFrames(t, (id) => (id === "pve1" ? { x: 0, y: 0 } : undefined))).toEqual([]);
+  });
+});

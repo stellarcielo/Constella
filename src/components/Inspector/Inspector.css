@@ -317,6 +317,20 @@ textarea.field-input {
   color: var(--text-muted);
 }
 
+/* ブリッジの members の選択(フェーズ4-2) */
+.member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.member-item {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
 .if-editor {
   display: flex;
   flex-direction: column;

@@ -158,3 +158,34 @@ describe("uiStore: 表示オプション", () => {
     );
   });
 });
+
+describe("uiStore: ブリッジへの接続(フェーズ4-2)", () => {
+  const bridge = { device: "pve1", iface: "vmbr0" };
+  const net0 = { endpoint: { device: "vm1", iface: "net0" } };
+
+  it("A のポートを選んだあとブリッジをクリックすると、そのブリッジにつなぐ", () => {
+    const store = createUiStore();
+    const s = () => store.getState();
+    s().setMode("connect");
+    s().clickDevice("vm1");
+    s().choosePort(net0);
+    expect(s().clickBridge(bridge)).toEqual({ a: net0.endpoint, b: bridge });
+    expect(s().connect).toEqual({ stage: "idle" });
+  });
+
+  it("最初にブリッジをクリックすると、ポートを選ばずにブリッジを A にする", () => {
+    const store = createUiStore();
+    const s = () => store.getState();
+    s().setMode("connect");
+    expect(s().clickBridge(bridge)).toBeUndefined();
+    expect(s().connect).toEqual({ stage: "awaitB", a: { endpoint: bridge } });
+    s().clickDevice("vm1");
+    expect(s().choosePort(net0)).toEqual({ a: bridge, b: net0.endpoint });
+  });
+
+  it("選択モードでは何もしない", () => {
+    const store = createUiStore();
+    expect(store.getState().clickBridge(bridge)).toBeUndefined();
+    expect(store.getState().connect).toEqual({ stage: "idle" });
+  });
+});

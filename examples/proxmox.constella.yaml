@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
 # Proxmox VE: 2 台のホストの上で、VM とコンテナ(LXC)を動かす。
 # ゲストは host に動いているホストを書き、vmid に Proxmox VE の VMID を書く。
+# ホストの中の仮想スイッチ(ブリッジ)は、ホストの interfaces に type: bridge で書き、
+# ゲストの IF とブリッジを links でつなぐ。VLAN タグは、ゲストの IF の vlan に書く。
 # ロール(機能)はゲストでも今までどおり(OPNsense の VM は firewall)。
 constella: 1
 
@@ -13,32 +15,53 @@ devices:
     model: generic-router-4
   sw1:
     model: generic-l2switch-24
+    interfaces:
+      Gi0/1: { mode: trunk, vlans: "10,20" }
+      Gi0/3: { mode: trunk, vlans: "10,20" }
   pve1:
     model: generic-hypervisor-4
+    interfaces:
+      # ゲスト用。VLAN を区別して通す
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true }
+      # ホストの管理用
+      vmbr1: { type: bridge, members: [ eno2 ], ip: [ 192.168.1.11/24 ] }
   pve2:
     model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true }
+      vmbr1: { type: bridge, members: [ eno2 ], ip: [ 192.168.1.12/24 ] }
   fw01:
     model: generic-vm
     role: firewall
     label: OPNsense
     host: pve1
     vmid: 100
+    interfaces:
+      net0: { mode: trunk, vlans: "10,20" }
   web01:
     model: generic-vm
     host: pve1
     vmid: 101
+    interfaces:
+      net0: { vlan: 10, ip: [ 192.168.10.11/24 ] }
   db01:
     model: generic-container
     host: pve1
     vmid: 200
+    interfaces:
+      net0: { vlan: 20, ip: [ 192.168.20.21/24 ] }
   mon01:
     model: generic-vm
     host: pve2
     vmid: 102
+    interfaces:
+      net0: { vlan: 10, ip: [ 192.168.10.12/24 ] }
   dns01:
     model: generic-container
     host: pve2
     vmid: 201
+    interfaces:
+      net0: { vlan: 20, ip: [ 192.168.20.22/24 ] }
 
 links:
   - a: rt1:Gi0/1
@@ -52,3 +75,14 @@ links:
     b: sw1:Gi0/3
   - a: pve2:eno2
     b: sw1:Gi0/4
+  # ゲストの IF を、ホストのブリッジにつなぐ(ブリッジには何本でもつなげる)
+  - a: fw01:net0
+    b: pve1:vmbr0
+  - a: web01:net0
+    b: pve1:vmbr0
+  - a: db01:net0
+    b: pve1:vmbr0
+  - a: mon01:net0
+    b: pve2:vmbr0
+  - a: dns01:net0
+    b: pve2:vmbr0

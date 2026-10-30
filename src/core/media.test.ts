@@ -88,3 +88,24 @@ describe("linkMedia", () => {
     expect(linkMedia(t.links[0], t, catalog)).toBe("dac");
   });
 });
+
+describe("ブリッジへのリンク(SPEC 4.3)", () => {
+  it("ポート種別が分からなくても virtual と推定する", () => {
+    const result = parseTopology(
+      `constella: 1
+devices:
+  pve1:
+    interfaces:
+      vmbr0: { type: bridge }
+  guest: { host: pve1 }
+links:
+  - { a: guest:eth0, b: pve1:vmbr0 }
+  - { a: guest:eth1, b: pve1:eth0 }
+`,
+      { catalog },
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    const t = result.topology;
+    expect(t.links.map((l) => inferMedia(l, t, catalog))).toEqual(["virtual", "copper"]);
+  });
+});

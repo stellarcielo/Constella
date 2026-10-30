@@ -32,9 +32,9 @@ describe("guestDropTarget(フェーズ4-1 Q2)", () => {
 
   it("ハイパーバイザの上に落とすと、そのホストのゲストにして、ホストの下に並べる", () => {
     // ゲストのいないホスト: ホストの下の段
-    expect(drop(640, 30)).toEqual({ host: "pve2", position: { x: 600, y: 176 } });
+    expect(drop(640, 30)).toEqual({ host: "pve2", position: { x: 600, y: 196 } });
     // ゲストのいるホスト: 今のゲストの右
-    expect(drop(40, 30)).toEqual({ host: "pve1", position: { x: 156, y: 200 } });
+    expect(drop(40, 30)).toEqual({ host: "pve1", position: { x: 196, y: 200 } });
   });
 
   it("ホストの枠の中に落とすと、いちばん内側の枠のホストのゲストにする(位置は落とした所)", () => {

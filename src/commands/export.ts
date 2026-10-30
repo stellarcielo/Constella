@@ -1,8 +1,8 @@
 // 図を SVG / PNG に書き出す(フェーズ2-4)。SVG は core の renderSvg で作り、PNG はそれを画像にする。
 
-import { type GroupKind, renderSvg } from "../core";
+import { allBridges, type GroupKind, renderSvg } from "../core";
 import { basename, type ImageFormat, type Platform } from "../platform/types";
-import type { TopologyStore } from "../store/topologyStore";
+import { nodePosition, type TopologyStore } from "../store/topologyStore";
 import { defaultFileName } from "./files";
 
 /** PNG の倍率(Retina 相当。フェーズ2-4 Q3) */
@@ -11,7 +11,7 @@ export const PNG_SCALE = 2;
 export interface ExportCommandDeps {
   platform: Pick<Platform, "chooseExportPath" | "writeTextFile" | "writeBinaryFile">;
   store: TopologyStore;
-  /** ツールバーの表示設定(IF 名・IP・VLAN・グループ。書き出しにも反映する) */
+  /** ツールバーの表示設定(IF 名・IP・VLAN・グループ・ゲスト。書き出しにも反映する) */
   view(): {
     showIfLabels: boolean;
     longIfNames: boolean;
@@ -19,6 +19,7 @@ export interface ExportCommandDeps {
     showIp: boolean;
     showVlan: boolean;
     groupKinds: GroupKind[];
+    showGuests: boolean;
   };
   /** SVG を PNG のバイト列にする(width × height を scale 倍した大きさ) */
   rasterize(
@@ -54,11 +55,11 @@ export function createExportCommands(deps: ExportCommandDeps): ExportCommands {
         format,
       );
       if (!path) return false;
-      // 座標の無いデバイスは、キャンバスと同じく自動配置の位置に描く
+      // 座標の無いデバイスとブリッジは、キャンバスと同じく自動配置の位置に描く
       const fallbackPositions = new Map<string, { x: number; y: number }>();
-      for (const device of topology.devices.values()) {
-        const pos = autoPositions.get(device.uid);
-        if (pos) fallbackPositions.set(device.id, pos);
+      for (const id of [...topology.devices.keys(), ...allBridges(topology).map((b) => b.key)]) {
+        const pos = nodePosition(topology, autoPositions, id);
+        if (pos) fallbackPositions.set(id, pos);
       }
       const { svg, width, height } = renderSvg(topology, catalog, {
         ...deps.view(),

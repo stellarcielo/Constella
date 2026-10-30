@@ -38,13 +38,14 @@
       "items": { "$ref": "#/definitions/link" }
     },
     "layout": {
-      "description": "機器の座標(キー = デバイスID)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
+      "description": "機器の座標(キー = デバイスID。ブリッジは「ホストのデバイスID:ブリッジ名」)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
       "type": ["object", "null"],
       "properties": {
         "_viewport": { "$ref": "#/definitions/viewport" }
       },
       "patternProperties": {
-        "^[A-Za-z0-9][A-Za-z0-9._-]*$": { "$ref": "#/definitions/position" }
+        "^[A-Za-z0-9][A-Za-z0-9._-]*$": { "$ref": "#/definitions/position" },
+        "^[A-Za-z0-9][A-Za-z0-9._-]*:\\S+$": { "$ref": "#/definitions/position" }
       },
       "additionalProperties": false
     },
@@ -132,15 +133,48 @@
         },
         "mode": { "$ref": "#/definitions/interfaceMode" },
         "vlan": {
-          "description": "access のときの VLAN ID(1〜4094)",
+          "description": "access のときの VLAN ID(1〜4094)。ゲストの IF では VLAN タグ(Proxmox VE の tag)、VLAN インターフェースではその VLAN ID",
           "type": "integer",
           "minimum": 1,
           "maximum": 4094
         },
         "vlans": {
-          "description": "trunk のときに通す VLAN(カンマ区切り・範囲指定)",
+          "description": "trunk のときに通す VLAN(カンマ区切り・範囲指定)。ゲストの IF では Proxmox VE の trunks、VLAN aware なブリッジでは通す VLAN(bridge-vids。省略すると 2-4094)",
           "type": ["string", "number", "boolean"],
           "examples": ["10,20,100-110"]
+        },
+        "type": {
+          "description": "論理的な IF の種類: bond / bridge(ブリッジ。ホストの中の仮想スイッチ)/ vlan(VLAN インターフェース)。省略すると物理的な IF。type を書いた IF は、モデルに無い名前でも使える",
+          "type": "string",
+          "enum": ["bond", "bridge", "vlan"]
+        },
+        "members": {
+          "description": "bond で束ねる IF、ブリッジにつなぐ IF(同じ機器の IF 名。Proxmox VE の bond-slaves / bridge-ports)",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "examples": [["eno1", "eno2"]]
+        },
+        "bond-mode": {
+          "description": "bond のモード",
+          "type": "string",
+          "enum": [
+            "balance-rr",
+            "active-backup",
+            "balance-xor",
+            "broadcast",
+            "802.3ad",
+            "balance-tlb",
+            "balance-alb"
+          ]
+        },
+        "vlan-aware": {
+          "description": "ブリッジが VLAN aware(VLAN を区別して通す)か。省略すると false",
+          "type": "boolean"
+        },
+        "vlan-raw-device": {
+          "description": "VLAN インターフェースの親の IF。名前が「親.VLAN ID」(vmbr0.10)なら省略できる",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
