@@ -2,8 +2,8 @@
 // キャンバスでは小さな箱として描く。箱の ID と layout のキーは「ホストのデバイスID:ブリッジ名」
 // (デバイスID には : が使えないので、デバイスの ID と重ならない)。
 
-import { ifNameKey, normalizeIfName } from "./ifname";
-import { findModel } from "./topology";
+import { ifNameKey } from "./ifname";
+import { nextLogicalIfName, removeLogicalIf, renameLogicalIf } from "./logicalIfs";
 import type { Device, Endpoint, Link, ModelCatalog, Position, Topology } from "./types";
 
 /** キャンバスの箱の大きさ(Canvas.css の .bridge-node と合わせる)。箱の下に IP などを出す */
@@ -71,38 +71,9 @@ export function bridgeLinks(t: Topology, host: string, bridge: string): Link[] {
   return t.links.filter((l) => at(l.a) || at(l.b));
 }
 
-/** デバイスで使われている IF 名(モデルのポートと interfaces) */
-function usedNames(device: Device, catalog: ModelCatalog): Set<string> {
-  return new Set(
-    [
-      ...(findModel(device, catalog)?.ports.map((p) => p.name) ?? []),
-      ...device.interfaces.keys(),
-    ].map(ifNameKey),
-  );
-}
-
 /** 新しいブリッジの名前(vmbr0, vmbr1 …。使われていない最小の番号。Proxmox VE と同じ) */
 export function nextBridgeName(device: Device, catalog: ModelCatalog): string {
-  const used = usedNames(device, catalog);
-  for (let n = 0; ; n++) {
-    const name = `vmbr${n}`;
-    if (!used.has(ifNameKey(name))) return name;
-  }
-}
-
-/** ブリッジの名前として使えるか。使えなければ理由を返す(current は今の自分の名前) */
-export function checkBridgeName(
-  device: Device,
-  name: string,
-  catalog: ModelCatalog,
-  current?: string,
-): string | undefined {
-  if (name === "") return "名前を入力してください";
-  if (/[\s:]/.test(name)) return "名前に空白と : は使えません";
-  const key = ifNameKey(name);
-  if (current !== undefined && ifNameKey(current) === key) return undefined;
-  if (usedNames(device, catalog).has(key)) return `「${name}」は既に使われています`;
-  return undefined;
+  return nextLogicalIfName(device, "vmbr", catalog);
 }
 
 /** ホストにブリッジを足し、その名前を返す。position を渡すと、その位置に置く */
@@ -126,20 +97,10 @@ export function addBridge(
 export function removeBridges(t: Topology, keys: Iterable<string>): void {
   for (const key of keys) {
     const parsed = parseBridgeKey(key);
-    const device = parsed && t.devices.get(parsed.host);
-    const bridge = parsed && findBridge(device, parsed.bridge);
-    if (!parsed || !device || bridge === undefined) continue;
-    const gone = new Set(bridgeLinks(t, parsed.host, bridge));
-    t.links = t.links.filter((l) => !gone.has(l));
-    device.interfaces.delete(bridge);
+    const bridge = parsed && findBridge(t.devices.get(parsed.host), parsed.bridge);
+    if (!parsed || bridge === undefined) continue;
+    removeLogicalIf(t, parsed.host, bridge);
     t.layout.delete(bridgeKey(parsed.host, bridge));
-    for (const info of device.interfaces.values()) {
-      if (info.members?.some((m) => ifNameKey(m) === ifNameKey(bridge))) {
-        const members = info.members.filter((m) => ifNameKey(m) !== ifNameKey(bridge));
-        if (members.length > 0) info.members = members;
-        else delete info.members;
-      }
-    }
   }
 }
 
@@ -148,29 +109,12 @@ export function removeBridges(t: Topology, keys: Iterable<string>): void {
  * vlan-raw-device も書き換える
  */
 export function renameBridge(t: Topology, host: string, oldName: string, newName: string): void {
-  const device = t.devices.get(host);
-  const bridge = findBridge(device, oldName);
-  if (!device || bridge === undefined) return;
-  const name = normalizeIfName(newName);
-  if (name === bridge) return;
-  const oldKey = ifNameKey(bridge);
-  const rename = (n: string) => (ifNameKey(n) === oldKey ? name : n);
-  device.interfaces = new Map([...device.interfaces].map(([n, info]) => [rename(n), info]));
-  for (const info of device.interfaces.values()) {
-    if (info.members?.some((m) => ifNameKey(m) === oldKey)) info.members = info.members.map(rename);
-    if (info.vlanRawDevice !== undefined) info.vlanRawDevice = rename(info.vlanRawDevice);
-  }
-  for (const link of t.links) {
-    for (const end of ["a", "b"] as const) {
-      const ep = link[end];
-      if (ep?.device === host && ifNameKey(ep.iface) === oldKey)
-        link[end] = { device: host, iface: name };
-    }
-  }
+  const bridge = findBridge(t.devices.get(host), oldName);
+  if (bridge === undefined) return;
+  const name = renameLogicalIf(t, host, bridge, newName);
   const from = bridgeKey(host, bridge);
-  if (t.layout.has(from)) {
-    t.layout = new Map([...t.layout].map(([k, p]) => [k === from ? bridgeKey(host, name) : k, p]));
-  }
+  if (name === undefined || name === bridge || !t.layout.has(from)) return;
+  t.layout = new Map([...t.layout].map(([k, p]) => [k === from ? bridgeKey(host, name) : k, p]));
 }
 
 /** ゲストのホストを変えると、どうなるリンクか(SPEC 7.1・フェーズ4-2 Q2) */

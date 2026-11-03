@@ -214,6 +214,38 @@ layout:
     expect(hidden).not.toContain(">eno1</text>");
   });
 
+  it("bond と VLAN インターフェースをラベルに出す(フェーズ4-3 Q1・Q2)", () => {
+    const t = load(`constella: 1
+devices:
+  sw1: { model: generic-l2switch-24 }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ], bond-mode: 802.3ad }
+      bond1: { type: bond, members: [ eno3 ], ip: [ 10.20.0.11/24 ] }
+      vmbr0: { type: bridge, members: [ bond0 ] }
+      vmbr0.10: { type: vlan, ip: [ 192.168.10.2/24 ] }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+layout:
+  sw1: { x: 0, y: 0 }
+  pve1: { x: 0, y: 200 }
+  pve1:vmbr0: { x: 0, y: 340 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    // 物理的な線: IF 名の下に、束ねている bond
+    expect(svg).toMatch(/>eno1<\/text>.*?>bond0<\/text>/);
+    // ブリッジとホストの間の線: members の下に、bond の中身とモード
+    expect(svg).toContain(">eno1 + eno2(802.3ad)</text>");
+    // ブリッジの箱の下に VLAN インターフェースの IP、ホストの名前の下に bond の IP
+    expect(svg).toContain(">vmbr0.10 192.168.10.2/24</text>");
+    expect(svg).toContain(">bond1 10.20.0.11/24</text>");
+    // IP を出さないときは、IP の行を出さない
+    const noIp = renderSvg(t, testCatalog, { showIp: false }).svg;
+    expect(noIp).not.toContain("10.20.0.11");
+    expect(noIp).not.toContain("192.168.10.2");
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

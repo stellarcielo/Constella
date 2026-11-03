@@ -18,7 +18,7 @@ export interface IfLabelOptions {
 export interface IfLabel {
   /** 1 行目の IF 名(出さないときは undefined) */
   name?: string;
-  /** IF 名の下に小さく出す行(IP、VLAN の順) */
+  /** IF 名の下に小さく出す行(束ねている bond、IP、VLAN の順) */
   details: string[];
 }
 
@@ -53,13 +53,18 @@ export function interfaceInfo(
   return undefined;
 }
 
-/** リンクの端のラベル。出す行が無ければ undefined(ラベルを描かない) */
+/**
+ * リンクの端のラベル。出す行が無ければ undefined(ラベルを描かない)。
+ * bond を渡すと、IF 名の下にその bond の名前を添える(IF 名を出すときだけ。フェーズ4-3 Q2)
+ */
 export function ifLabel(
   iface: string,
   info: InterfaceInfo | undefined,
   options: IfLabelOptions,
+  bond?: string,
 ): IfLabel | undefined {
   const details: string[] = [];
+  if (options.showIfName && bond !== undefined) details.push(bond);
   if (options.showIp) details.push(...(info?.ip ?? []));
   const vlan = options.showVlan && info ? vlanText(info) : undefined;
   if (vlan) details.push(vlan);

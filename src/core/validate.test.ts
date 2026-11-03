@@ -270,3 +270,85 @@ devices:
     expect(issues[0].message).toBe("layout の「pve1:vmbr9」に対応するブリッジがありません");
   });
 });
+
+describe("validateTopology: bond・VLAN インターフェース(SPEC 4.6)", () => {
+  it("SPEC 4.6 の書き方には問題が無い", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ], bond-mode: 802.3ad }
+      vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true }
+      vmbr0.10: { type: vlan, ip: [ 192.0.2.2/24 ] }
+      vlan20: { type: vlan, vlan-raw-device: bond0 }
+  sw1: { model: generic-l2switch-24 }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+  - { a: pve1:eno2, b: sw1:Gi0/2 }
+`);
+    expect(issues).toEqual([]);
+  });
+
+  it("bond・VLAN インターフェースにはリンクをつなげない", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1 ] }
+      bond0.10: { type: vlan }
+  sw1: { model: generic-l2switch-24 }
+links:
+  - { a: pve1:bond0, b: sw1:Gi0/1 }
+  - { a: sw1:Gi0/2, b: pve1:bond0.10 }
+`);
+    expect(summary(issues)).toEqual([
+      ["error", "invalid-logical-link"],
+      ["error", "invalid-logical-link"],
+    ]);
+    expect(issues[0].message).toContain("束ねている物理的な IF");
+    expect(issues[1].target).toEqual({ kind: "link", id: expect.any(String), end: "b" });
+  });
+
+  it("bond に入れるのは物理的な IF だけ。ブリッジにブリッジは入れられない", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1 ] }
+      bond1: { type: bond, members: [ bond0 ] }
+      vmbr0: { type: bridge }
+      vmbr1: { type: bridge, members: [ vmbr0 ] }
+`);
+    expect(summary(issues)).toEqual([
+      ["error", "invalid-member"],
+      ["error", "invalid-member"],
+    ]);
+    expect(issues[0].message).toContain("物理的でない IF(bond0)");
+    expect(issues[1].message).toContain("ブリッジ(vmbr0)");
+  });
+
+  it("VLAN インターフェースの親が無い・分からない、VLAN ID が分からない・範囲外", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr9.10: { type: vlan }
+      mgmt: { type: vlan }
+      eno1.5000: { type: vlan }
+`);
+    expect(summary(issues)).toEqual([
+      ["error", "unknown-interface"],
+      ["error", "invalid-vlan-interface"],
+      ["error", "invalid-vlan-interface"],
+      ["error", "invalid-vlan-interface"],
+    ]);
+    expect(issues[0].message).toContain("親の IF「vmbr9」");
+    expect(issues[1].message).toContain("親の IF が分かりません");
+    expect(issues[2].message).toContain("VLAN ID が分かりません");
+    expect(issues[3].message).toContain("5000");
+  });
+});

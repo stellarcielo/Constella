@@ -22,12 +22,15 @@ import "@xyflow/react/dist/style.css";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   allBridges,
+  bondOf,
+  bridgeIpLines,
   bridgeKey,
   type Endpoint,
   endpointNodeId,
   findBridge,
   findModel,
   guestDropTarget,
+  hostIpLines,
   type Issue,
   type IssueTarget,
   interfaceInfo,
@@ -349,13 +352,15 @@ function buildNodes(
         guest,
         host: device.host,
         vmid: device.vmid,
+        ipLines: hostIpLines(device),
         problem: problems.get(device.id),
       },
     };
   });
   // ブリッジの箱(SPEC 4.6)。ゲストと一緒に隠す
   const bridges = allBridges(t).map(({ key, host, bridge }): BridgeNodeType => {
-    const info = t.devices.get(host)?.interfaces.get(bridge);
+    const device = t.devices.get(host);
+    const info = device?.interfaces.get(bridge);
     const position = nodePosition(t, autoPositions, key);
     return {
       id: key,
@@ -367,7 +372,8 @@ function buildNodes(
         host,
         vlanAware: info?.vlanAware === true,
         vlans: info?.vlans,
-        ip: info?.ip ?? [],
+        // ブリッジの IP と、ブリッジの上の VLAN インターフェースの IP(フェーズ4-3 Q1)
+        ip: device ? bridgeIpLines(device, bridge) : [],
         problem: problems.get(key),
       },
     };
@@ -419,6 +425,8 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
         slotCount: slot.count,
         aBridge: na !== a.device,
         bBridge: nb !== b.device,
+        aBond: bondOf(t.devices.get(a.device), a.iface),
+        bBond: bondOf(t.devices.get(b.device), b.iface),
       },
     };
   });
@@ -436,7 +444,7 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
         selectable: false,
         deletable: false,
         focusable: false,
-        data: { members },
+        data: { bridge },
       },
     ];
   });

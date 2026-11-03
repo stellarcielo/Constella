@@ -27,9 +27,9 @@ export function InterfaceList({ device }: { device: Device }) {
   const [open, setOpen] = useState<string | null>(null);
 
   const flexible = isFlexibleDevice(device, catalog);
-  // ブリッジは、別の「ブリッジ」の欄に出す(フェーズ4-2)
+  // ブリッジと bond・VLAN インターフェースは、それぞれの欄に出す(フェーズ4-2・4-3)
   const entries = useMemo(
-    () => listDevicePorts(device, topology, catalog).filter((e) => !e.bridge),
+    () => listDevicePorts(device, topology, catalog).filter((e) => !e.bridge && !e.logical),
     [device, topology, catalog],
   );
   const infoOf = (name: string): InterfaceInfo | undefined => {

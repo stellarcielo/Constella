@@ -16,6 +16,7 @@ import {
   hostCandidates,
   type HostChangeImpact,
   hostChangeImpact,
+  logicalIfsOf,
   type Link,
   type ModelChangeImpact,
   modelChangeImpact,
@@ -40,6 +41,7 @@ import { useIfNameFormatter } from "../ifNames";
 import { modelSections } from "../modelSections";
 import { CommitInput, Field } from "./fields";
 import { InterfaceList } from "./InterfaceList";
+import { LogicalIfList } from "./LogicalIfList";
 import { IssueList } from "./IssueList";
 
 const isRole = (value: string): value is Role => (ROLES as readonly string[]).includes(value);
@@ -215,6 +217,10 @@ export function DeviceInspector({ device }: { device: Device }) {
       </section>
 
       {(role === "hypervisor" || bridgesOf(device).length > 0) && <BridgeList device={device} />}
+      {(role === "hypervisor" ||
+        logicalIfsOf(device, "bond").length + logicalIfsOf(device, "vlan").length > 0) && (
+        <LogicalIfList device={device} />
+      )}
 
       <InterfaceList device={device} />
 

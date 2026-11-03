@@ -81,3 +81,19 @@ describe("interfaceInfo", () => {
     expect(interfaceInfo(undefined, "Gi0/1")).toBeUndefined();
   });
 });
+
+describe("ifLabel: bond(フェーズ4-3 Q2)", () => {
+  const options = { showIfName: true, longIfNames: false, showIp: true, showVlan: true };
+
+  it("束ねている bond を、IF 名の下(IP より上)に添える。IF 名を出さないときは出さない", () => {
+    const info = { ip: ["192.0.2.1/24"], extra: {} };
+    expect(ifLabel("eno1", info, options, "bond0")).toEqual({
+      name: "eno1",
+      details: ["bond0", "192.0.2.1/24"],
+    });
+    expect(ifLabel("eno1", info, { ...options, showIfName: false }, "bond0")).toEqual({
+      name: undefined,
+      details: ["192.0.2.1/24"],
+    });
+  });
+});

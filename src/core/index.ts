@@ -6,6 +6,7 @@ export * from "./ifname";
 export * from "./topology";
 export * from "./hosts";
 export * from "./bridges";
+export * from "./logicalIfs";
 export { parseTopology, type ParseOptions, type ParseResult, type YamlBase } from "./parse";
 export { rebaseOnText, serializeTopology, type SerializeResult } from "./serialize";
 export { locateTarget, validateTopology } from "./validate";

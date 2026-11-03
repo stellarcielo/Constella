@@ -317,6 +317,12 @@ textarea.field-input {
   color: var(--text-muted);
 }
 
+/* 欄の見出しの右に並べるボタン(フェーズ4-3) */
+.inspector-head-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
 /* ブリッジの members の選択(フェーズ4-2) */
 .member-list {
   display: flex;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   endLabelPositions,
+  NAME_DETAIL_LINE,
+  nameDetails,
   estimateLabelSize,
   estimateNameWidth,
   offsetLine,
@@ -193,5 +195,26 @@ describe("デバイス名を避ける(フェーズ3-2)", () => {
   it("名前の幅は、全角を 12px・半角を 7px として見積もる", () => {
     expect(estimateNameWidth("rt1")).toBe(12 + 3 * 7);
     expect(estimateNameWidth("コア")).toBe(12 + 2 * 12);
+  });
+});
+
+describe("endLabelPositions: 名前の下の行(フェーズ4-3 Q1)", () => {
+  it("名前の下に行があれば、その行も避けて外側に置く", () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 0, y: 400 };
+    const plain = endLabelPositions(a, b, "eno1", "x");
+    const withLines = endLabelPositions(
+      a,
+      b,
+      "eno1",
+      "x",
+      undefined,
+      {},
+      {
+        a: nameDetails(["bond1 10.20.0.11/24", "vlan30 10.30.0.11/24"]),
+      },
+    );
+    expect(withLines.a.y).toBeGreaterThan(plain.a.y + 2 * NAME_DETAIL_LINE - 1);
+    expect(nameDetails([])).toBeUndefined();
   });
 });

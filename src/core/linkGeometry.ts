@@ -40,10 +40,36 @@ export function estimateNameWidth(text: string): number {
   return width;
 }
 
-/** アイコンと、その下のデバイス名の範囲 */
-function avoidBoxes(nameWidth = DEFAULT_NAME_WIDTH): Box[] {
+/** デバイス名の下に出す行(ホストの IP など。Canvas.css の .device-node-ip と合わせる)の 1 行の高さ */
+export const NAME_DETAIL_LINE = 14;
+
+/** デバイス名の下に出す行の大きさ(SPEC 7.3・フェーズ4-3 Q1) */
+export interface NameDetails {
+  width: number;
+  lines: number;
+}
+
+/** 行の大きさの見積もり(IF 名ラベルと同じ字の大きさ) */
+export function nameDetails(lines: readonly string[]): NameDetails | undefined {
+  return lines.length === 0
+    ? undefined
+    : { width: estimateLabelSize(lines).width, lines: lines.length };
+}
+
+/** アイコンと、その下のデバイス名(と、その下の行)の範囲 */
+function avoidBoxes(nameWidth = DEFAULT_NAME_WIDTH, details?: NameDetails): Box[] {
   const half = Math.max(nameWidth, DEFAULT_NAME_WIDTH) / 2;
-  return [ICON_BOX, { left: -half, top: NAME_TOP, right: half, bottom: NAME_BOTTOM }];
+  const boxes = [ICON_BOX, { left: -half, top: NAME_TOP, right: half, bottom: NAME_BOTTOM }];
+  if (details) {
+    const w = details.width / 2;
+    boxes.push({
+      left: -w,
+      top: NAME_BOTTOM,
+      right: w,
+      bottom: NAME_BOTTOM + details.lines * NAME_DETAIL_LINE,
+    });
+  }
+  return boxes;
 }
 
 export interface Slot {
@@ -151,6 +177,7 @@ function clearDistance(
 /**
  * 両端の IF 名ラベルの中心。線の上の、アイコンとデバイス名のすぐ外側に置く(Q1)。
  * デバイス名の幅(nameWidths)を渡すと、アイコンより幅の広い名前にも重ならないようにする。
+ * デバイス名の下の行(details。ホストの IP など)を渡すと、その行にも重ならないようにする。
  * 並行リンクでラベルが隣の線のラベルと横に重なる向き(縦や斜めの線)なら、
  * 何本目かに応じて線に沿って段違いにずらす。
  * 機器同士が近くてラベルがぶつかるときは、線の長さに合わせて内側に寄せる。
@@ -162,6 +189,7 @@ export function endLabelPositions(
   bText: string | readonly string[],
   slot: Slot = { index: 0, count: 1 },
   nameWidths: { a?: number; b?: number } = {},
+  details: { a?: NameDetails; b?: NameDetails } = {},
 ): { a: Point; b: Point } {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -181,9 +209,11 @@ export function endLabelPositions(
   const overlaps = slot.count > 1 && Math.max(across(sizeA), across(sizeB)) * 2 > PARALLEL_GAP;
   const stagger = overlaps ? slot.index : 0;
   let da =
-    clearDistance(ux, uy, sizeA, avoidBoxes(nameWidths.a)) + stagger * (2 * halfA + LABEL_GAP);
+    clearDistance(ux, uy, sizeA, avoidBoxes(nameWidths.a, details.a)) +
+    stagger * (2 * halfA + LABEL_GAP);
   let db =
-    clearDistance(-ux, -uy, sizeB, avoidBoxes(nameWidths.b)) + stagger * (2 * halfB + LABEL_GAP);
+    clearDistance(-ux, -uy, sizeB, avoidBoxes(nameWidths.b, details.b)) +
+    stagger * (2 * halfB + LABEL_GAP);
   // 2 つのラベルが重なる(または線より長い)なら、比率を保って内側に寄せる。
   // 重ならない条件: (da + halfA) + (db + halfB) <= len
   const room = len - 2 * (halfA + halfB);

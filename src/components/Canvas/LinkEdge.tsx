@@ -20,6 +20,7 @@ import {
   type InterfaceInfo,
   type Media,
   midpoint,
+  nameDetails,
   offsetLine,
   type Point,
   selfLoop,
@@ -46,6 +47,9 @@ export type LinkEdgeData = {
   /** その端がブリッジか(IF 名を出さない) */
   aBridge?: boolean;
   bBridge?: boolean;
+  /** その端の IF を束ねている bond(IF 名の下に添える。フェーズ4-3 Q2) */
+  aBond?: string;
+  bBond?: string;
 };
 
 export type LinkEdgeType = Edge<LinkEdgeData, "link">;
@@ -62,8 +66,8 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     showIp: view.showIp,
     showVlan: view.showVlan,
   };
-  const aLabel = data.aBridge ? undefined : ifLabel(data.aName, data.aInfo, options);
-  const bLabel = data.bBridge ? undefined : ifLabel(data.bName, data.bInfo, options);
+  const aLabel = data.aBridge ? undefined : ifLabel(data.aName, data.aInfo, options, data.aBond);
+  const bLabel = data.bBridge ? undefined : ifLabel(data.bName, data.bInfo, options, data.bBond);
   const aLines = aLabel ? ifLabelLines(aLabel) : [];
   const bLines = bLabel ? ifLabelLines(bLabel) : [];
 
@@ -83,10 +87,18 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     // デバイス名はノードの幅で切れて表示される(Canvas.css)ので、それより広くはならない
     const nameWidth = ({ data }: { data: CanvasNode["data"] }) =>
       "label" in data ? Math.min(estimateNameWidth(data.label), DEVICE_NODE_WIDTH) : undefined;
-    ends = endLabelPositions(line.a, line.b, aLines, bLines, slot, {
-      a: nameWidth(s),
-      b: nameWidth(t),
-    });
+    // ホストの名前の下の行(bond などの IP)も避ける
+    const details = ({ data }: { data: CanvasNode["data"] }) =>
+      view.showIp && "ipLines" in data ? nameDetails(data.ipLines ?? []) : undefined;
+    ends = endLabelPositions(
+      line.a,
+      line.b,
+      aLines,
+      bLines,
+      slot,
+      { a: nameWidth(s), b: nameWidth(t) },
+      { a: details(s), b: details(t) },
+    );
     center = midpoint(line.a, line.b);
   }
 

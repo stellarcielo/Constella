@@ -3,6 +3,7 @@
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
 import { findBridge, parseBridgeKey } from "./bridges";
 import { hostTree } from "./hosts";
+import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
 import { portTypesCompatible } from "./ports";
@@ -68,21 +69,69 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   }
 
-  // bond・ブリッジの members(SPEC 4.6): 無い IF と、2 つの bond・ブリッジに入っている IF
+  // bond・ブリッジの members と VLAN インターフェースの親(SPEC 4.6):
+  // 無い IF、2 つの bond・ブリッジに入っている IF、bond に入れた物理的でない IF、ブリッジに入れたブリッジ
   for (const device of t.devices.values()) {
     const flexible = isFlexibleDevice(device, catalog);
     const names = new Set([...device.interfaces.keys()].map(ifNameKey));
+    const exists = (name: string) =>
+      flexible || portsOf(device).has(ifNameKey(name)) || names.has(ifNameKey(name));
     /** members の IF → それを members に書いた最初の IF */
     const owners = new Map<string, string>();
     for (const [name, info] of device.interfaces) {
+      const target: IssueTarget = { kind: "interface", device: device.id, name };
+      if (info.type === "vlan") {
+        const { parent, vid } = vlanInterface(name, info);
+        if (parent === undefined) {
+          add(
+            "error",
+            "invalid-vlan-interface",
+            `${device.id} の VLAN インターフェース ${name} の親の IF が分かりません(名前を「親.VLAN ID」の形にするか、vlan-raw-device を書いてください)`,
+            target,
+          );
+        } else if (!exists(parent)) {
+          add(
+            "error",
+            "unknown-interface",
+            `${device.id} の VLAN インターフェース ${name} の親の IF「${parent}」はありません`,
+            target,
+          );
+        }
+        if (vid === undefined || vid < 1 || vid > 4094) {
+          add(
+            "error",
+            "invalid-vlan-interface",
+            vid === undefined
+              ? `${device.id} の VLAN インターフェース ${name} の VLAN ID が分かりません(名前を「親.VLAN ID」か「vlan10」の形にするか、vlan を書いてください)`
+              : `${device.id} の VLAN インターフェース ${name} の VLAN ID(${vid})は 1〜4094 の範囲にしてください`,
+            target,
+          );
+        }
+      }
       for (const member of new Set(info.members ?? [])) {
-        const target: IssueTarget = { kind: "interface", device: device.id, name };
         const key = ifNameKey(member);
-        if (!flexible && !portsOf(device).has(key) && !names.has(key)) {
+        if (!exists(member)) {
           add(
             "error",
             "unknown-interface",
             `${device.id} の ${name} の members にある IF「${member}」はありません`,
+            target,
+          );
+        }
+        // bond に束ねるのは物理的な IF だけ、ブリッジにつなぐのはブリッジ以外(SPEC 4.6)
+        const memberType = findLogicalIf(device, member)?.info.type;
+        if (info.type === "bond" && memberType !== undefined) {
+          add(
+            "error",
+            "invalid-member",
+            `${device.id} の bond ${name} の members に、物理的でない IF(${member})は入れられません`,
+            target,
+          );
+        } else if (info.type === "bridge" && memberType === "bridge") {
+          add(
+            "error",
+            "invalid-member",
+            `${device.id} のブリッジ ${name} の members に、ブリッジ(${member})は入れられません`,
             target,
           );
         }
@@ -190,6 +239,19 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
         const otherEnd = end === "a" ? "b" : "a";
         const reason = other && bridgeLinkProblem(ep, other);
         if (reason) add("error", "invalid-bridge-link", reason, { ...target, end: otherEnd });
+        continue;
+      }
+      // bond・VLAN インターフェースには線をつながない(束ねた線は、メンバーの物理的な IF ごとに書く)
+      const logicalType = findLogicalIf(device, ep.iface)?.info.type;
+      if (logicalType === "bond" || logicalType === "vlan") {
+        add(
+          "error",
+          "invalid-logical-link",
+          logicalType === "bond"
+            ? `${endpointToString(ep)} は bond なので、リンクはつなげません(束ねている物理的な IF につないでください)`
+            : `${endpointToString(ep)} は VLAN インターフェースなので、リンクはつなげません`,
+          target,
+        );
         continue;
       }
 

@@ -6,7 +6,6 @@ import {
   bridgeLinks,
   bridgesOf,
   changeHost,
-  checkBridgeName,
   endpointNodeId,
   findBridge,
   hostChangeImpact,
@@ -16,6 +15,7 @@ import {
   renameBridge,
   resolveBridgeKey,
 } from "./bridges";
+import { checkLogicalIfName as checkBridgeName } from "./logicalIfs";
 import { parseTopology } from "./parse";
 import { testCatalog } from "./testFixtures";
 import type { Topology } from "./types";

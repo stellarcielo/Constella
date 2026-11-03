@@ -5,13 +5,13 @@ import {
   bridgeKey,
   bridgeLinks,
   bridgeMemberCandidates,
-  checkBridgeName,
+  checkLogicalIfName,
   type Device,
   type Endpoint,
   ifNameKey,
   type InterfaceChanges,
   interfaceInfo,
-  normalizeIfName,
+  memberOwner,
   renameBridge,
   updateInterface,
   vlanText,
@@ -58,7 +58,7 @@ export function BridgeInspector({ host, bridge }: { host: Device; bridge: string
     edit((t) => renameBridge(t, host.id, bridge, name));
     topologyStore
       .getState()
-      .setSelection({ devices: [bridgeKey(host.id, normalizeIfName(name))], links: [] });
+      .setSelection({ devices: [bridgeKey(host.id, name.trim())], links: [] });
   };
 
   return (
@@ -78,23 +78,30 @@ export function BridgeInspector({ host, bridge }: { host: Device; bridge: string
             label="ブリッジの名前"
             monospace
             value={bridge}
-            validate={(v) => checkBridgeName(host, v, catalog, bridge)}
+            validate={(v) => checkLogicalIfName(host, v, catalog, bridge)}
             onCommit={rename}
           />
         </Field>
         <Field label="members">
           {choices.length > 0 ? (
             <div className="member-list">
-              {choices.map((name) => (
-                <label key={name} className="member-item mono">
-                  <input
-                    type="checkbox"
-                    checked={has(members, name)}
-                    onChange={(e) => toggle(name, e.target.checked)}
-                  />
-                  {show(name)}
-                </label>
-              ))}
+              {choices.map((name) => {
+                const checked = has(members, name);
+                // ほかの bond・ブリッジに入っている IF は選べない(外すことはできる。フェーズ4-3)
+                const owner = memberOwner(host, name, bridge);
+                return (
+                  <label key={name} className="member-item mono">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!checked && owner !== undefined}
+                      onChange={(e) => toggle(name, e.target.checked)}
+                    />
+                    {show(name)}
+                    {owner !== undefined && <span className="muted">({show(owner)})</span>}
+                  </label>
+                );
+              })}
             </div>
           ) : (
             <span className="muted">つなげる IF がありません</span>

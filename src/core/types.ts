@@ -239,7 +239,10 @@ export type IssueCode =
   | "host-cycle"
   | "duplicate-vmid"
   | "member-in-use"
-  | "invalid-bridge-link";
+  | "invalid-bridge-link"
+  | "invalid-member"
+  | "invalid-logical-link"
+  | "invalid-vlan-interface";
 
 export type IssueTarget =
   | { kind: "document" }

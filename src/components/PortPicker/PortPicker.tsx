@@ -44,8 +44,14 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
 
   const device = topology.devices.get(deviceId);
   const flexible = device ? isFlexibleDevice(device, catalog) : false;
+  // bond・VLAN インターフェースには線をつながないので出さない(SPEC 4.6)
   const entries = useMemo(
-    () => (device ? listDevicePorts(device, topology, catalog, undefined, peer?.endpoint) : []),
+    () =>
+      device
+        ? listDevicePorts(device, topology, catalog, undefined, peer?.endpoint).filter(
+            (e) => !e.logical,
+          )
+        : [],
     [device, topology, catalog, peer],
   );
 

@@ -125,6 +125,14 @@
   line-height: 12px;
 }
 
+/* ホストの名前の下の行(bond などの IP。フェーズ4-3 Q1)。1 行の高さは core の NAME_DETAIL_LINE と合わせる */
+.device-node-ips {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.device-node-ip,
 .bridge-node-ip {
   padding: 0 4px;
   border-radius: 3px;

@@ -7,11 +7,15 @@ import { resolveGuest } from "./hosts";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import { expandIfName } from "./ifname";
+import { bondOf, bridgeIpLines, hostIpLines, uplinkLabelLines } from "./logicalIfs";
 import {
   endLabelPositions,
   estimateLabelSize,
   estimateNameWidth,
   midpoint,
+  NAME_DETAIL_LINE,
+  type NameDetails,
+  nameDetails,
   offsetLine,
   parallelSlots,
   type Point,
@@ -159,18 +163,20 @@ function bridgeCenter(p: Position): Point {
   return { x: p.x + NODE_WIDTH / 2, y: p.y + BRIDGE_BOX.height / 2 };
 }
 
-/** ブリッジの箱。名前を中に、VLAN aware の印を右上に、IP を下に描く(Canvas.css の .bridge-node と合わせる) */
+/**
+ * ブリッジの箱。名前を中に、VLAN aware の印を右上に、IP(とブリッジの上の VLAN インターフェースの IP)を
+ * 下に描く(Canvas.css の .bridge-node と合わせる)
+ */
 function bridgeSvg(
   name: string,
   info: InterfaceInfo | undefined,
   pos: Position,
-  showIp: boolean,
+  ips: readonly string[],
   bounds: Bounds,
 ): string {
   const x = pos.x + (NODE_WIDTH - BRIDGE_BOX.width) / 2;
   const center = bridgeCenter(pos);
   bounds.add(x, pos.y, x + BRIDGE_BOX.width, pos.y + BRIDGE_BOX.height);
-  const ips = showIp ? (info?.ip ?? []) : [];
   return (
     `<g>` +
     `<rect x="${n(x)}" y="${n(pos.y)}" width="${BRIDGE_BOX.width}" height="${BRIDGE_BOX.height}" rx="6" ` +
@@ -356,14 +362,27 @@ export function renderSvg(
     const device = t.devices.get(id);
     return device ? estimateNameWidth(resolveLabel(device)) : undefined;
   };
+  // ホストの名前の下に出す行(bond などの IP。フェーズ4-3 Q1)。リンクのラベルはこの行も避ける
+  const ipLinesOf = (id: string) => {
+    const device = t.devices.get(id);
+    return labelOptions.showIp && device ? hostIpLines(device) : [];
+  };
+  const detailsOf = (id: string): NameDetails | undefined => nameDetails(ipLinesOf(id));
   for (const { link, a, b, na, nb } of drawable) {
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     const ca = centerOf(na);
     const cb = centerOf(nb);
-    const endLabel = (ep: typeof a, node: string) =>
-      node === ep.device
-        ? ifLabel(ep.iface, interfaceInfo(t.devices.get(ep.device), ep.iface), labelOptions)
-        : undefined;
+    // 束ねている bond があれば、IF 名の下に添える(フェーズ4-3 Q2)
+    const endLabel = (ep: typeof a, node: string) => {
+      if (node !== ep.device) return undefined;
+      const device = t.devices.get(ep.device);
+      return ifLabel(
+        ep.iface,
+        interfaceInfo(device, ep.iface),
+        labelOptions,
+        bondOf(device, ep.iface),
+      );
+    };
     const aLabel = endLabel(a, na);
     const bLabel = endLabel(b, nb);
     const aLines = aLabel ? ifLabelLines(aLabel) : [];
@@ -383,10 +402,15 @@ export function renderSvg(
     } else {
       const line = offsetLine(ca, cb, slotOffset(slot), na > nb);
       path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
-      ends = endLabelPositions(line.a, line.b, aLines, bLines, slot, {
-        a: nameWidthOf(na),
-        b: nameWidthOf(nb),
-      });
+      ends = endLabelPositions(
+        line.a,
+        line.b,
+        aLines,
+        bLines,
+        slot,
+        { a: nameWidthOf(na), b: nameWidthOf(nb) },
+        { a: detailsOf(na), b: detailsOf(nb) },
+      );
       center = midpoint(line.a, line.b);
     }
     lines.push(
@@ -400,19 +424,29 @@ export function renderSvg(
     }
   }
 
-  // ブリッジとホストの間の線(点線)。ホスト側に、ブリッジの members を出す(SPEC 7.3)
+  // ブリッジとホストの間の線(点線)。ホスト側に、ブリッジの members(bond なら束ねた IF とモードも)を出す
+  // (SPEC 7.3・フェーズ4-3 Q2)
+  const show = (name: string) => (labelOptions.longIfNames ? expandIfName(name) : name);
   for (const { key, host, bridge } of allBridges(t)) {
-    const members = t.devices.get(host)?.interfaces.get(bridge)?.members ?? [];
-    if (!positions.has(key) || !positions.has(host) || members.length === 0) continue;
+    const device = t.devices.get(host);
+    const text = device ? uplinkLabelLines(device, bridge, show) : [];
+    if (!positions.has(key) || !positions.has(host) || text.length === 0) continue;
     const from = bridgeCenter(positions.get(key) as Position);
     const to = iconCenter(positions.get(host) as Position);
     lines.push(
       `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
     );
     if (labelOptions.showIfName) {
-      const text = members.map((m) => (labelOptions.longIfNames ? expandIfName(m) : m)).join(", ");
-      const ends = endLabelPositions(from, to, [], [text], undefined, { b: nameWidthOf(host) });
-      linkLabels.push(ifLabelSvg(ends.b, { name: text, details: [] }, bounds));
+      const ends = endLabelPositions(
+        from,
+        to,
+        [],
+        text,
+        undefined,
+        { b: nameWidthOf(host) },
+        { b: detailsOf(host) },
+      );
+      linkLabels.push(ifLabelSvg(ends.b, { name: text[0], details: text.slice(1) }, bounds));
     }
   }
 
@@ -422,8 +456,10 @@ export function renderSvg(
   for (const [id, pos] of positions) {
     const bridge = parseBridgeKey(id);
     if (bridge) {
-      const info = t.devices.get(bridge.host)?.interfaces.get(bridge.bridge);
-      nodes.push(bridgeSvg(bridge.bridge, info, pos, labelOptions.showIp, bounds));
+      const host = t.devices.get(bridge.host);
+      const info = host?.interfaces.get(bridge.bridge);
+      const ips = labelOptions.showIp && host ? bridgeIpLines(host, bridge.bridge) : [];
+      nodes.push(bridgeSvg(bridge.bridge, info, pos, ips, bounds));
       continue;
     }
     const device = t.devices.get(id);
@@ -451,6 +487,21 @@ export function renderSvg(
           { font: FONT, fontSize: NAME_FONT, color: THEME.text, border: false },
           bounds,
         ) +
+        // 名前の下に、ホストの bond などの IP(フェーズ4-3 Q1)
+        ipLinesOf(id)
+          .map((text, i) =>
+            label(
+              {
+                x: nameCenter.x,
+                y: pos.y + NAME_TOP + NAME_HEIGHT + 2 + NAME_DETAIL_LINE / 2 + i * NAME_DETAIL_LINE,
+              },
+              text,
+              { width: estimateLabelSize(text).width, height: NAME_DETAIL_LINE },
+              { font: MONO_FONT, fontSize: 10, color: THEME.textMuted, border: false },
+              bounds,
+            ),
+          )
+          .join("") +
         `</g>`,
     );
   }

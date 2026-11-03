@@ -4,6 +4,7 @@ import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import type { GuestKind, Role, Severity } from "../../core";
 import { RoleIcon } from "../../icons/RoleIcon";
 import { GUEST_LABELS } from "../../icons/roles";
+import { useUi } from "../../store";
 
 export type DeviceNodeData = {
   label: string;
@@ -15,6 +16,8 @@ export type DeviceNodeData = {
   /** ツールチップに出すホストと VMID */
   host?: string;
   vmid?: number;
+  /** 名前の下に出す行(ホストの bond などの IP。「IP」を表示するときだけ。フェーズ4-3 Q1) */
+  ipLines?: string[];
   /** そのデバイスに関する問題のうち、いちばん重いもの */
   problem?: Severity;
 };
@@ -40,6 +43,7 @@ function tooltip(id: string, data: DeviceNodeData): string {
 }
 
 export function DeviceNode({ id, data, selected }: NodeProps<DeviceNodeType>) {
+  const showIp = useUi((s) => s.view.showIp);
   const classes = [
     "device-node",
     selected && "selected",
@@ -52,6 +56,15 @@ export function DeviceNode({ id, data, selected }: NodeProps<DeviceNodeType>) {
         {data.guest && <span className="device-guest-badge">{GUEST_BADGES[data.guest]}</span>}
       </div>
       <div className="device-node-label">{data.label}</div>
+      {showIp && data.ipLines && data.ipLines.length > 0 && (
+        <div className="device-node-ips">
+          {data.ipLines.map((line) => (
+            <div key={line} className="device-node-ip">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
       {/* React Flow は線を描くのにハンドルが必要。線は中心同士を結ぶので見えないようにしておく */}
       <Handle
         type="target"

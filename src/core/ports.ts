@@ -1,6 +1,7 @@
 // ポートの使用状況と、ポート選択に出す一覧(SPEC 7.2)。
 
 import { bridgeLinks, findBridge } from "./bridges";
+import { findLogicalIf } from "./logicalIfs";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { findModel } from "./topology";
 import type { Device, Endpoint, ModelCatalog, PortType, Topology } from "./types";
@@ -63,12 +64,14 @@ export interface PortEntry {
   use?: PortUse;
   /** ブリッジ(SPEC 4.6)なら、つながっているリンクの本数 */
   bridge?: { links: number };
+  /** bond・VLAN インターフェース(線をつながないので、ポート選択には出さない) */
+  logical?: "bond" | "vlan";
 }
 
 /**
  * デバイスのポート一覧。モデルのポートを定義順に並べ、
  * その後ろにモデルに無いが使われている IF(interfaces とリンクに書かれたもの)を出てきた順に並べる。
- * ブリッジは使用中にせず、つながっているリンクの本数を添える。
+ * ブリッジは使用中にせず、つながっているリンクの本数を添える。bond・VLAN インターフェースには印を付ける。
  * reserved は作りかけの接続で押さえているポート(自分自身へつなぐとき用)。
  */
 export function listDevicePorts(
@@ -115,6 +118,11 @@ export function listDevicePorts(
       });
       continue;
     }
+    const logical = findLogicalIf(device, name)?.info.type;
+    if (logical === "bond" || logical === "vlan") {
+      entries.push({ name, defined: false, logical });
+      continue;
+    }
     const use = usageOf(key);
     entries.push(use ? { name, defined: false, use } : { name, defined: false });
   }
@@ -132,6 +140,20 @@ export function bridgeMemberCandidates(
 ): string[] {
   return listDevicePorts(device, t, catalog)
     .filter((entry) => !entry.bridge)
+    .map((entry) => entry.name);
+}
+
+/** bond の members にできる IF(物理的な IF だけ。SPEC 4.6) */
+export function bondMemberCandidates(device: Device, t: Topology, catalog: ModelCatalog): string[] {
+  return listDevicePorts(device, t, catalog)
+    .filter((entry) => !entry.bridge && !entry.logical)
+    .map((entry) => entry.name);
+}
+
+/** VLAN インターフェースの親にできる IF(物理的な IF・bond・ブリッジ。VLAN インターフェースは除く) */
+export function vlanParentCandidates(device: Device, t: Topology, catalog: ModelCatalog): string[] {
+  return listDevicePorts(device, t, catalog)
+    .filter((entry) => entry.logical !== "vlan")
     .map((entry) => entry.name);
 }
 

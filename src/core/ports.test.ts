@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { parseTopology } from "./parse";
 import {
+  bondMemberCandidates,
   bridgeMemberCandidates,
   buildPortUsage,
   canonicalIfName,
   firstFreePort,
   listDevicePorts,
   portTypesCompatible,
+  vlanParentCandidates,
 } from "./ports";
 import { specExample, testCatalog } from "./testFixtures";
 import type { Topology } from "./types";
@@ -152,6 +154,41 @@ links:
       "eno3",
       "eno4",
       "bond0",
+    ]);
+  });
+});
+
+describe("bond・VLAN インターフェース(フェーズ4-3)", () => {
+  const text = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ] }
+      vmbr0: { type: bridge, members: [ bond0 ] }
+      vmbr0.10: { type: vlan }
+`;
+
+  it("bond・VLAN インターフェースに印を付ける(ポート選択に出さない)", () => {
+    const t = load(text);
+    const entries = listDevicePorts(device(t, "pve1"), t, testCatalog);
+    expect(entries.filter((e) => e.logical).map((e) => [e.name, e.logical])).toEqual([
+      ["bond0", "bond"],
+      ["vmbr0.10", "vlan"],
+    ]);
+  });
+
+  it("bond の members の候補は物理的な IF だけ、VLAN の親の候補は VLAN インターフェース以外", () => {
+    const t = load(text);
+    const pve1 = device(t, "pve1");
+    expect(bondMemberCandidates(pve1, t, testCatalog)).toEqual(["eno1", "eno2", "eno3", "eno4"]);
+    expect(vlanParentCandidates(pve1, t, testCatalog)).toEqual([
+      "eno1",
+      "eno2",
+      "eno3",
+      "eno4",
+      "bond0",
+      "vmbr0",
     ]);
   });
 });
