@@ -352,3 +352,79 @@ devices:
     expect(issues[3].message).toContain("5000");
   });
 });
+
+describe("validateTopology: VLAN の通り道(SPEC 4.6・フェーズ4-4)", () => {
+  it("止まる場所ごとに 1 件の警告。止まる場所の IF を指し、使っている IF を書く", () => {
+    const { issues, text } = check(`constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces:
+      Gi0/1: { mode: trunk, vlans: "10,20" }
+      Gi0/2: { mode: trunk, vlans: "10,20" }
+      Gi0/3: { mode: access, vlan: 10 }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [ eno1, eno2 ] }
+      vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true, vlans: "2-100" }
+      vmbr1: { type: bridge, members: [ eno3 ] }
+  web01: { model: generic-vm, host: pve1, interfaces: { net0: { vlan: 30 } } }
+  db01: { model: generic-vm, host: pve1, interfaces: { net0: { mode: trunk, vlans: "30,40" } } }
+  mon01: { model: generic-vm, host: pve1, interfaces: { net0: { vlan: 200 } } }
+  dns01: { model: generic-vm, host: pve1, interfaces: { net0: { vlan: 10 } } }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+  - { a: pve1:eno2, b: sw1:Gi0/2 }
+  - { a: pve1:eno3, b: sw1:Gi0/3 }
+  - { a: web01:net0, b: pve1:vmbr0 }
+  - { a: db01:net0, b: pve1:vmbr0 }
+  - { a: mon01:net0, b: pve1:vmbr0 }
+  - { a: dns01:net0, b: pve1:vmbr1 }
+`);
+    expect(summary(issues)).toEqual([
+      ["warning", "vlan-not-allowed"],
+      ["warning", "vlan-not-allowed"],
+      ["warning", "vlan-not-allowed"],
+      ["warning", "vlan-not-allowed"],
+    ]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "sw1:Gi0/1(trunk 10,20)を VLAN 30,40 が通りません(使っている IF: web01:net0(VLAN 30)・db01:net0(VLAN 30,40))",
+      "sw1:Gi0/2(trunk 10,20)を VLAN 30,40 が通りません(使っている IF: web01:net0(VLAN 30)・db01:net0(VLAN 30,40))",
+      "ブリッジ pve1:vmbr0 の通す VLAN(2-100)に VLAN 200 が入っていません(使っている IF: mon01:net0)",
+      "sw1:Gi0/3 は access なので、タグの付いた VLAN 10 は通りません(使っている IF: dns01:net0)",
+    ]);
+    // YAML では、直す場所(止まる場所の IF)を指す
+    const at = (i: number) => {
+      const r = issues[i].range;
+      return r && text.slice(r.start, r.end);
+    };
+    expect([at(0), at(2), at(3)]).toEqual(["Gi0/1", "vmbr0", "Gi0/3"]);
+    expect(issues[2].target).toEqual({ kind: "interface", device: "pve1", name: "vmbr0" });
+  });
+
+  it("読めない vlans は警告にし、その場所は確かめない", () => {
+    const { issues } = check(`constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces:
+      Gi0/1: { mode: trunk, vlans: "10,x" }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true, vlans: "5000" }
+      vmbr0.30: { type: vlan }
+links:
+  - { a: pve1:eno1, b: sw1:Gi0/1 }
+`);
+    expect(summary(issues)).toEqual([
+      ["warning", "invalid-vlan-list"],
+      ["warning", "invalid-vlan-list"],
+    ]);
+    expect(issues[0].message).toBe(
+      "sw1 の Gi0/1 の vlans「10,x」の書き方が分かりません(例: 10,20,100-110)",
+    );
+    expect(issues[1].target).toEqual({ kind: "interface", device: "pve1", name: "vmbr0" });
+  });
+});

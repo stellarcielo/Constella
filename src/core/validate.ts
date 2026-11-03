@@ -8,6 +8,7 @@ import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
 import { portTypesCompatible } from "./ports";
 import { endpointToString, findModel, isFlexibleDevice } from "./topology";
+import { formatVlanIds, parseVlanList, type VlanBlock, vlanBlocks } from "./vlans";
 import type {
   Device,
   Endpoint,
@@ -287,6 +288,27 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   }
 
+  // VLAN の通り道(SPEC 4.6・フェーズ4-4)。読めない vlans は警告にし、その場所は確かめない
+  for (const device of t.devices.values()) {
+    for (const [name, info] of device.interfaces) {
+      if (info.vlans !== undefined && parseVlanList(info.vlans) === undefined) {
+        add(
+          "warning",
+          "invalid-vlan-list",
+          `${device.id} の ${name} の vlans「${info.vlans}」の書き方が分かりません(例: 10,20,100-110)`,
+          { kind: "interface", device: device.id, name },
+        );
+      }
+    }
+  }
+  for (const block of vlanBlocks(t)) {
+    add("warning", "vlan-not-allowed", vlanBlockMessage(block), {
+      kind: "interface",
+      device: block.at.device,
+      name: block.at.iface,
+    });
+  }
+
   for (const id of t.layout.keys()) {
     const bridge = parseBridgeKey(id);
     if (bridge && findBridge(t.devices.get(bridge.host), bridge.bridge) === undefined) {
@@ -325,6 +347,29 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
   });
 
   return issues;
+}
+
+/**
+ * VLAN が止まる場所の警告の文(SPEC 4.6)。止まる VLAN が 2 つ以上なら、使っている IF ごとの VLAN も書く
+ */
+function vlanBlockMessage(block: VlanBlock): string {
+  const vlans = formatVlanIds(block.vlans);
+  const each = block.vlans.length > 1;
+  const uses = block.uses
+    .map((use) => {
+      const source = endpointToString(use.source);
+      return each ? `${source}(VLAN ${formatVlanIds(use.vlans)})` : source;
+    })
+    .join("・");
+  const at = endpointToString(block.at);
+  switch (block.kind) {
+    case "bridge":
+      return `ブリッジ ${at} の通す VLAN(${block.allowed ?? ""})に VLAN ${vlans} が入っていません(使っている IF: ${uses})`;
+    case "trunk":
+      return `${at}(trunk ${block.allowed ?? ""})を VLAN ${vlans} が通りません(使っている IF: ${uses})`;
+    case "access":
+      return `${at} は access なので、タグの付いた VLAN ${vlans} は通りません(使っている IF: ${uses})`;
+  }
 }
 
 /** 問題の対象を YAML 上の位置に変換する。GUI で追加したばかりの要素など、見つからなければ undefined */

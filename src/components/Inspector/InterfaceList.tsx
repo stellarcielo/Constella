@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  checkVlanList,
   type Device,
   expandIfName,
   ifNameKey,
@@ -141,6 +142,10 @@ const vlanError = (value: string): string | undefined =>
     ? undefined
     : "1〜4094 の整数を入力してください";
 
+/** 空にすると許可 VLAN を消す */
+const vlansError = (value: string): string | undefined =>
+  value === "" ? undefined : checkVlanList(value);
+
 /** IF の詳細(SPEC 4.3)。すべて空にすると YAML から IF の設定ごと消える */
 function InterfaceEditor({
   device,
@@ -202,6 +207,7 @@ function InterfaceEditor({
             monospace
             placeholder="10,20,100-110"
             value={info?.vlans ?? ""}
+            validate={vlansError}
             onCommit={(v) => update({ vlans: v })}
           />
         </Field>

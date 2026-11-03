@@ -136,7 +136,7 @@ layout:
 - `ip`: 文字列の配列(例: `["192.0.2.1/30", "2001:db8::1/64"]`)
 - `mode`: `access` / `trunk` / `routed`
 - `vlan`: access の場合の VLAN ID。ゲストの IF では VLAN タグ(Proxmox VE の `tag`)、VLAN インターフェースではその VLAN ID
-- `vlans`: trunk の場合の許可 VLAN(例: `"10,20,100-110"`)。ゲストの IF では Proxmox VE の `trunks`、VLAN aware なブリッジでは通す VLAN(Proxmox VE の `bridge-vids`。省略時は `2-4094`)
+- `vlans`: trunk の場合の許可 VLAN(例: `"10,20,100-110"`)。`,`・`;`・空白で区切り、`10-20` の範囲と `all`(すべて)・`none`(なし)も書ける。ゲストの IF では Proxmox VE の `trunks`、VLAN aware なブリッジでは通す VLAN(Proxmox VE の `bridge-vids`。省略時は `2-4094`)
 
 論理的な IF(bond・ブリッジ・VLAN インターフェース。4.6)に書ける項目:
 - `type`: `bond` / `bridge` / `vlan`。省略時は物理的な IF(ポート)。`type` を書いた IF は、モデルに無い名前でも使える
@@ -324,13 +324,20 @@ sdn:
 | エラー | ブリッジに、そのホストの上で動くゲスト以外の IF がつながっている。bond・VLAN インターフェースにリンクがつながっている |
 | エラー | SDN: 参照先(ホスト・ゾーン)が無い。ゾーンのホストに `bridge` が無い。ゾーンに入っていないホストで VNet を使っている。VNet の `tag` が無い(simple 以外)。VNet ID がホストの IF 名と重なる |
 | 警告 | VLAN の通り道(下記)で、通らない VLAN がある |
+| 警告 | `vlans` の書き方が分からない(その場所は VLAN の通り道で確かめない) |
 | 警告 | クラスタのホストに、`networks` のサブネットに入る IP が無い |
 | 警告 | VNet ID が 8 文字より長い(Proxmox VE の制限) |
 
 VLAN の通り道(最初のスイッチまでを確かめる):
-- 対象は、ゲストの IF のタグ(`vlan`)とトランクの `vlans`、ホストの VLAN インターフェースの VLAN、vlan ゾーンの VNet の `tag`。
-- ブリッジが VLAN aware なら、ブリッジの `vlans`(省略時は `2-4094`)に入っているか。
-- ブリッジの `members` から bond をたどって物理的な IF へ進み、その IF につながるスイッチのポートで通るか。trunk なら `vlans`(省略時はすべて通す)に入っているか。access なら、タグの付いた VLAN は通らない。`mode` が書かれていなければ確かめない。
+- 対象は、ブリッジにつながったゲストの IF のタグ(`vlan`)とトランクの `vlans`、ホストの VLAN インターフェースの VLAN、vlan ゾーンの VNet の `tag`。トランクで `vlans` が無い(すべて通す)ゲストの IF は確かめない。
+- ブリッジが VLAN aware なら、ブリッジの `vlans`(省略時は `2-4094`)に入っているか。VLAN aware でなければ、確かめずに先へ進む(タグを付けたまま物理的な IF から出るため)。
+- ブリッジの `members` から bond をたどって物理的な IF へ進む。VLAN インターフェースは親から始める。
+  - `members` の VLAN インターフェース(`bond0.20` など)の先と、親が VLAN インターフェースの VLAN インターフェースは、タグが内側に包まれるので確かめない(外側の VLAN は、その VLAN インターフェース自身で確かめる)。
+- 物理的な IF にリンクでつながる相手のポートで通るか。機器のロールは問わない。リンクが無ければ確かめない。
+  - trunk(`mode: trunk`、または `mode` が無くて `vlans` がある)なら、`vlans`(省略時はすべて通す)に入っているか。
+  - access なら、タグの付いた VLAN は通らない。
+  - routed のときと、`mode`・`vlans` のどちらも無いときは確かめない。
+- 警告は止まる場所(ブリッジ・相手のポート)ごとに 1 件出し、通らない VLAN と、それを使っている IF を書く。止まった VLAN は、その先では確かめない。
 
 ---
 
@@ -575,7 +582,7 @@ ports:
   - [x] 4-1 ゲストとホストの枠(role hypervisor、`host`・`guest`・`vmid`、仮想化の組み込みモデル、ホストの枠、自動レイアウト、表示オプション「ゲスト」)
   - [x] 4-2 ブリッジ(`type: bridge`、ブリッジの箱、ゲストとのリンク、ブリッジの位置の保存)
   - [x] 4-3 bond・VLAN インターフェース(`type: bond` / `vlan`、ラベル)
-  - [ ] 4-4 VLAN の通り道の検証
+  - [x] 4-4 VLAN の通り道の検証
   - [ ] 4-5 クラスタ(`kind: cluster`、`networks`)
   - [ ] 4-6 SDN(ゾーン・VNet)
 - Proxmox VE からの取り込み(API または設定ファイル)

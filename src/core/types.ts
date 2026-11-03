@@ -242,7 +242,9 @@ export type IssueCode =
   | "invalid-bridge-link"
   | "invalid-member"
   | "invalid-logical-link"
-  | "invalid-vlan-interface";
+  | "invalid-vlan-interface"
+  | "invalid-vlan-list"
+  | "vlan-not-allowed";
 
 export type IssueTarget =
   | { kind: "document" }

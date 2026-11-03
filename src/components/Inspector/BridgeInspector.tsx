@@ -6,6 +6,7 @@ import {
   bridgeLinks,
   bridgeMemberCandidates,
   checkLogicalIfName,
+  checkVlanList,
   type Device,
   type Endpoint,
   ifNameKey,
@@ -124,6 +125,7 @@ export function BridgeInspector({ host, bridge }: { host: Device; bridge: string
               monospace
               placeholder="2-4094"
               value={info.vlans ?? ""}
+              validate={(v) => (v === "" ? undefined : checkVlanList(v))}
               onCommit={(v) => update({ vlans: v })}
             />
           </Field>
