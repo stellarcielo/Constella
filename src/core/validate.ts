@@ -5,6 +5,7 @@ import { findBridge, findHostBridge, parseBridgeKey } from "./bridges";
 import { clusterNetworks, clusterOfHosts, inClusterNetwork } from "./clusters";
 import { hostTree } from "./hosts";
 import { parseSubnet } from "./ip";
+import { labelKeyNorm, movableLabelKeys } from "./labelLayout";
 import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
@@ -377,6 +378,17 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       });
     }
   }
+  // 手で動かしたラベルの位置(SPEC 4.3)。消したリンクや自分自身へのリンクの端など、動かせるラベルの無いもの
+  if (t.labelLayout.size > 0) {
+    const movable = movableLabelKeys(t);
+    for (const key of t.labelLayout.keys()) {
+      if (movable.has(key)) continue;
+      add("warning", "unknown-label", `layout._labels の「${key}」に対応するラベルがありません`, {
+        kind: "label",
+        key,
+      });
+    }
+  }
 
   // グループ(フェーズ3-1 Q6): 存在しないメンバー(SPEC 4.5 の「存在しないデバイスへの参照」)と id の重複
   const groupIds = new Set<string>();
@@ -618,6 +630,12 @@ export function locateTarget(base: YamlBase, target: IssueTarget): SourceRange |
     }
     case "layout":
       return rangeOf(findPair(doc.get("layout", true), (k) => k === target.id)?.key);
+    case "label": {
+      const layout = doc.get("layout", true);
+      const labels = isMap(layout) ? layout.get("_labels", true) : undefined;
+      const key = labelKeyNorm(target.key);
+      return rangeOf(findPair(labels, (k) => labelKeyNorm(k) === key)?.key);
+    }
     case "group": {
       const seq = doc.get("groups", true);
       const item = isSeq(seq) ? (seq.items[target.index] as Node | undefined) : undefined;

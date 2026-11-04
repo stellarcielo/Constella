@@ -119,6 +119,25 @@ links:
     expect(summary(issues)).toEqual([["warning", "unknown-layout-device"]]);
   });
 
+  it("layout._labels に、動かせるラベルの無いキーがあれば警告(位置はそのキー)", () => {
+    const { issues, text } = check(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+layout:
+  _labels:
+    r1:GigabitEthernet0/0: { along: 60, side: 0 }
+    r1:Gi0/1: { along: 60, side: 0 }
+`);
+    // 1 つ目は書き方が違うだけでリンクの端。2 つ目はリンクの無い IF
+    expect(summary(issues)).toEqual([["warning", "unknown-label"]]);
+    expect(issues[0].message).toBe("layout._labels の「r1:Gi0/1」に対応するラベルがありません");
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("r1:Gi0/1");
+  });
+
   it("グループのメンバーに存在しないデバイスがあればエラー(位置はそのグループ)", () => {
     const { issues, text } = check(
       `${devices}groups:\n  - { id: rack1, kind: rack, members: [ rt1, ghost, ghost ] }\n`,

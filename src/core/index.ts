@@ -24,6 +24,7 @@ export { adoptIdentity } from "./identity";
 export * from "./fragment";
 export * from "./layout";
 export * from "./linkGeometry";
+export * from "./labelLayout";
 export * from "./icons";
 export * from "./render";
 export * from "./groupFrames";

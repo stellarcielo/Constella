@@ -10,7 +10,7 @@ import {
   type EdgeProps,
   useInternalNode,
 } from "@xyflow/react";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import {
   type InterfaceInfo,
   type Media,
@@ -82,18 +82,20 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
   );
 }
 
-/** at を中心にして置くラベル(IF 名ラベルは EndLabels が使う) */
+/** at を中心にして置くラベル(IF 名ラベルは EndLabels が使う。ドラッグなどの操作も渡せる) */
 export function Label({
   at,
   className,
   children,
+  ...props
 }: {
   at: Point;
   className: string;
   children: ReactNode;
-}) {
+} & Omit<HTMLAttributes<HTMLDivElement>, "className" | "style" | "children">) {
   return (
     <div
+      {...props}
       className={className}
       style={{ transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)` }}
     >

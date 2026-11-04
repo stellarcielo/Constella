@@ -201,16 +201,23 @@ export function removeBridges(t: Topology, keys: Iterable<string>): void {
 }
 
 /**
- * ブリッジの名前を変える。IF の順序は保ち、リンク・layout・ほかの IF の members と
+ * ブリッジの名前を変える。IF の順序は保ち、リンク・layout(箱とラベルの位置)・ほかの IF の members と
  * vlan-raw-device も書き換える
  */
 export function renameBridge(t: Topology, host: string, oldName: string, newName: string): void {
   const bridge = findBridge(t.devices.get(host), oldName);
   if (bridge === undefined) return;
   const name = renameLogicalIf(t, host, bridge, newName);
+  if (name === undefined || name === bridge) return;
   const from = bridgeKey(host, bridge);
-  if (name === undefined || name === bridge || !t.layout.has(from)) return;
-  t.layout = new Map([...t.layout].map(([k, p]) => [k === from ? bridgeKey(host, name) : k, p]));
+  const to = bridgeKey(host, name);
+  if (t.layout.has(from)) {
+    t.layout = new Map([...t.layout].map(([k, p]) => [k === from ? to : k, p]));
+  }
+  // ホスト側のラベルの位置(SPEC 4.3。キーは箱と同じ「ホスト:ブリッジ名」)
+  if (t.labelLayout.has(from)) {
+    t.labelLayout = new Map([...t.labelLayout].map(([k, o]) => [k === from ? to : k, o]));
+  }
 }
 
 /**

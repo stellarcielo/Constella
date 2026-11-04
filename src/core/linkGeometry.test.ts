@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  endLabelOffset,
   endLabelPositions,
   NAME_DETAIL_LINE,
   nameDetails,
@@ -420,5 +421,49 @@ describe("placeEndLabels: 同じデバイスに付く、別々の線のラベル
       { a: end("pve1/vmbr0", { x: -40, y: 300 }, []), b: end("pve1", host, bond) },
     ]);
     expect(overlaps(link.a, "eno3", uplink.b, bond)).toBe(false);
+  });
+
+  it("手で動かしたラベルは、線の端から線に沿った距離と、外を向いて右へのずれの位置に置く", () => {
+    const [placed] = placeEndLabels([
+      {
+        a: { ...end("r1", { x: 0, y: 0 }, "Gi0/1"), offset: { along: 80, side: 20 } },
+        b: { ...end("r2", { x: 400, y: 0 }, "Gi0/1"), offset: { along: 50, side: 10 } },
+      },
+    ]);
+    // r1 から右を向くと右は下、r2 から左を向くと右は上
+    expect(placed.a).toEqual({ x: 80, y: 20 });
+    expect(placed.b).toEqual({ x: 350, y: -10 });
+  });
+
+  it("ドロップした点から求めた位置に置くと、その点に戻る(並行リンクのずらした線でも)", () => {
+    const line = {
+      a: end("r1", { x: 0, y: 0 }, "Gi0/1"),
+      b: end("r2", { x: 300, y: 200 }, "Gi0/1"),
+      slot: { index: 1, count: 2 },
+    };
+    const at = { x: 90, y: 20 };
+    const offset = endLabelOffset(line, "a", at);
+    const [placed] = placeEndLabels([{ ...line, a: { ...line.a, offset } }]);
+    // 位置は整数に丸めて覚えるので、1px 以内
+    expect(Math.hypot(placed.a.x - at.x, placed.a.y - at.y)).toBeLessThan(1);
+  });
+
+  it("手で動かしたラベルはずらさず、ほかのラベルがそれを避ける", () => {
+    const c = { x: 0, y: 0 };
+    const down = { x: 0, y: 300 };
+    const before = endLabelPositions(c, down, "Gi0/1", "eth0").a;
+    // 右への線のラベルを、下への線のラベルのところに手で置く
+    const side = Math.round(before.y);
+    const [toDown, toRight] = placeEndLabels([
+      { a: end("c", c, "Gi0/1"), b: end("d", down, "eth0") },
+      {
+        a: { ...end("c", c, "Gi0/2"), offset: { along: 0, side } },
+        b: end("r", { x: 300, y: 0 }, "eth0"),
+      },
+    ]);
+    expect(toRight.a).toEqual({ x: 0, y: side });
+    expect(onLine(toDown.a, c, down)).toBe(true);
+    expect(toDown.a.y).toBeGreaterThan(before.y);
+    expect(overlaps(toDown.a, "Gi0/1", toRight.a, "Gi0/2")).toBe(false);
   });
 });

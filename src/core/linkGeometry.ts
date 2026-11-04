@@ -1,6 +1,8 @@
 // リンクの線とラベルの位置の計算(SPEC 7.3)。キャンバスと SVG の書き出しで共有する。
 // 座標はフロー座標で、点はデバイスのアイコンの中心。
 
+import type { LabelOffset } from "./types";
+
 export interface Point {
   x: number;
   y: number;
@@ -295,6 +297,8 @@ export interface LabelEnd {
   /** デバイス名の幅と、名前の下の行(endLabelPositions の nameWidths・details) */
   nameWidth?: number;
   details?: NameDetails;
+  /** 手で動かした位置(SPEC 7.3)。あればそこに置き、自動ではずらさない(ほかのラベルが避ける) */
+  offset?: LabelOffset;
 }
 
 /** placeEndLabels に渡す線 */
@@ -317,6 +321,8 @@ interface PlacedLabel {
   size: Size;
   /** 線の向きのラベルの半分の長さ */
   half: number;
+  /** 手で動かしたラベル(ずらさない) */
+  fixed: boolean;
   /** 同じ線の反対の端のラベル(ラベルの無い端でも、置くはずの位置を持つ。両端を作ってから結ぶ) */
   other?: PlacedLabel;
 }
@@ -326,6 +332,7 @@ interface PlacedLabel {
  * 線ごとに endLabelPositions で置いたあと、同じノードに付くラベル(別々の線のものも)が重なれば、
  * ノードに近いラベルはそのままにし、遠いほうをその線に沿って外へずらす。
  * 反対の端のラベルの手前までしかずらさないので、線が短いと重なりが残ることがある。
+ * 手で動かしたラベル(offset)は、その位置に置いてずらさず、ほかのラベルがそれを避ける。
  */
 export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Point }[] {
   const pairs = lines.map(({ a, b, slot = { index: 0, count: 1 }, reversed = false }) => {
@@ -343,19 +350,20 @@ export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Po
     const len = Math.hypot(b.center.x - a.center.x, b.center.y - a.center.y);
     const ux = len === 0 ? 0 : (b.center.x - a.center.x) / len;
     const uy = len === 0 ? 0 : (b.center.y - a.center.y) / len;
-    const placed = (end: LabelEnd, at: Point, dir: Point): PlacedLabel => {
+    const placed = (end: LabelEnd, from: Point, auto: Point, dir: Point): PlacedLabel => {
       const size = estimateLabelSize(end.text);
-      // endLabelPositions の along と同じ
       return {
         end,
-        at,
+        at: end.offset ? offsetPoint(from, dir, end.offset) : auto,
         dir,
         size,
+        // endLabelPositions の along と同じ
         half: (Math.abs(ux) * size.width + Math.abs(uy) * size.height) / 2,
+        fixed: end.offset !== undefined,
       };
     };
-    const pa = placed(a, ends.a, { x: ux, y: uy });
-    const pb = placed(b, ends.b, { x: -ux, y: -uy });
+    const pa = placed(a, line.a, ends.a, { x: ux, y: uy });
+    const pb = placed(b, line.b, ends.b, { x: -ux, y: -uy });
     pa.other = pb;
     pb.other = pa;
     return { pa, pb, len };
@@ -371,18 +379,41 @@ export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Po
       else byNode.set(label.end.node, [label]);
     }
   }
-  // ノードごとに、ノードに近いラベルから順に、先に置いたラベルと重なれば外へずらす
+  // ノードごとに、手で動かしたラベル、ノードに近いラベルの順に置き、先に置いたラベルと重なれば外へずらす
   for (const labels of byNode.values()) {
     const distance = ({ at, end }: PlacedLabel) =>
       Math.hypot(at.x - end.center.x, at.y - end.center.y);
-    labels.sort((p, q) => distance(p) - distance(q));
+    labels.sort((p, q) => Number(q.fixed) - Number(p.fixed) || distance(p) - distance(q));
     const done: PlacedLabel[] = [];
     for (const label of labels) {
-      if (done.some((other) => overlapping(label, other))) moveOut(label, done);
+      if (!label.fixed && done.some((other) => overlapping(label, other))) moveOut(label, done);
       done.push(label);
     }
   }
   return pairs.map(({ pa, pb }) => ({ a: pa.at, b: pb.at }));
+}
+
+/**
+ * ラベルを at に置いたときの、手で動かした位置(線の端から線に沿った距離と、横のずれ。整数に丸める)。
+ * line は placeEndLabels に渡すものと同じ
+ */
+export function endLabelOffset(line: LabeledLine, end: "a" | "b", at: Point): LabelOffset {
+  const { slot = { index: 0, count: 1 }, reversed = false } = line;
+  const ends = offsetLine(line.a.center, line.b.center, slotOffset(slot), reversed);
+  const [from, to] = end === "a" ? [ends.a, ends.b] : [ends.b, ends.a];
+  const len = Math.hypot(to.x - from.x, to.y - from.y);
+  if (len === 0) return { along: 0, side: 0 };
+  const ux = (to.x - from.x) / len;
+  const uy = (to.y - from.y) / len;
+  const dx = at.x - from.x;
+  const dy = at.y - from.y;
+  // 横のずれは、線に沿って外を向いたときの右(画面の座標で (-uy, ux) の向き)がプラス
+  return { along: Math.round(dx * ux + dy * uy), side: Math.round(dy * ux - dx * uy) };
+}
+
+/** 線の端 from から、向き dir に along、その右に side 進んだ点(endLabelOffset の逆) */
+function offsetPoint(from: Point, dir: Point, { along, side }: LabelOffset): Point {
+  return { x: from.x + dir.x * along - dir.y * side, y: from.y + dir.y * along + dir.x * side };
 }
 
 function hasText(text: string | readonly string[]): boolean {

@@ -364,6 +364,25 @@ layout:
     expect(apart).toBe(true);
   });
 
+  it("手で動かした IF 名ラベルは、その位置に描く(SPEC 7.3)", () => {
+    const t = load(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/1, b: r2:Gi0/2 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  _labels:
+    r1:Gi0/1: { along: 100, side: 30 }
+`);
+    // r1 のアイコンの中心(48, 26)から右へ 100、下へ 30 が中心。ラベルの大きさは 39 × 15
+    expect(renderSvg(t, testCatalog).svg).toContain(
+      '<rect x="128.5" y="48.5" width="39" height="15" rx="3"',
+    );
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

@@ -7,6 +7,7 @@ import {
   type Mode,
   topologyStore,
   uiStore,
+  useTopology,
   useUi,
   VIEW_LAYERS,
 } from "../../store";
@@ -31,6 +32,7 @@ const MODES: { mode: Mode; label: string; title: string }[] = [
 export function Toolbar() {
   const current = useUi((s) => s.mode);
   const view = useUi((s) => s.view);
+  const labelsMoved = useTopology((s) => s.topology.labelLayout.size > 0);
   return (
     <header className="toolbar">
       <span className="toolbar-title">Constella</span>
@@ -68,6 +70,15 @@ export function Toolbar() {
           }
         >
           自動整列
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          title="手で動かした IF 名ラベルを、すべて自動の位置に戻す(⌘Z で戻せます)"
+          disabled={!labelsMoved}
+          onClick={() => topologyStore.getState().resetLabels()}
+        >
+          ラベルを戻す
         </button>
       </div>
       <span className="toolbar-spacer" />

@@ -18,10 +18,13 @@ import {
   checkDeviceId,
   computeLayout,
   createEmptyTopology,
+  dropRemovedLabels,
   type Endpoint,
   ifNameKey,
   type Issue,
+  type LabelOffset,
   type ModelCatalog,
+  movableLabelKeys,
   moveDevices,
   parseBridgeKey,
   parseTopology,
@@ -32,10 +35,12 @@ import {
   removeBridges,
   removeDevices,
   removeLinks,
+  resetLabels,
   resolveBridgeKey,
   renameDevice,
   SCHEMA_COMMENT,
   serializeTopology,
+  setLabelOffset,
   type Topology,
   validateTopology,
   type YamlBase,
@@ -134,6 +139,10 @@ export interface TopologyState {
   /** ホストにブリッジを足してホストの下に置き、選ぶ。足したブリッジの箱の ID を返す(フェーズ4-2 Q1) */
   addBridge(host: string): string | undefined;
   moveDevices(positions: Iterable<[string, Position]>, options?: EditOptions): void;
+  /** 手で動かしたラベルの位置を書く(ドロップしたときに 1 回呼ぶ。キーは labelKey。SPEC 7.3) */
+  moveLabel(key: string, offset: LabelOffset): void;
+  /** ラベルを自動の位置に戻す(keys を省けばすべて) */
+  resetLabels(keys?: string[]): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
   /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
@@ -144,7 +153,10 @@ export interface TopologyState {
   setSelection(selection: Selection): void;
   /** モデルの一覧を差し替え、検証をやり直す(ユーザーモデルの読み込み・変更。フェーズ3-4) */
   setCatalog(catalog: ModelCatalog): void;
-  /** 全デバイスを並べ直して layout に書く(SPEC 9章の「自動整列」。1 ステップで取り消せる) */
+  /**
+   * 全デバイスを並べ直して layout に書き、手で動かしたラベルを自動の位置に戻す
+   * (SPEC 9章の「自動整列」。1 ステップで取り消せる)
+   */
   autoArrange(): Promise<void>;
 }
 
@@ -397,7 +409,12 @@ export function createTopologyStore(
           return;
         }
         const { topology, base, selection, savedText } = get();
-        const next = produce(topology, recipe);
+        // 編集でラベルが無くなった端(消したリンクやデバイスなど)の、手で動かした位置も消す
+        const movable = topology.labelLayout.size > 0 ? movableLabelKeys(topology) : undefined;
+        const next = produce(topology, (draft) => {
+          recipe(draft);
+          if (movable) dropRemovedLabels(draft, movable);
+        });
         if (next === topology) return;
         record(editOptions.coalesce);
         const written = serializeTopology(next, base);
@@ -448,15 +465,20 @@ export function createTopologyStore(
       },
 
       moveDevices(positions, moveOptions) {
-        const list = [...positions];
-        const { layout } = get().topology;
         // 位置が変わっていなければ編集にしない(クリックだけで未保存にならないように)
-        const changed = list.filter(([id, p]) => {
-          const cur = layout.get(id);
-          return !cur || cur.x !== Math.round(p.x) || cur.y !== Math.round(p.y);
-        });
+        const changed = changedPositions(get().topology.layout, positions);
         if (changed.length === 0) return;
         get().edit((t) => moveDevices(t, changed), moveOptions);
+      },
+
+      moveLabel(key, offset) {
+        const cur = get().topology.labelLayout.get(key);
+        if (cur?.along === Math.round(offset.along) && cur.side === Math.round(offset.side)) return;
+        get().edit((t) => setLabelOffset(t, key, offset));
+      },
+
+      resetLabels(keys) {
+        get().edit((t) => resetLabels(t, keys));
       },
 
       deleteDevices(ids) {
@@ -522,8 +544,13 @@ export function createTopologyStore(
       async autoArrange() {
         get().commitYamlDraft();
         const positions = await computeLayout(get().topology, catalog);
-        // 並べている間に消えたデバイスは飛ばす(moveDevices が無い ID を無視する)
-        get().moveDevices(positions);
+        // 並べている間に消えたデバイスは飛ばす(moveDevices が無い ID を無視する)。
+        // 並べ直すと手で動かしたラベルの位置が合わなくなるので、自動の位置に戻す(SPEC 9章)
+        const changed = changedPositions(get().topology.layout, positions);
+        get().edit((t) => {
+          moveDevices(t, changed);
+          resetLabels(t);
+        });
       },
     };
   });
@@ -600,6 +627,7 @@ function targetExists(issue: Issue, t: Topology): boolean {
     // layout の不正な値は、デバイスを消しても YAML に残る(保存処理は解釈できた座標しか消さない)
     case "document":
     case "layout":
+    case "label":
       return true;
     case "device":
       return t.devices.has(target.id);
@@ -615,6 +643,17 @@ function targetExists(issue: Issue, t: Topology): boolean {
     case "sdn":
       return t.sdn[target.section].has(target.id);
   }
+}
+
+/** 位置が変わったものだけを残す(ドラッグせずに離しただけで編集にしないため) */
+function changedPositions(
+  layout: ReadonlyMap<string, Position>,
+  positions: Iterable<[string, Position]>,
+): [string, Position][] {
+  return [...positions].filter(([id, p]) => {
+    const cur = layout.get(id);
+    return !cur || cur.x !== Math.round(p.x) || cur.y !== Math.round(p.y);
+  });
 }
 
 /** 消えた要素を選択から外す */

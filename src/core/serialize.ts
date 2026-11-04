@@ -15,8 +15,9 @@ import {
 } from "yaml";
 import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey } from "./ifname";
+import { labelKeyNorm } from "./labelLayout";
 import { parseTopology, type YamlBase } from "./parse";
-import { endpointToString } from "./topology";
+import { endpointToString, parseEndpoint } from "./topology";
 import type {
   Device,
   Extra,
@@ -159,6 +160,14 @@ class Writer {
     }
   }
 
+  /** ラベルの位置のキー(デバイスID:IF名)の、書き出し後のキー(デバイスが削除されていれば undefined) */
+  private labelKeyAfter(key: string): string | undefined {
+    const ep = parseEndpoint(key);
+    if (!ep || !this.idAfter.has(ep.device)) return key;
+    const device = this.idAfter.get(ep.device);
+    return device === undefined ? undefined : endpointToString({ ...ep, device });
+  }
+
   /** layout のキーの、書き出し後のキー(デバイスが削除されていれば undefined) */
   private layoutKeyAfter(key: string): string | undefined {
     const bridge = parseBridgeKey(key);
@@ -283,11 +292,11 @@ class Writer {
   }
 
   layout(root: YAMLMap): void {
-    const { layout, viewport } = this.after;
+    const { layout, viewport, labelLayout } = this.after;
     const found = root.get("layout", true) as Node | undefined;
     let map: YAMLMap;
     if (isMap(found)) map = found;
-    else if (layout.size === 0 && !viewport) return;
+    else if (layout.size === 0 && !viewport && labelLayout.size === 0) return;
     else map = this.setSection(root, "layout", new YAMLMap());
 
     // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)。
@@ -331,17 +340,67 @@ class Writer {
         ],
       ]);
     }
-    for (const [key, fields] of entries) {
-      const pair = map.items.find((p) => keyText(p.key) === key);
-      const value = pair?.value as Node | null | undefined;
-      if (pair && isMap(value)) {
-        this.syncFields(value, fields, {});
-      } else {
-        const flow = this.newMap(fields, {});
-        flow.flow = true;
-        if (pair) pair.value = flow;
-        else map.items.push(new Pair(this.doc.createNode(key), flow));
-      }
+    for (const [key, fields] of entries) this.setFlowEntry(map, key, fields);
+    this.labelLayout(map);
+  }
+
+  /** layout._labels(手で動かしたラベルの位置。SPEC 4.3)。項目が無くなれば _labels ごと消す */
+  private labelLayout(layout: YAMLMap): void {
+    const { labelLayout } = this.after;
+    const pair = layout.items.find((p) => keyText(p.key) === "_labels");
+    const found = pair?.value as Node | null | undefined;
+    // 読めない値は、ラベルを動かすまでそのまま残す
+    if (labelLayout.size === 0 && !isMap(found)) return;
+    let map: YAMLMap;
+    if (isMap(found)) map = found;
+    else {
+      map = new YAMLMap();
+      if (pair) pair.value = map;
+      else layout.items.push(new Pair(this.doc.createNode("_labels"), map));
+    }
+
+    // 削除の判定と、デバイスID の変更に合わせたキーの書き換えは、layout のデバイスと同じ。
+    // IF 名の書き方の違いは同じとみなし、今の表記にそろえる
+    const after = new Set([...labelLayout.keys()].map(labelKeyNorm));
+    const before = new Set([...this.before.labelLayout.keys()].map(labelKeyNorm));
+    map.items = map.items.filter((p) => {
+      const key = keyText(p.key);
+      const moved = this.labelKeyAfter(key);
+      return (
+        (moved !== undefined && after.has(labelKeyNorm(moved))) || !before.has(labelKeyNorm(key))
+      );
+    });
+    const byNorm = new Map([...labelLayout.keys()].map((key) => [labelKeyNorm(key), key]));
+    const done = new Set<string>();
+    for (const p of map.items) {
+      const key = keyText(p.key);
+      const moved = this.labelKeyAfter(key) ?? key;
+      const next = byNorm.get(labelKeyNorm(moved)) ?? moved;
+      if (next === key || done.has(next)) continue;
+      done.add(next);
+      if (isScalar(p.key)) p.key.value = next;
+      else p.key = this.doc.createNode(next);
+    }
+    for (const [key, offset] of labelLayout) {
+      this.setFlowEntry(map, key, [
+        ["along", offset.along],
+        ["side", offset.side],
+      ]);
+    }
+    if (map.items.length === 0) layout.items = layout.items.filter((p) => p !== pair);
+  }
+
+  /** マップの項目を、1 行のマップ({ x: 1, y: 2 })で書く。前からマップなら中の項目ごとに書き込む */
+  private setFlowEntry(map: YAMLMap, key: string, fields: Fields): void {
+    const pair = map.items.find((p) => keyText(p.key) === key);
+    const value = pair?.value as Node | null | undefined;
+    if (pair && isMap(value)) {
+      this.syncFields(value, fields, {});
+    } else {
+      const flow = this.newMap(fields, {});
+      flow.flow = true;
+      if (pair) pair.value = flow;
+      else map.items.push(new Pair(this.doc.createNode(key), flow));
     }
   }
 

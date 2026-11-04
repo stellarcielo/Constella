@@ -251,6 +251,16 @@
   color: var(--text-muted);
 }
 
+/* 選択モードでは、IF 名ラベルをドラッグで動かせる(SPEC 7.3) */
+.link-if-label.movable {
+  cursor: grab;
+  pointer-events: all;
+}
+
+.link-if-label.dragging {
+  cursor: grabbing;
+}
+
 /* IF 名の下の IP・VLAN(フェーズ3-2)。IF 名より目立たないよう薄い色にする */
 .link-if-detail {
   color: var(--text-muted);

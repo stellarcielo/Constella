@@ -5,7 +5,15 @@ import { bridgeKey, parseBridgeKey, resolveBridgeKey } from "./bridges";
 import { resolveGuest } from "./hosts";
 import { ifNameKey } from "./ifname";
 import { canonicalIfName } from "./ports";
-import { createLinkId, createUid, DEVICE_ID_PATTERN, findModel, resolveRole } from "./topology";
+import {
+  createLinkId,
+  createUid,
+  DEVICE_ID_PATTERN,
+  endpointToString,
+  findModel,
+  parseEndpoint,
+  resolveRole,
+} from "./topology";
 import type {
   Device,
   Endpoint,
@@ -85,7 +93,7 @@ export function moveDevices(t: Topology, positions: Iterable<[string, Position]>
 }
 
 /**
- * デバイスを削除する。接続していたリンク、layout(ブリッジの位置を含む)、グループのメンバー、
+ * デバイスを削除する。接続していたリンク、layout(ブリッジとラベルの位置を含む)、グループのメンバー、
  * SDN のゾーンの nodes からも取り除く。ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
  */
 export function removeDevices(t: Topology, ids: Iterable<string>): void {
@@ -98,6 +106,10 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
   for (const key of t.layout.keys()) {
     const bridge = parseBridgeKey(key);
     if (bridge && removed.has(bridge.host)) t.layout.delete(key);
+  }
+  for (const key of t.labelLayout.keys()) {
+    const ep = parseEndpoint(key);
+    if (ep && removed.has(ep.device)) t.labelLayout.delete(key);
   }
   t.links = t.links.filter(
     (l) => !(l.a && removed.has(l.a.device)) && !(l.b && removed.has(l.b.device)),
@@ -151,7 +163,7 @@ export function checkDeviceId(t: Topology, id: string, currentId?: string): stri
 }
 
 /**
- * デバイスID を変える。リンク・layout(ブリッジの位置のキーを含む)・グループ・ゲストの host・
+ * デバイスID を変える。リンク・layout(ブリッジの位置とラベルの位置のキーを含む)・グループ・ゲストの host・
  * SDN のゾーンの nodes の参照もすべて書き換える
  */
 export function renameDevice(t: Topology, oldId: string, newId: string): void {
@@ -168,6 +180,12 @@ export function renameDevice(t: Topology, oldId: string, newId: string): void {
       if (key === oldId) return [newId, pos];
       const bridge = parseBridgeKey(key);
       return [bridge?.host === oldId ? bridgeKey(newId, bridge.bridge) : key, pos];
+    }),
+  );
+  t.labelLayout = new Map(
+    [...t.labelLayout].map(([key, offset]) => {
+      const ep = parseEndpoint(key);
+      return [ep?.device === oldId ? endpointToString({ ...ep, device: newId }) : key, offset];
     }),
   );
   for (const link of t.links) {

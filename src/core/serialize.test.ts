@@ -4,6 +4,7 @@ import { parseTopology, type YamlBase } from "./parse";
 import { rebaseOnText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
 import { specExample, testCatalog } from "./testFixtures";
 import { addDevice, addLink, removeDevices, renameDevice, setDeviceRole } from "./edit";
+import { resetLabels, setLabelOffset } from "./labelLayout";
 import { createEmptyTopology, createLinkId } from "./topology";
 import type { SourceRange, Topology } from "./types";
 import { locateTarget } from "./validate";
@@ -550,6 +551,72 @@ layout:
     const out = serializeTopology(topology, base).text;
     expect(out).toContain("  pve1:vmbr0: { x: 5, y: 125 }\n");
     expect(out).not.toContain("VMBR0");
+  });
+});
+
+describe("serializeTopology: ラベルの位置(layout._labels。SPEC 4.3)", () => {
+  const text = `constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  _labels:
+    # 手で動かした
+    r1:Gi0/0: { along: 60, side: -8 }
+`;
+
+  it("読み込むと、IF 名を短い形にしたキーで覚える", () => {
+    const { topology } = load(text.replace("r1:Gi0/0: {", "r1:GigabitEthernet0/0: {"));
+    expect([...topology.labelLayout]).toEqual([["r1:Gi0/0", { along: 60, side: -8 }]]);
+  });
+
+  it("動かしたラベルの項目だけを書き換え・足し、コメントは残す", () => {
+    const { topology, base } = load(text);
+    setLabelOffset(topology, "r1:Gi0/0", { along: 72.4, side: 10 });
+    setLabelOffset(topology, "r2:Gi0/0", { along: 50, side: 0 });
+    expect(serializeTopology(topology, base).text).toContain(
+      "  _labels:\n    # 手で動かした\n    r1:Gi0/0: { along: 72, side: 10 }\n" +
+        "    r2:Gi0/0: { along: 50, side: 0 }\n",
+    );
+  });
+
+  it("layout が無くても書く", () => {
+    const { topology, base } = load("constella: 1\nlinks:\n  - { a: r1:e0, b: r2:e0 }\n");
+    setLabelOffset(topology, "r1:e0", { along: 40, side: 4 });
+    expect(serializeTopology(topology, base).text).toContain(
+      "layout:\n  _labels:\n    r1:e0: { along: 40, side: 4 }\n",
+    );
+  });
+
+  it("すべて戻すと _labels ごと消し、座標は残す", () => {
+    const { topology, base } = load(text);
+    resetLabels(topology);
+    const out = serializeTopology(topology, base).text;
+    expect(out).not.toContain("_labels");
+    expect(out).toContain("layout:\n  r1: { x: 0, y: 0 }\n  r2: { x: 300, y: 0 }\n");
+  });
+
+  it("デバイスの ID を変えるとキーを書き換え、デバイスを消すと項目も消す", () => {
+    const renamed = load(text);
+    renameDevice(renamed.topology, "r1", "edge1");
+    expect(serializeTopology(renamed.topology, renamed.base).text).toContain(
+      "    # 手で動かした\n    edge1:Gi0/0: { along: 60, side: -8 }\n",
+    );
+    const removed = load(text);
+    removeDevices(removed.topology, ["r1"]);
+    expect(serializeTopology(removed.topology, removed.base).text).not.toContain("_labels");
+  });
+
+  it("キーの IF 名の書き方が違っても同じラベルとみなし、今の表記にそろえる", () => {
+    const { topology, base } = load(text.replace("r1:Gi0/0: {", "r1:GigabitEthernet0/0: {"));
+    setLabelOffset(topology, "r1:Gi0/0", { along: 30, side: 2 });
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain("    r1:Gi0/0: { along: 30, side: 2 }\n");
+    expect(out).not.toContain("GigabitEthernet");
   });
 });
 

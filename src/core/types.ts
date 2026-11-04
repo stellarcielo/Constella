@@ -94,6 +94,11 @@ export interface Topology {
   links: Link[];
   /** キー = デバイスID */
   layout: Map<string, Position>;
+  /**
+   * 手で動かした IF 名ラベルの位置(layout._labels。SPEC 4.3)。
+   * キー = ラベルの付く端(デバイスID:IF名。IF 名は短い形)
+   */
+  labelLayout: Map<string, LabelOffset>;
   viewport?: Viewport;
   groups: Group[];
   /** SDN のゾーンと VNet(SPEC 4.6) */
@@ -170,6 +175,12 @@ export interface Viewport {
   x: number;
   y: number;
   zoom: number;
+}
+
+/** 手で動かしたラベルの位置。線の端から線に沿った距離と、線からの横のずれ(外を向いて右がプラス) */
+export interface LabelOffset {
+  along: number;
+  side: number;
 }
 
 export interface Group {
@@ -277,6 +288,7 @@ export type IssueCode =
   | "self-loop"
   | "port-type-mismatch"
   | "unknown-layout-device"
+  | "unknown-label"
   | "host-cycle"
   | "duplicate-vmid"
   | "member-in-use"
@@ -304,6 +316,8 @@ export type IssueTarget =
   | { kind: "interface"; device: string; name: string }
   | { kind: "link"; id: string; end?: "a" | "b" }
   | { kind: "layout"; id: string }
+  /** 手で動かしたラベルの位置(layout._labels のキー) */
+  | { kind: "label"; key: string }
   /** field があれば、YAML ではその項目の値を指す。network があれば、networks のその名前を指す */
   | { kind: "group"; index: number; field?: string; network?: string }
   /** SDN のゾーン・VNet。field があれば、YAML ではその項目の値を指す */

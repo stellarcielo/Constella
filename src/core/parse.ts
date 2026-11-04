@@ -13,8 +13,15 @@ import {
 } from "yaml";
 import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey, normalizeIfName } from "./ifname";
+import { labelKey } from "./labelLayout";
 import { yamlErrorMessage } from "./text";
-import { createLinkId, createUid, DEVICE_ID_PATTERN, parseEndpoint } from "./topology";
+import {
+  createLinkId,
+  createUid,
+  DEVICE_ID_PATTERN,
+  endpointToString,
+  parseEndpoint,
+} from "./topology";
 import {
   type Device,
   type Endpoint,
@@ -172,6 +179,7 @@ class Parser {
       devices: new Map(),
       links: [],
       layout: new Map(),
+      labelLayout: new Map(),
       groups: [],
       sdn: { zones: new Map(), vnets: new Map(), extra: {} },
       extra,
@@ -496,11 +504,40 @@ class Parser {
         if (v) t.viewport = { x: v.x, y: v.y, zoom: v.zoom };
         continue;
       }
+      if (key === "_labels") {
+        this.labelLayout(value, t);
+        continue;
+      }
       const pos = this.numbers(value, ["x", "y"], {
         target: { kind: "layout", id: key },
         path: `layout.${key}`,
       });
       if (pos) t.layout.set(key, { x: pos.x, y: pos.y });
+    }
+  }
+
+  /** 手で動かしたラベルの位置(layout._labels。キー = デバイスID:IF名。SPEC 4.3) */
+  private labelLayout(node: Node | null, t: Topology): void {
+    const ctx: Ctx = { target: { kind: "document" }, path: "layout._labels" };
+    if (!this.mapOrNull(node, ctx)) return;
+    for (const [key, value, keyNode] of this.entries(node, ctx)) {
+      const target: IssueTarget = { kind: "label", key };
+      const ep = parseEndpoint(key);
+      if (!ep) {
+        this.add(
+          "error",
+          "invalid-endpoint",
+          "layout._labels のキーは「デバイスID:IF名」の形で書いてください",
+          target,
+          keyNode,
+        );
+        continue;
+      }
+      const offset = this.numbers(value, ["along", "side"], {
+        target,
+        path: `layout._labels.${key}`,
+      });
+      if (offset) t.labelLayout.set(labelKey(ep.device, ep.iface), offset);
     }
   }
 
@@ -823,7 +860,7 @@ class Parser {
 /**
  * IF 名の表記をそろえる。モデルのあるデバイスはモデル側の表記、VNet(SPEC 4.6)は sdn の VNet ID、
  * それ以外は最初に書かれた表記(interfaces → links の順)に合わせる。
- * members・vlan-raw-device と、layout のブリッジのキー(pve1:vmbr0)の IF 名もそろえる。
+ * members・vlan-raw-device と、layout のブリッジのキー(pve1:vmbr0)・ラベルの位置のキーの IF 名もそろえる。
  */
 function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
   const spellings = new Map<string, Map<string, string>>();
@@ -874,6 +911,15 @@ function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
         const parsed = parseBridgeKey(key);
         const same = !parsed || !t.devices.has(parsed.host);
         return [same ? key : bridgeKey(parsed.host, canonical(parsed.host, parsed.bridge)), pos];
+      }),
+    );
+  }
+  if (t.labelLayout.size > 0) {
+    t.labelLayout = new Map(
+      [...t.labelLayout].map(([key, offset]) => {
+        const ep = parseEndpoint(key);
+        if (!ep || !t.devices.has(ep.device)) return [key, offset];
+        return [endpointToString({ ...ep, iface: canonical(ep.device, ep.iface) }), offset];
       }),
     );
   }

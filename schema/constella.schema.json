@@ -41,7 +41,15 @@
       "description": "機器の座標(キー = デバイスID。ブリッジと SDN の VNet は「ホストのデバイスID:ブリッジ名」)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
       "type": ["object", "null"],
       "properties": {
-        "_viewport": { "$ref": "#/definitions/viewport" }
+        "_viewport": { "$ref": "#/definitions/viewport" },
+        "_labels": {
+          "description": "手で動かした IF 名ラベルの位置(キー = ラベルの付く端の「デバイスID:IF名」。ブリッジとホストの間の線のホスト側のラベルは「ホスト:ブリッジ名」)。GUI でラベルを動かすと自動で書き込まれる",
+          "type": ["object", "null"],
+          "patternProperties": {
+            "^[A-Za-z0-9][A-Za-z0-9._-]*:\\S+$": { "$ref": "#/definitions/labelOffset" }
+          },
+          "additionalProperties": false
+        }
       },
       "patternProperties": {
         "^[A-Za-z0-9][A-Za-z0-9._-]*$": { "$ref": "#/definitions/position" },
@@ -245,6 +253,16 @@
         "x": { "type": "number" },
         "y": { "type": "number" },
         "zoom": { "type": "number" }
+      }
+    },
+    "labelOffset": {
+      "description": "ラベルの位置。線の端から線に沿った距離(along)と、線からの横のずれ(side。線に沿って外を向いたときの右がプラス)",
+      "type": "object",
+      "required": ["along", "side"],
+      "additionalProperties": false,
+      "properties": {
+        "along": { "type": "number" },
+        "side": { "type": "number" }
       }
     },
     "group": {

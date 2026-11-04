@@ -61,6 +61,7 @@ function semantic(t: Topology) {
     })),
     links: t.links.map((l) => ({ a: l.a, b: l.b, media: l.media, label: l.label, extra: l.extra })),
     layout: [...t.layout],
+    labelLayout: [...t.labelLayout],
     viewport: t.viewport,
     groups: t.groups,
     sdn: t.sdn,
@@ -153,6 +154,17 @@ layout:
 `,
     ],
     [
+      "ラベルの位置",
+      `constella: 1
+links:
+  - { a: r1:Gi0/1, b: r2:eth0 }
+layout:
+  _labels:
+    r1:Gi0/1: { along: 60, side: -8.5 }
+    pve1:vmbr0: { along: 40, side: 0 }
+`,
+    ],
+    [
       "ゲスト",
       "constella: 1\ndevices:\n  pve1: { role: hypervisor }\n  vm1: { host: pve1, guest: container, vmid: 999999999 }\n",
     ],
@@ -206,6 +218,11 @@ groups:
     ["数値でない座標", "constella: 1\nlayout:\n  r1: { x: 1, y: up }\n"],
     ["座標の未知のキー", "constella: 1\nlayout:\n  r1: { x: 1, y: 2, z: 3 }\n"],
     ["zoom の無い _viewport", "constella: 1\nlayout:\n  _viewport: { x: 0, y: 0 }\n"],
+    ["side の無いラベルの位置", "constella: 1\nlayout:\n  _labels:\n    r1:Gi0/1: { along: 60 }\n"],
+    [
+      ": の無いラベルの位置のキー",
+      "constella: 1\nlayout:\n  _labels:\n    r1: { along: 60, side: 0 }\n",
+    ],
     ["id の無いグループ", "constella: 1\ngroups:\n  - { kind: rack }\n"],
     ["不正な kind", "constella: 1\ngroups:\n  - { id: g1, kind: floor }\n"],
     ["不正な guest", "constella: 1\ndevices:\n  vm1: { guest: lxc }\n"],

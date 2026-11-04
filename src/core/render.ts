@@ -15,6 +15,7 @@ import { resolveGuest } from "./hosts";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import { expandIfName } from "./ifname";
+import { labelKey } from "./labelLayout";
 import { bondOf, bridgeIpLines, hostIpLines, uplinkLabelLines } from "./logicalIfs";
 import {
   estimateLabelSize,
@@ -35,7 +36,16 @@ import {
 import { linkMedia } from "./media";
 import { vnetTagText } from "./sdn";
 import { resolveLabel, resolveRole } from "./topology";
-import type { GroupKind, GuestKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
+import type {
+  Endpoint,
+  GroupKind,
+  GuestKind,
+  Media,
+  ModelCatalog,
+  Position,
+  Role,
+  Topology,
+} from "./types";
 
 export interface RenderOptions {
   /** layout に座標の無いデバイスの位置(キャンバスの自動配置。キー = デバイスID) */
@@ -375,15 +385,24 @@ export function renderSvg(
     return labelOptions.showIp && device ? hostIpLines(device, ipText(id)) : [];
   };
   const detailsOf = (id: string): NameDetails | undefined => nameDetails(ipLinesOf(id));
-  // 両端の IF 名ラベルは、線を全部集めてから置く(同じデバイスに付くラベルを重ねない。SPEC 7.3)
+  // 両端の IF 名ラベルは、線を全部集めてから置く(同じデバイスに付くラベルを重ねない。SPEC 7.3)。
+  // 手で動かしたラベルは、その位置に置く(key はラベルの位置のキー。ブリッジ側の端には無い)
   const labeled: { line: LabeledLine; a?: IfLabel; b?: IfLabel }[] = [];
-  const labelEnd = (node: string, center: Point, text: readonly string[]): LabelEnd => ({
+  const labelEnd = (
+    node: string,
+    center: Point,
+    text: readonly string[],
+    key?: string,
+  ): LabelEnd => ({
     node,
     center,
     text,
     nameWidth: nameWidthOf(node),
     details: detailsOf(node),
+    offset: key === undefined ? undefined : t.labelLayout.get(key),
   });
+  const linkEndKey = (ep: Endpoint, node: string) =>
+    node === ep.device ? labelKey(ep.device, ep.iface) : undefined;
   for (const { link, a, b, na, nb } of drawable) {
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     const ca = centerOf(na);
@@ -423,7 +442,12 @@ export function renderSvg(
       path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
       center = midpoint(line.a, line.b);
       labeled.push({
-        line: { a: labelEnd(na, ca, aLines), b: labelEnd(nb, cb, bLines), slot, reversed },
+        line: {
+          a: labelEnd(na, ca, aLines, linkEndKey(a, na)),
+          b: labelEnd(nb, cb, bLines, linkEndKey(b, nb)),
+          slot,
+          reversed,
+        },
         a: aLabel,
         b: bLabel,
       });
@@ -464,7 +488,7 @@ export function renderSvg(
     );
     if (labelOptions.showIfName) {
       labeled.push({
-        line: { a: labelEnd(key, from, []), b: labelEnd(host, to, text) },
+        line: { a: labelEnd(key, from, []), b: labelEnd(host, to, text, labelKey(host, bridge)) },
         b: { name: text[0], details: text.slice(1) },
       });
     }

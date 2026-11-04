@@ -527,6 +527,64 @@ links:
   });
 });
 
+describe("手で動かしたラベル(SPEC 7.3)", () => {
+  const text = `constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+  - { a: r1:Gi0/1, b: r2:Gi0/1 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+`;
+
+  it("動かした位置を YAML に書き、1 回で取り消せる。同じ位置なら編集にしない", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().moveLabel("r1:Gi0/0", { along: 80.4, side: 12 });
+    expect(store.getState().yamlText).toContain(
+      "  _labels:\n    r1:Gi0/0: { along: 80, side: 12 }\n",
+    );
+    expect(store.getState().dirty).toBe(true);
+    store.getState().moveLabel("r1:Gi0/0", { along: 80, side: 12 });
+    store.getState().undo();
+    expect(store.getState().yamlText).toBe(text);
+  });
+
+  it("キーを渡せばそのラベルだけ、省けばすべてを自動の位置に戻す", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().moveLabel("r1:Gi0/0", { along: 80, side: 12 });
+    store.getState().moveLabel("r2:Gi0/1", { along: 60, side: -4 });
+    store.getState().resetLabels(["r1:Gi0/0"]);
+    expect([...store.getState().topology.labelLayout.keys()]).toEqual(["r2:Gi0/1"]);
+    store.getState().resetLabels();
+    expect(store.getState().yamlText).toBe(text);
+  });
+
+  it("リンクを消すと、そのリンクのラベルの位置も消す", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().moveLabel("r1:Gi0/0", { along: 80, side: 12 });
+    store.getState().moveLabel("r2:Gi0/1", { along: 60, side: -4 });
+    const link = store.getState().topology.links.find((l) => l.a?.iface === "Gi0/0");
+    store.getState().deleteElements({ links: [link?.id ?? ""] });
+    expect([...store.getState().topology.labelLayout.keys()]).toEqual(["r2:Gi0/1"]);
+  });
+
+  it("自動整列すると、ラベルも自動の位置に戻す(1 回で取り消せる)", async () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().moveLabel("r1:Gi0/0", { along: 80, side: 12 });
+    await store.getState().autoArrange();
+    expect(store.getState().topology.labelLayout.size).toBe(0);
+    store.getState().undo();
+    expect([...store.getState().topology.labelLayout.keys()]).toEqual(["r1:Gi0/0"]);
+  });
+});
+
 describe("モデルの一覧の差し替え(フェーズ3-4)", () => {
   it("差し替えると検証をやり直し、新しいモデルの機器を置ける", () => {
     const store = setup();
