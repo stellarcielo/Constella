@@ -24,6 +24,11 @@ interface Box {
   bottom: number;
 }
 
+interface Size {
+  width: number;
+  height: number;
+}
+
 /** アイコン(52px 角)の箱 */
 const ICON_BOX: Box = { left: -30, top: -30, right: 30, bottom: 30 };
 /** アイコンの下のデバイス名の上端と下端。左右は名前の幅で決まる */
@@ -138,16 +143,11 @@ export function estimateLabelSize(text: string | readonly string[]): {
 }
 
 /**
- * 中心から向き (ux, uy) に進んだとき、大きさ size のラベル(中心がその点)が、
+ * origin(アイコンの中心から見た位置)から向き (ux, uy) に進んだとき、大きさ size のラベル(中心がその点)が、
  * アイコンとデバイス名のどちらとも LABEL_GAP 以上離れる最短の距離。
  * ラベルの中心が入ってはいけない範囲は、各範囲をラベルの半分の大きさと隙間の分だけ広げたもの
  */
-function clearDistance(
-  ux: number,
-  uy: number,
-  size: { width: number; height: number },
-  boxes: Box[],
-): number {
+function clearDistance(origin: Point, ux: number, uy: number, size: Size, boxes: Box[]): number {
   const grown = boxes.map((b) => ({
     left: b.left - size.width / 2 - LABEL_GAP,
     top: b.top - size.height / 2 - LABEL_GAP,
@@ -160,11 +160,13 @@ function clearDistance(
   for (let pass = 0; pass < 8; pass++) {
     let moved = false;
     for (const g of grown) {
-      const x = ux * d;
-      const y = uy * d;
+      const x = origin.x + ux * d;
+      const y = origin.y + uy * d;
       if (x > g.left + EPS && x < g.right - EPS && y > g.top + EPS && y < g.bottom - EPS) {
-        const tx = ux > 0 ? g.right / ux : ux < 0 ? g.left / ux : Infinity;
-        const ty = uy > 0 ? g.bottom / uy : uy < 0 ? g.top / uy : Infinity;
+        const tx =
+          ux > 0 ? (g.right - origin.x) / ux : ux < 0 ? (g.left - origin.x) / ux : Infinity;
+        const ty =
+          uy > 0 ? (g.bottom - origin.y) / uy : uy < 0 ? (g.top - origin.y) / uy : Infinity;
         d = Math.min(tx, ty);
         moved = true;
       }
@@ -179,7 +181,10 @@ function clearDistance(
  * デバイス名の幅(nameWidths)を渡すと、アイコンより幅の広い名前にも重ならないようにする。
  * デバイス名の下の行(details。ホストの IP など)を渡すと、その行にも重ならないようにする。
  * 並行リンクでラベルが隣の線のラベルと横に重なる向き(縦や斜めの線)なら、
- * 何本目かに応じて線に沿って段違いにずらす。
+ * 何本目かに応じて線に沿って段違いにずらす。線が短くて段違いでは収まらないときは、
+ * ずらした向きに合わせて線の両側(横向きの線なら上下)に分けて置く。そのときも、同じ側に並ぶラベルと
+ * 真ん中の線(本数が奇数のとき)のラベルは段違いにする。
+ * a・b は offsetLine でずらした線の端。reversed は offsetLine に渡したものと同じにする。
  * 機器同士が近くてラベルがぶつかるときは、線の長さに合わせて内側に寄せる。
  */
 export function endLabelPositions(
@@ -190,6 +195,7 @@ export function endLabelPositions(
   slot: Slot = { index: 0, count: 1 },
   nameWidths: { a?: number; b?: number } = {},
   details: { a?: NameDetails; b?: NameDetails } = {},
+  reversed = false,
 ): { a: Point; b: Point } {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -197,23 +203,69 @@ export function endLabelPositions(
   if (len === 0) return { a, b };
   const ux = dx / len;
   const uy = dy / len;
+  // ずらした向き(offsetLine と同じく、ID の小さいデバイス → 大きいデバイスを基準にする)
+  const nx = reversed ? uy : -uy;
+  const ny = reversed ? -ux : ux;
   const sizeA = estimateLabelSize(aText);
   const sizeB = estimateLabelSize(bText);
   // 線の向き(along)と、線に垂直な向き(across)のラベルの半分の長さ
-  const along = ({ width, height }: { width: number; height: number }) =>
+  const along = ({ width, height }: Size) =>
     (Math.abs(ux) * width) / 2 + (Math.abs(uy) * height) / 2;
-  const across = ({ width, height }: { width: number; height: number }) =>
+  const across = ({ width, height }: Size) =>
     (Math.abs(uy) * width) / 2 + (Math.abs(ux) * height) / 2;
   const halfA = along(sizeA);
   const halfB = along(sizeB);
+  const stepA = 2 * halfA + LABEL_GAP;
+  const stepB = 2 * halfB + LABEL_GAP;
+  const boxesA = avoidBoxes(nameWidths.a, details.a);
+  const boxesB = avoidBoxes(nameWidths.b, details.b);
+  // 真ん中の線から横に lateral 離れたところから、線に沿ってアイコンと名前を避ける距離
+  const clearA = (lateral: number) =>
+    clearDistance({ x: nx * lateral, y: ny * lateral }, ux, uy, sizeA, boxesA);
+  const clearB = (lateral: number) =>
+    clearDistance({ x: nx * lateral, y: ny * lateral }, -ux, -uy, sizeB, boxesB);
+  const nearA = clearA(0);
+  const nearB = clearB(0);
   const overlaps = slot.count > 1 && Math.max(across(sizeA), across(sizeB)) * 2 > PARALLEL_GAP;
+  // 段違いで収まらないなら、線の両側に分ける(いちばん外まで段違いにするリンクで確かめる)
+  const last = slot.count - 1;
+  const split = overlaps && nearA + last * stepA + halfA + nearB + last * stepB + halfB > len;
+  // 真ん中の線から何本目か(ずらした向きが正。2 本なら ±0.5、3 本なら -1, 0, 1)
+  const order = (index: number) => index - (slot.count - 1) / 2;
+  const own = order(slot.index);
+  const onLine = own * PARALLEL_GAP;
+
+  /** 線の両側に分けたときの、アイコンの中心から線に沿った距離と、真ん中の線からの横の位置 */
+  const column = (clear: (lateral: number) => number, size: Size, step: number) => {
+    // 隣の線のラベルと隙間があくところまで外へ出す(自分の線より内側にはしない)
+    const lateralOf = (q: number) =>
+      Math.sign(q) * Math.max(Math.abs(q) * PARALLEL_GAP, LABEL_GAP / 2 + across(size));
+    const orders = Array.from({ length: slot.count }, (_, i) => order(i));
+    // 同じ側のラベルは、いちばん遠くまで避けるものにそろえてから段違いにする
+    const base = (side: number) =>
+      Math.max(0, ...orders.filter((q) => Math.sign(q) === side).map((q) => clear(lateralOf(q))));
+    if (own === 0) {
+      // 真ん中の線のラベルは、両側のラベルより線の中ほどに置く
+      return {
+        distance: Math.max(clear(0), base(1), base(-1)) + Math.floor(slot.count / 2) * step,
+        lateral: 0,
+      };
+    }
+    return {
+      distance: base(Math.sign(own)) + (Math.ceil(Math.abs(own)) - 1) * step,
+      lateral: lateralOf(own),
+    };
+  };
+
   const stagger = overlaps ? slot.index : 0;
-  let da =
-    clearDistance(ux, uy, sizeA, avoidBoxes(nameWidths.a, details.a)) +
-    stagger * (2 * halfA + LABEL_GAP);
-  let db =
-    clearDistance(-ux, -uy, sizeB, avoidBoxes(nameWidths.b, details.b)) +
-    stagger * (2 * halfB + LABEL_GAP);
+  const endA = split
+    ? column(clearA, sizeA, stepA)
+    : { distance: nearA + stagger * stepA, lateral: onLine };
+  const endB = split
+    ? column(clearB, sizeB, stepB)
+    : { distance: nearB + stagger * stepB, lateral: onLine };
+  let da = endA.distance;
+  let db = endB.distance;
   // 2 つのラベルが重なる(または線より長い)なら、比率を保って内側に寄せる。
   // 重ならない条件: (da + halfA) + (db + halfB) <= len
   const room = len - 2 * (halfA + halfB);
@@ -222,9 +274,12 @@ export function endLabelPositions(
     da = halfA + (da - halfA) * scale;
     db = halfB + (db - halfB) * scale;
   }
+  // a・b は真ん中の線から onLine ずれているので、その分を引いて横に動かす
+  const shiftA = endA.lateral - onLine;
+  const shiftB = endB.lateral - onLine;
   return {
-    a: { x: a.x + ux * da, y: a.y + uy * da },
-    b: { x: b.x - ux * db, y: b.y - uy * db },
+    a: { x: a.x + ux * da + nx * shiftA, y: a.y + uy * da + ny * shiftA },
+    b: { x: b.x - ux * db + nx * shiftB, y: b.y - uy * db + ny * shiftB },
   };
 }
 

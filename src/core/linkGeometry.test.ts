@@ -90,6 +90,20 @@ describe("endLabelPositions(Q1)", () => {
 describe("endLabelPositions: 並行リンク", () => {
   const top = { x: 0, y: 0 };
   const bottom = { x: 0, y: 400 };
+  /** index 本目のリンクのラベルを、ずらした線の上で求める(キャンバスと書き出しと同じ呼び方) */
+  const parallel = (
+    index: number,
+    count: number,
+    aText: string | string[],
+    bText: string | string[],
+    from = top,
+    to = bottom,
+    reversed = false,
+  ) => {
+    const slot = { index, count };
+    const line = offsetLine(from, to, slotOffset(slot), reversed);
+    return { line, ...endLabelPositions(line.a, line.b, aText, bText, slot, {}, {}, reversed) };
+  };
 
   it("縦の線ではラベルが横に重なるので、何本目かに応じて段違いにする", () => {
     const first = endLabelPositions(top, bottom, "Gi0/1", "Gi0/1", { index: 0, count: 2 });
@@ -97,6 +111,63 @@ describe("endLabelPositions: 並行リンク", () => {
     const height = estimateLabelSize("Gi0/1").height;
     expect(second.a.y - first.a.y).toBeCloseTo(height + 4);
     expect(first.b.y - second.b.y).toBeCloseTo(height + 4);
+  });
+
+  const short = { x: 0, y: 120 };
+
+  it("線が短くて段違いでは収まらなければ、2 本は線の左右に分けて並べる", () => {
+    const first = parallel(0, 2, "Gi0/1", "Gi0/1", top, short);
+    const second = parallel(1, 2, "Gi0/1", "Gi0/1", top, short);
+    const { width } = estimateLabelSize("Gi0/1");
+    expect(second.a.y).toBeCloseTo(first.a.y);
+    expect(Math.abs(second.a.x - first.a.x)).toBeCloseTo(width + 4);
+    // ラベルは自分の線の側にあり、自分の線にかかる
+    for (const { line, a } of [first, second]) {
+      expect(Math.sign(a.x)).toBe(Math.sign(line.a.x));
+      expect(Math.abs(a.x - line.a.x)).toBeLessThan(width / 2);
+    }
+  });
+
+  it("線が短くても、2 本の両端のラベルはどれも重ならない", () => {
+    const aText = ["Gi0/1", "trunk 10,20,30"];
+    const bText = ["eno1", "bond0"];
+    const boxes = [0, 1].flatMap((index) => {
+      const { a, b } = parallel(index, 2, aText, bText, top, { x: 0, y: 150 });
+      return [
+        { ...a, ...estimateLabelSize(aText) },
+        { ...b, ...estimateLabelSize(bText) },
+      ];
+    });
+    for (const [i, p] of boxes.entries()) {
+      for (const q of boxes.slice(i + 1)) {
+        const apart =
+          Math.abs(p.x - q.x) >= (p.width + q.width) / 2 ||
+          Math.abs(p.y - q.y) >= (p.height + q.height) / 2;
+        expect(apart).toBe(true);
+      }
+    }
+  });
+
+  it("3 本で分けるときは、外側の線のラベルを左右に置き、真ん中の線のラベルはその先に置く", () => {
+    const [first, middle, last] = [0, 1, 2].map((index) =>
+      parallel(index, 3, "Gi0/1", "Gi0/1", top, { x: 0, y: 170 }),
+    );
+    const { height } = estimateLabelSize("Gi0/1");
+    expect(last.a.y).toBeCloseTo(first.a.y);
+    expect(Math.sign(last.a.x)).toBe(-Math.sign(first.a.x));
+    expect(middle.a.x).toBeCloseTo(0);
+    expect(middle.a.y - first.a.y).toBeCloseTo(height + 4);
+  });
+
+  it("逆向きのリンクが混ざっても、分けたラベルは自分の線の側に置く", () => {
+    // 2 本目は、下のデバイスから上へ向かうリンク(ずらす向きの基準は同じ)
+    const first = parallel(0, 2, "Gi0/1", "eth0", top, short);
+    const second = parallel(1, 2, "eth0", "Gi0/1", short, top, true);
+    expect(Math.sign(second.line.b.x)).toBe(-Math.sign(first.line.a.x));
+    // 上の端のラベルは first.a と second.b
+    expect(Math.sign(first.a.x)).toBe(Math.sign(first.line.a.x));
+    expect(Math.sign(second.b.x)).toBe(Math.sign(second.line.b.x));
+    expect(Math.abs(first.a.x - second.b.x)).toBeCloseTo(estimateLabelSize("Gi0/1").width + 4);
   });
 
   it("横の線ではラベルの高さが間隔に収まるので、段違いにしない", () => {
@@ -163,6 +234,18 @@ describe("複数行のラベル(IF 名の下の IP・VLAN。フェーズ3-2)", (
     const first = endLabelPositions(left, right, lines, lines, { index: 0, count: 2 });
     const second = endLabelPositions(left, right, lines, lines, { index: 1, count: 2 });
     expect(second.a.x - first.a.x).toBeGreaterThanOrEqual(estimateLabelSize(lines).width);
+  });
+
+  it("横の線が短ければ、背の高いラベルは線の上下に分けて重ねない", () => {
+    const left = { x: 0, y: 0 };
+    const right = { x: 300, y: 0 };
+    const [first, second] = [0, 1].map((index) => {
+      const slot = { index, count: 2 };
+      const line = offsetLine(left, right, slotOffset(slot), false);
+      return endLabelPositions(line.a, line.b, lines, lines, slot);
+    });
+    expect(second.a.x).toBeCloseTo(first.a.x);
+    expect(Math.abs(second.a.y - first.a.y)).toBeCloseTo(estimateLabelSize(lines).height + 4);
   });
 
   it("自分自身への輪の上下のラベルは、高さの分だけ輪から離す", () => {

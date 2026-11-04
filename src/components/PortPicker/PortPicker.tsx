@@ -1,8 +1,10 @@
 // ポート選択ポップアップ(SPEC 7.2)。
 // 種別ごとのグループ、使用中ポートのグレーアウトと接続先、検索欄、次の空きポート、
 // フレキシブルデバイスでの IF 名の自由入力、A 側と種別が合わないポートの警告。
+// キャンバス(React Flow)の重なりの層の中だと、あとに並ぶ YAML エディタなどに隠れるので、body に出す。
 
 import { type KeyboardEvent, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   endpointToString,
   expandIfName,
@@ -17,26 +19,23 @@ import {
 } from "../../core";
 import { type ChosenPort, useTopology } from "../../store";
 import { PORT_TYPE_LABELS } from "../portTypes";
+import { PICKER_WIDTH, type PickerPosition } from "./placement";
 import "./PortPicker.css";
-
-const WIDTH = 280;
-const MAX_HEIGHT = 420;
-const MARGIN = 8;
 
 export interface PortPickerProps {
   deviceId: string;
   side: "a" | "b";
   /** B 側を選ぶときの、A 側で選んだポート */
   peer?: ChosenPort;
-  /** 表示位置(ウィンドウ座標) */
-  anchor: { x: number; y: number };
+  /** 表示位置と高さ(ウィンドウ座標。placement.ts で決める) */
+  position: PickerPosition;
   onChoose(port: ChosenPort): void;
 }
 
 /** 選べる項目。既存のポートか、フレキシブルデバイスで新しく入力した IF 名 */
 type Option = { kind: "port"; entry: PortEntry } | { kind: "new"; name: string };
 
-export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPickerProps) {
+export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPickerProps) {
   const topology = useTopology((s) => s.topology);
   const catalog = useTopology((s) => s.catalog);
   const [query, setQuery] = useState("");
@@ -98,14 +97,18 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
   };
 
   const groups = groupByType(filtered);
-  const left = Math.max(MARGIN, Math.min(anchor.x, window.innerWidth - WIDTH - MARGIN));
-  const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - MAX_HEIGHT - MARGIN));
   const modelName = device.model ? (catalog.get(device.model)?.name ?? device.model) : undefined;
 
-  return (
+  return createPortal(
     <div
       className="port-picker"
-      style={{ left, top, width: WIDTH, maxHeight: MAX_HEIGHT }}
+      style={{
+        left: position.left,
+        top: position.top,
+        bottom: position.bottom,
+        width: PICKER_WIDTH,
+        maxHeight: position.maxHeight,
+      }}
       role="dialog"
     >
       <div className="port-picker-header">
@@ -196,7 +199,8 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
           </p>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -417,6 +417,7 @@ export function renderSvg(
         slot,
         { a: nameWidthOf(na), b: nameWidthOf(nb) },
         { a: detailsOf(na), b: detailsOf(nb) },
+        na > nb,
       );
       center = midpoint(line.a, line.b);
     }

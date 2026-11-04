@@ -279,8 +279,13 @@ function CanvasInner() {
       className={`canvas mode-${mode}`}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      // キャンバスを触ったら、インスペクタなどの入力欄からフォーカスを外す(キー操作をキャンバスに効かせる)
-      onPointerDownCapture={(e) => releaseInputFocus(e.currentTarget)}
+      // キャンバスを触ったら、インスペクタなどの入力欄からフォーカスを外す(キー操作をキャンバスに効かせる)。
+      // body に出すポート選択ポップアップの中の操作もここを通るが、その検索欄からは外さない
+      onPointerDownCapture={(e) => {
+        if (e.target instanceof Node && e.currentTarget.contains(e.target)) {
+          releaseInputFocus(e.currentTarget);
+        }
+      }}
     >
       <ReactFlow
         nodes={nodes}

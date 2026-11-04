@@ -88,8 +88,9 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     center = loop.label;
   } else {
     const slot = { index: data.slotIndex, count: data.slotCount };
-    // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする
-    const line = offsetLine(iconCenter(s), iconCenter(t), slotOffset(slot), source > target);
+    // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(ラベルを分ける向きも同じ)
+    const reversed = source > target;
+    const line = offsetLine(iconCenter(s), iconCenter(t), slotOffset(slot), reversed);
     path = `M ${line.a.x},${line.a.y} L ${line.b.x},${line.b.y}`;
     // デバイス名はノードの幅で切れて表示される(Canvas.css)ので、それより広くはならない
     const nameWidth = ({ data }: { data: CanvasNode["data"] }) =>
@@ -105,6 +106,7 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
       slot,
       { a: nameWidth(s), b: nameWidth(t) },
       { a: details(s), b: details(t) },
+      reversed,
     );
     center = midpoint(line.a, line.b);
   }

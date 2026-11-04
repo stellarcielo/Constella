@@ -1,14 +1,13 @@
 // 接続モードの表示: 案内、ポート選択ポップアップ、A からカーソルまでの破線(SPEC 7.2)。
 // ReactFlow の子として置く(フローの座標変換を使うため)。
 
-import { Panel, useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
+import { Panel, useReactFlow, useStore, useViewport, ViewportPortal } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import { endpointNodeId, endpointToString } from "../../core";
 import { type ChosenPort, topologyStore, uiStore, useTopology, useUi } from "../../store";
+import { type PickerPosition, pickerPlacement } from "../PortPicker/placement";
 import { PortPicker } from "../PortPicker/PortPicker";
 import { iconCenter } from "./geometry";
-
-const PICKER_GAP = 12;
 
 export function ConnectOverlay() {
   const mode = useUi((s) => s.mode);
@@ -17,6 +16,8 @@ export function ConnectOverlay() {
   const { getInternalNode, flowToScreenPosition, screenToFlowPosition } = useReactFlow();
   // 画面のスクロールや拡大縮小に合わせてポップアップと破線を動かす
   useViewport();
+  // キャンバスの要素(ポップアップをこの範囲に収める)
+  const canvas = useStore((s) => s.domNode);
 
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const awaiting = connect.stage === "awaitB";
@@ -45,14 +46,31 @@ export function ConnectOverlay() {
     if (a && to) line = { from: iconCenter(a), to };
   }
 
-  let picker: { device: string; anchor: { x: number; y: number } } | undefined;
+  let picker: { device: string; position: PickerPosition } | undefined;
   if (connect.stage === "pickA" || connect.stage === "pickB") {
     const node = getInternalNode(connect.device);
     if (node) {
       const { x, y } = node.internals.positionAbsolute;
-      const width = node.measured.width ?? 0;
-      const anchor = flowToScreenPosition({ x: x + width, y });
-      picker = { device: connect.device, anchor: { x: anchor.x + PICKER_GAP, y: anchor.y } };
+      const topLeft = flowToScreenPosition({ x, y });
+      const bottomRight = flowToScreenPosition({
+        x: x + (node.measured.width ?? 0),
+        y: y + (node.measured.height ?? 0),
+      });
+      const view = { width: window.innerWidth, height: window.innerHeight };
+      const bounds = canvas?.getBoundingClientRect() ?? {
+        left: 0,
+        top: 0,
+        right: view.width,
+        bottom: view.height,
+      };
+      picker = {
+        device: connect.device,
+        position: pickerPlacement(
+          { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y },
+          bounds,
+          view,
+        ),
+      };
     }
   }
 
@@ -74,7 +92,7 @@ export function ConnectOverlay() {
           deviceId={picker.device}
           side={connect.stage === "pickA" ? "a" : "b"}
           peer={connect.stage === "pickB" ? connect.a : undefined}
-          anchor={picker.anchor}
+          position={picker.position}
           onChoose={onChoose}
         />
       )}
