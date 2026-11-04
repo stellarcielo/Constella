@@ -15,6 +15,11 @@ import "./Toolbar.css";
 const FILE_BUTTONS = [
   { label: "新規", title: "新規(⌘N)", run: () => void fileCommands.newFile() },
   { label: "開く", title: "開く(⌘O)", run: () => void fileCommands.open() },
+  {
+    label: "取り込む",
+    title: "Proxmox VE から取り込む(scripts/proxmox-export.sh で書き出した JSON を選ぶ)",
+    run: () => void fileCommands.importProxmox(),
+  },
   { label: "保存", title: "保存(⌘S)", run: () => void fileCommands.save() },
 ];
 

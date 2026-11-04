@@ -346,6 +346,42 @@ VLAN の通り道(最初のスイッチまでを確かめる):
   - routed のときと、`mode`・`vlans` のどちらも無いときは確かめない。
 - 警告は止まる場所(ブリッジ・相手のポート)ごとに 1 件出し、通らない VLAN と、それを使っている IF を書く。止まった VLAN は、その先では確かめない。
 
+### 4.7 Proxmox VE からの取り込み
+Proxmox VE のクラスタ(ノード 1 台だけでもよい)の構成を読み込み、新しい図を作る。
+
+1. どれか 1 台のノードで、root として書き出しスクリプト `scripts/proxmox-export.sh` を実行する。スクリプトは `pvesh`(Proxmox VE の API をコマンドで使う道具)で読むだけで、設定は変えない。パスワードやトークンも使わない。
+   ```sh
+   sh proxmox-export.sh > constella-proxmox.json
+   ```
+2. できた JSON ファイルを、ツールバーの「取り込む」(ファイルメニューの「Proxmox VE から取り込む…」)で選ぶ。未保存の変更があれば、開くときと同じく確かめる。
+3. 新しい図(未保存)として開く。座標は書かず、開くと自動で並べる。読めなかったものがあれば、取り込んだあとに一覧で知らせる。
+
+書き出す JSON(`format: constella-proxmox`、`version: 1`):
+- `exported`(書き出した日時)、`host`(書き出したノード)
+- `nodes`: ノードごとに `node`(名前)、`network`(`pvesh get /nodes/<node>/network` の結果)、`qemu`・`lxc`(ゲストごとに `vmid` と、`pvesh get /nodes/<node>/qemu/<vmid>/config` などの設定)
+- 停止中のノードなど、読めなかったところは `null` にして、続きを書き出す。
+
+取り込み方:
+
+| Proxmox VE | Constella |
+|---|---|
+| ノード | モデル無し(どんな IF 名も使える)で `role: hypervisor` の機器。ID はノード名 |
+| ネットワークの eth・OVSPort | 物理的な IF。使っていないものも書く(GUI でスイッチにつなぐとき、ポートの一覧に出るように) |
+| bond・OVSBond | `type: bond`。`slaves`・`ovs_bonds` → `members`、`bond_mode` → `bond-mode`(Linux の bond のモードだけ) |
+| bridge・OVSBridge | `type: bridge`。`bridge_ports`・`ovs_ports` → `members`、`bridge_vlan_aware` → `vlan-aware`(OVS のブリッジはいつも VLAN aware)、`bridge_vids` → `vlans`(既定の `2-4094` なら書かない) |
+| vlan、タグのある OVSIntPort | `type: vlan`。`vlan-raw-device`・`ovs_bridge` と `vlan-id`・`ovs_tag`(名前が「親.VLAN ID」の形なら書かない) |
+| `cidr`・`cidr6`、`comments` | `ip`、`description` |
+| VM・CT | ゲスト(モデル `generic-vm` / `generic-container`)。`host` にノード、`vmid` に VMID |
+| ゲストの `net0` など | IF `net0` など。`tag` → `vlan`、`trunks` → `mode: trunk` と `vlans`(`;` は `,` に)、CT の `ip`・`ip6` と VM の cloud-init の `ipconfig0` などの `ip`・`ip6` → `ip`(`dhcp` などは書かない) |
+| ゲストの `bridge=` | ゲストの IF とノードのブリッジを結ぶリンク |
+
+- ゲストのデバイスID は、VM の名前(CT はホスト名)。使えない文字は `-` に置き換え、ほかの機器と重なれば `-VMID` を付ける。名前が無ければ `vm100` / `ct200`。名前と違う ID にしたときは `label` に名前を書く。
+- 機器は、ノード(書き出した順)のあとに、ノードごとのゲスト(VMID の順)を並べる。ノードの IF は、物理的な IF・bond・ブリッジ・VLAN インターフェースの順に並べる。
+- ネットワークを読めなかったノードには、ゲストの `bridge=` からブリッジだけを作る。ネットワークを読めたノードに無いブリッジ(SDN の VNet など)へのリンクは作らない(SDN はフェーズ5-2)。
+- テンプレート(`template: 1`)の VM・CT は取り込まない。
+- スイッチと物理的な配線は取り込めない(取り込んだあとに図に足してつなぐ)。
+- 図のタイトルは「Proxmox VE」、説明は書き出した日時とノード。
+
 ---
 
 ## 5. モデル(機種)ライブラリ
@@ -405,7 +441,7 @@ ports:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ ツールバー: 新規 開く 保存 | 選択 接続 | 自動整列 | YAML表示切替 │
+│ ツールバー: 新規 開く 取り込む 保存 | 選択 接続 | 自動整列 | YAML表示切替 │
 ├──────────┬───────────────────────────────┬──────────────────┤
 │ パレット │                               │ インスペクタ      │
 │          │        キャンバス               │ (選択中の        │
@@ -540,6 +576,7 @@ ports:
 - 未保存の変更がある場合はタイトルとステータスバーに表示し、閉じる・新規・開く操作の前に確認する。
 - 最近使ったファイル(最大10件)をメニューに表示。
 - 新規作成したファイルの先頭には、JSON Schema のコメント行(11章)を入れる。
+- Proxmox VE から取り込む(4.7)。取り込んだ図は新規と同じく未保存の文書になる(最近使ったファイルには入れない)。
 - ファイルを外部で変更された場合の検知はフェーズ2以降。
 
 ---
@@ -594,7 +631,10 @@ ports:
   - [x] 4-4 VLAN の通り道の検証
   - [x] 4-5 クラスタ(`kind: cluster`、`networks`)
   - [x] 4-6 SDN(ゾーン・VNet)
-- Proxmox VE からの取り込み(API または設定ファイル)
+- Proxmox VE からの取り込み(4.7)
+  - [x] 5-1 書き出しスクリプトと、ノード・ネットワーク・ゲスト・リンクの取り込み
+  - [ ] 5-2 クラスタ(`kind: cluster`、corosync・migration のネットワーク)と SDN の取り込み
+  - API から直接取り込む(候補。URL と API トークンを入力する)
 - Windows / Linux ビルドとインストーラ
 - CLI / MCP サーバー
 - LLDP / SNMP からの取り込み、containerlab / NetBox との連携

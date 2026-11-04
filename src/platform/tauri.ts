@@ -15,9 +15,13 @@ import {
   writeFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import type { ImageFormat, MenuCommands, Platform, RecentFileItem } from "./types";
+import type { ImageFormat, MenuCommands, OpenFileKind, Platform, RecentFileItem } from "./types";
 
 const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "yml"] }];
+const OPEN_FILTERS: Record<OpenFileKind, { name: string; extensions: string[] }[]> = {
+  topology: FILTERS,
+  proxmox: [{ name: "Proxmox VE の書き出し(JSON)", extensions: ["json"] }],
+};
 const IMAGE_FILTERS: Record<ImageFormat, { name: string; extensions: string[] }[]> = {
   svg: [{ name: "SVG 画像", extensions: ["svg"] }],
   png: [{ name: "PNG 画像", extensions: ["png"] }],
@@ -75,8 +79,8 @@ async function fillRecentMenu(): Promise<void> {
 export const tauriPlatform: Platform = {
   hasNativeMenu: true,
 
-  async openTextFile() {
-    const path = await open({ multiple: false, directory: false, filters: FILTERS });
+  async openTextFile(kind = "topology") {
+    const path = await open({ multiple: false, directory: false, filters: OPEN_FILTERS[kind] });
     if (typeof path !== "string") return null;
     return { path, text: await readTextFile(path) };
   },
@@ -184,6 +188,7 @@ export const tauriPlatform: Platform = {
         await command("新規", "CmdOrCtrl+N", commands.newFile),
         await command("開く…", "CmdOrCtrl+O", commands.open),
         recentMenu,
+        await MenuItem.new({ text: "Proxmox VE から取り込む…", action: commands.importProxmox }),
         await separator(),
         await command("保存", "CmdOrCtrl+S", commands.save),
         await command("別名で保存…", "CmdOrCtrl+Shift+S", commands.saveAs),

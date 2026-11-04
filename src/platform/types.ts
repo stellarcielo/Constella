@@ -4,6 +4,8 @@
 export interface MenuCommands {
   newFile(): void;
   open(): void;
+  /** Proxmox VE から取り込む(SPEC 4.7) */
+  importProxmox(): void;
   save(): void;
   saveAs(): void;
   /** アプリの終了(未保存なら確認する) */
@@ -35,11 +37,14 @@ export interface RecentFileItem {
 /** 書き出す画像の形式 */
 export type ImageFormat = "svg" | "png";
 
+/** 選んで読み込むファイルの種類。トポロジの YAML か、Proxmox VE の書き出し(JSON。SPEC 4.7) */
+export type OpenFileKind = "topology" | "proxmox";
+
 export interface Platform {
   /** メニューバー(OS のもの)でショートカットを扱うか。扱わないならアプリ側のキー操作で受ける */
   readonly hasNativeMenu: boolean;
-  /** ファイルを選んで読み込む。キャンセルなら null */
-  openTextFile(): Promise<{ path: string; text: string } | null>;
+  /** ファイルを選んで読み込む(省略時はトポロジの YAML)。キャンセルなら null */
+  openTextFile(kind?: OpenFileKind): Promise<{ path: string; text: string } | null>;
   /** パスを指定して読み込む(最近使った項目を開くとき) */
   readTextFile(path: string): Promise<string>;
   /** 保存先を選ぶ。キャンセルなら null */

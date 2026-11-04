@@ -3,11 +3,11 @@
 
 import type { Platform } from "./types";
 
-function pickFile(): Promise<File | null> {
+function pickFile(accept: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".yaml,.yml";
+    input.accept = accept;
     input.addEventListener("change", () => resolve(input.files?.[0] ?? null), { once: true });
     input.addEventListener("cancel", () => resolve(null), { once: true });
     input.click();
@@ -48,8 +48,8 @@ function storeUserModels(files: Record<string, string>): void {
 export const browserPlatform: Platform = {
   hasNativeMenu: false,
 
-  async openTextFile() {
-    const file = await pickFile();
+  async openTextFile(kind = "topology") {
+    const file = await pickFile(kind === "proxmox" ? ".json" : ".yaml,.yml");
     return file ? { path: file.name, text: await file.text() } : null;
   },
 

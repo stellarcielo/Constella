@@ -20,6 +20,7 @@ export function useDocumentShell(): void {
     void platform.setupMenu({
       newFile: () => void fileCommands.newFile(),
       open: () => void fileCommands.open(),
+      importProxmox: () => void fileCommands.importProxmox(),
       save: () => void fileCommands.save(),
       saveAs: () => void fileCommands.saveAs(),
       quit: () => void fileCommands.quit(),

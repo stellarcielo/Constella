@@ -111,7 +111,8 @@ export interface TopologyState {
   placing: boolean;
 
   /** ファイルを開いた(または新規)。構文エラーがあっても開き、エディタで直せるようにする */
-  openText(text: string, filePath?: string): void;
+  /** unsaved なら、保存していない文書として開く(Proxmox VE から取り込んだとき。SPEC 10章) */
+  openText(text: string, filePath?: string, options?: { unsaved?: boolean }): void;
   newDocument(): void;
   /** text を filePath に保存した */
   markSaved(filePath: string, text: string): void;
@@ -314,14 +315,14 @@ export function createTopologyStore(
       autoPositions: new Map(),
       placing: false,
 
-      openText(text, filePath) {
+      openText(text, filePath, options) {
         // 前のファイルの図や識別子は引き継がない
         set({
           topology: createEmptyTopology(),
           base: undefined,
           yamlIssues: [],
           filePath,
-          savedText: text,
+          savedText: options?.unsaved ? "" : text,
           selection: EMPTY_SELECTION,
           autoPositions: new Map(),
         });

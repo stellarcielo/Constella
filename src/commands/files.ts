@@ -1,7 +1,7 @@
 // ファイルの新規・開く・保存・別名で保存・閉じる(SPEC 10章)。
 // ファイル操作(platform)とダイアログは引数で受け取り、テストで差し替えられるようにする。
 
-import type { Viewport } from "../core";
+import { importProxmox as importProxmoxExport, type Viewport } from "../core";
 import { basename, type Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 
@@ -27,6 +27,8 @@ export interface FileCommandDeps {
 export interface FileCommands {
   newFile(): Promise<void>;
   open(): Promise<void>;
+  /** Proxmox VE の書き出し(JSON)を取り込み、新しい図(未保存)として開く(SPEC 4.7) */
+  importProxmox(): Promise<void>;
   /** 「最近使った項目を開く」で選んだファイルを開く */
   openRecent(path: string): Promise<void>;
   /** 保存できたら true */
@@ -122,6 +124,37 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
     if (file) show(file.path, file.text);
   }
 
+  async function importProxmox(): Promise<void> {
+    if (!(await resolveUnsaved())) return;
+    let file: { path: string; text: string } | null;
+    try {
+      file = await platform.openTextFile("proxmox");
+    } catch (e) {
+      await deps.showError("取り込めませんでした", "ファイルを読み込めませんでした。", [String(e)]);
+      return;
+    }
+    if (!file) return;
+    const result = importProxmoxExport(file.text);
+    if (!result.ok) {
+      await deps.showError(
+        "取り込めませんでした",
+        `${basename(file.path)} を取り込めませんでした。`,
+        [result.error],
+      );
+      return;
+    }
+    // 取り込んだ図は、新規と同じく保存していない文書(最近使ったファイルには入れない)
+    store.getState().openText(result.text, undefined, { unsaved: true });
+    deps.resetView();
+    if (result.warnings.length > 0) {
+      await deps.showError(
+        "一部を取り込めませんでした",
+        "読めなかったものがあります。取り込めたものだけで図を作りました。",
+        result.warnings,
+      );
+    }
+  }
+
   async function openRecent(path: string): Promise<void> {
     if (!(await resolveUnsaved())) return;
     let text: string;
@@ -151,5 +184,14 @@ export function createFileCommands(deps: FileCommandDeps): FileCommands {
     if (await resolveUnsaved()) await platform.closeWindow();
   }
 
-  return { newFile, open, openRecent, save, saveAs, confirmClose: resolveUnsaved, quit };
+  return {
+    newFile,
+    open,
+    importProxmox,
+    openRecent,
+    save,
+    saveAs,
+    confirmClose: resolveUnsaved,
+    quit,
+  };
 }

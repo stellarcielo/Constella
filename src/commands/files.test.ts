@@ -184,6 +184,74 @@ describe("開く", () => {
   });
 });
 
+describe("Proxmox VE から取り込む(SPEC 4.7)", () => {
+  /** 書き出しスクリプトの JSON。warn なら、読めなかったゲストを含める */
+  const exported = (warn = false) =>
+    JSON.stringify({
+      format: "constella-proxmox",
+      version: 1,
+      nodes: [
+        {
+          node: "pve1",
+          network: [{ iface: "vmbr0", type: "bridge" }],
+          qemu: [
+            { vmid: 100, config: { name: "web01", net0: "virtio=BC:24:11:00:00:01,bridge=vmbr0" } },
+            ...(warn ? [{ vmid: 101, config: null }] : []),
+          ],
+          lxc: [],
+        },
+      ],
+    });
+
+  it("JSON を選んで取り込み、保存していない新しい図として開く(最近使ったファイルには入れない)", async () => {
+    const env = setup({ open: { path: "/tmp/constella-proxmox.json", text: exported() } });
+    await env.commands.importProxmox();
+    const s = env.store.getState();
+    expect(env.platform.openTextFile).toHaveBeenCalledWith("proxmox");
+    expect([...s.topology.devices.keys()]).toEqual(["pve1", "web01"]);
+    expect(s.filePath).toBeUndefined();
+    expect(s.dirty).toBe(true);
+    expect(s.yamlText.startsWith("# yaml-language-server:")).toBe(true);
+    expect(env.recent.getState().paths).toEqual([]);
+    expect(env.views).toEqual([undefined]);
+    expect(env.errors).toEqual([]);
+  });
+
+  it("読めなかったものがあれば、取り込んだあとに一覧で知らせる", async () => {
+    const env = setup({ open: { path: "a.json", text: exported(true) } });
+    await env.commands.importProxmox();
+    expect(env.store.getState().topology.devices.has("web01")).toBe(true);
+    expect(env.errors).toEqual([
+      {
+        title: "一部を取り込めませんでした",
+        message: "読めなかったものがあります。取り込めたものだけで図を作りました。",
+        details: ["VM 101(pve1)の設定を読めませんでした"],
+      },
+    ]);
+  });
+
+  it("書き出しスクリプトの JSON でなければ、理由を出して今の図のまま", async () => {
+    const env = setup({ open: { path: "/x/home.constella.yaml", text: specExample } });
+    await env.commands.importProxmox();
+    expect(env.errors).toEqual([
+      {
+        title: "取り込めませんでした",
+        message: "home.constella.yaml を取り込めませんでした。",
+        details: ["JSON として読めません"],
+      },
+    ]);
+    expect(env.store.getState().topology.devices.size).toBe(0);
+  });
+
+  it("未保存の変更があれば先に確認し、キャンセルなら選ばない", async () => {
+    const env = setup({ open: { path: "a.json", text: exported() }, unsaved: "cancel" });
+    makeDirty(env);
+    await env.commands.importProxmox();
+    expect(env.asked).toEqual(["無題"]);
+    expect(env.platform.openTextFile).not.toHaveBeenCalled();
+  });
+});
+
 describe("保存", () => {
   it("新規なら保存先を選び、タイトルから初期のファイル名を作る(Q4)", async () => {
     const env = setup({ savePath: "/lab/x.constella.yaml" });
