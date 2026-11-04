@@ -2,7 +2,9 @@
 
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
 import { findBridge, parseBridgeKey } from "./bridges";
+import { clusterNetworks, clusterOfHosts, inClusterNetwork } from "./clusters";
 import { hostTree } from "./hosts";
+import { parseSubnet } from "./ip";
 import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
@@ -151,7 +153,8 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   }
 
-  // ホストとゲスト(SPEC 4.6): 存在しないホスト、輪になる host、同じホストの中での VMID の重複
+  // ホストとゲスト(SPEC 4.6): 存在しないホスト、輪になる host、VMID の重複
+  // (同じホストの中。ホストがクラスタに入っていれば、クラスタの中)
   for (const device of t.devices.values()) {
     if (device.host !== undefined && !t.devices.has(device.host)) {
       add(
@@ -177,23 +180,35 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       );
     });
   }
-  for (const [host, guests] of tree.guestsOf) {
-    const seen = new Map<number, string>();
-    for (const id of guests) {
-      const vmid = t.devices.get(id)?.vmid;
-      if (vmid === undefined) continue;
-      const first = seen.get(vmid);
-      if (first === undefined) {
-        seen.set(vmid, id);
-      } else {
-        add(
-          "error",
-          "duplicate-vmid",
-          `${id} の VMID ${vmid} は ${first} と重なっています(どちらも ${host} の上で動いています)`,
-          { kind: "device", id, field: "vmid" },
-        );
-      }
+  const clusterOf = clusterOfHosts(t);
+  /** VMID を比べる範囲(クラスタかホスト)ごとの、VMID → 最初のゲスト */
+  const vmids = new Map<string, Map<number, string>>();
+  for (const device of t.devices.values()) {
+    const host = tree.hostOf.get(device.id);
+    if (host === undefined || device.vmid === undefined) continue;
+    const cluster = clusterOf.get(host);
+    const scope = cluster === undefined ? `host:${host}` : `cluster:${cluster}`;
+    let seen = vmids.get(scope);
+    if (!seen) {
+      seen = new Map();
+      vmids.set(scope, seen);
     }
+    const first = seen.get(device.vmid);
+    if (first === undefined) {
+      seen.set(device.vmid, device.id);
+      continue;
+    }
+    const firstHost = tree.hostOf.get(first);
+    const reason =
+      cluster === undefined || firstHost === host
+        ? `どちらも ${host} の上で動いています`
+        : `${firstHost} と ${host} は同じクラスタ「${t.groups[cluster].id}」に入っています`;
+    add(
+      "error",
+      "duplicate-vmid",
+      `${device.id} の VMID ${device.vmid} は ${first} と重なっています(${reason})`,
+      { kind: "device", id: device.id, field: "vmid" },
+    );
   }
 
   /** ブリッジ(bridge)と相手(other)を結ぶリンクの問題。問題が無ければ undefined(SPEC 4.6) */
@@ -346,6 +361,62 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   });
 
+  // クラスタ(SPEC 4.6・フェーズ4-5): 2 つ以上のクラスタに入るホスト、networks の書き方、
+  // networks のサブネットに入る IP の無いホスト(ホストごとに 1 件)
+  t.groups.forEach((group, index) => {
+    const target: IssueTarget = { kind: "group", index };
+    if (group.kind !== "cluster") {
+      if (group.networks) {
+        add(
+          "warning",
+          "networks-not-cluster",
+          `グループ「${group.id}」は kind: cluster ではないので、networks を使いません`,
+          { ...target, field: "networks" },
+        );
+      }
+      return;
+    }
+    for (const member of new Set(group.members)) {
+      const first = clusterOf.get(member);
+      if (first !== undefined && first !== index) {
+        add(
+          "error",
+          "multiple-clusters",
+          `${member} は、クラスタ「${t.groups[first].id}」と「${group.id}」の両方に入っています(入れるクラスタは 1 つだけです)`,
+          target,
+        );
+      }
+    }
+    for (const [name, text] of group.networks ?? []) {
+      if (parseSubnet(text) === undefined) {
+        add(
+          "warning",
+          "invalid-subnet",
+          `クラスタ「${group.id}」のネットワーク ${name} のサブネット「${text}」の書き方が分かりません(例: 10.10.0.0/24)`,
+          { ...target, network: name },
+        );
+      }
+    }
+    const networks = clusterNetworks(group);
+    for (const member of new Set(group.members)) {
+      const device = t.devices.get(member);
+      // 図に無いホストと、ほかのクラスタで数えるホストは確かめない
+      if (!device || clusterOf.get(member) !== index) continue;
+      const ips = [...device.interfaces.values()].flatMap((info) => info.ip ?? []);
+      const missing = networks.filter(
+        (network) => !ips.some((ip) => inClusterNetwork(network, ip)),
+      );
+      if (missing.length === 0) continue;
+      const list = missing.map((network) => `${network.name}(${network.text})`).join("・");
+      add(
+        "warning",
+        "missing-cluster-network",
+        `${member} に、クラスタ「${group.id}」のネットワーク ${list}に入る IP がありません`,
+        { kind: "device", id: member },
+      );
+    }
+  });
+
   return issues;
 }
 
@@ -401,7 +472,15 @@ export function locateTarget(base: YamlBase, target: IssueTarget): SourceRange |
       return rangeOf(findPair(doc.get("layout", true), (k) => k === target.id)?.key);
     case "group": {
       const seq = doc.get("groups", true);
-      return isSeq(seq) ? rangeOf(seq.items[target.index] as Node | undefined) : undefined;
+      const item = isSeq(seq) ? (seq.items[target.index] as Node | undefined) : undefined;
+      if (target.network !== undefined && isMap(item)) {
+        const pair = findPair(item.get("networks", true), (k) => k === target.network);
+        if (pair) return rangeOf(pair.key);
+      }
+      // 項目の指定があれば、その値の位置(無ければグループ全体)
+      const field =
+        target.field !== undefined && isMap(item) ? item.get(target.field, true) : undefined;
+      return rangeOf(field ?? item);
     }
   }
 }

@@ -437,7 +437,15 @@ class Writer {
         continue;
       }
       const current = map.get(key, true) as Node | undefined;
-      if (isScalar(current) && !Array.isArray(value)) {
+      // マップの項目(クラスタの networks)は、中の項目ごとに書き込む(中のコメントや書式が残る)
+      if (value instanceof Map && isMap(current)) {
+        const entries: Fields = [...value].map(([k, v]) => [String(k), v]);
+        const keys = new Set(entries.map(([k]) => k));
+        current.items = current.items.filter((pair) => keys.has(keyText(pair.key)));
+        this.syncFields(current, entries, {});
+        continue;
+      }
+      if (isScalar(current) && !Array.isArray(value) && !(value instanceof Map)) {
         if (!scalarEquals(current.value, value)) current.value = value;
         continue;
       }
@@ -494,6 +502,7 @@ function groupFields(group: Group): Fields {
     ["kind", group.kind],
     ["label", group.label],
     ["members", group.members],
+    ["networks", group.networks],
   ];
 }
 

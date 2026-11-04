@@ -246,6 +246,51 @@ layout:
     expect(noIp).not.toContain("192.168.10.2");
   });
 
+  it("クラスタの枠を描き、クラスタのホストの IP にネットワークの名前を添える(フェーズ4-5)", () => {
+    const t = load(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      eno3: { ip: [ 10.10.0.1/24 ] }
+      bond1: { type: bond, members: [ eno4 ], ip: [ 10.20.0.1/24 ] }
+      vmbr0: { type: bridge, members: [ eno1 ], ip: [ 10.30.0.1/24 ] }
+  pve2:
+    model: generic-hypervisor-4
+    interfaces:
+      eno3: { ip: [ 10.10.0.2/24 ] }
+  vm1: { model: generic-vm, host: pve1, interfaces: { net0: { ip: [ 10.30.0.11/24 ] } } }
+links:
+  - { a: pve1:eno3, b: pve2:eno3 }
+  - { a: vm1:net0, b: pve1:vmbr0 }
+layout:
+  pve1: { x: 0, y: 0 }
+  pve2: { x: 300, y: 0 }
+  pve1:vmbr0: { x: 0, y: 140 }
+  vm1: { x: 0, y: 260 }
+groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1, pve2 ]
+    networks:
+      corosync: 10.10.0.0/24
+      ceph-public: 10.20.0.0/24
+      ceph-cluster: 10.20.0.0/24
+      migration: 10.30.0.0/24
+`);
+    // 表示レイヤーで選んだ種類に関係なく描く
+    const { svg } = renderSvg(t, testCatalog, { groupKinds: [] });
+    expect(svg).toContain(">クラスタ: lab</text>");
+    expect(svg).toContain('stroke="#1b7c83" stroke-width="2"');
+    // リンクの端・ホストの名前の下・ブリッジの箱の下
+    expect(svg).toContain(">10.10.0.1/24 (corosync)</text>");
+    expect(svg).toContain(">10.10.0.2/24 (corosync)</text>");
+    expect(svg).toContain(">bond1 10.20.0.1/24 (ceph-public, ceph-cluster)</text>");
+    expect(svg).toContain(">10.30.0.1/24 (migration)</text>");
+    // ゲストの IP には添えない
+    expect(svg).toContain(">10.30.0.11/24</text>");
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

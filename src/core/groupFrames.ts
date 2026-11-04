@@ -54,6 +54,7 @@ const KIND_NAMES: Record<GroupKind, string> = {
   vlan: "VLAN",
   subnet: "サブネット",
   as: "AS",
+  cluster: "クラスタ",
   custom: "",
 };
 
@@ -79,12 +80,17 @@ export function hostFrameTitle(t: Topology, catalog: ModelCatalog, frame: HostFr
     .join("・");
 }
 
+/** どの表示レイヤーでも出す枠の種類(種類なしの枠も、いつも出す。SPEC 7.3) */
+const ALWAYS_SHOWN_KINDS: readonly GroupKind[] = ["custom", "cluster"];
+
 /**
- * 枠を出す種類で絞り込む条件(表示レイヤー。フェーズ3-3)。種類なし・custom はいつも出す
+ * 枠を出す種類で絞り込む条件(表示レイヤー。フェーズ3-3)。種類なし・custom・cluster はいつも出す
  */
 export function groupKindFilter(kinds: readonly GroupKind[]): (group: Group) => boolean {
   return (group) =>
-    group.kind === undefined || group.kind === "custom" || kinds.includes(group.kind);
+    group.kind === undefined ||
+    ALWAYS_SHOWN_KINDS.includes(group.kind) ||
+    kinds.includes(group.kind);
 }
 
 /**

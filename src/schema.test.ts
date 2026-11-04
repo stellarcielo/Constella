@@ -155,6 +155,18 @@ layout:
       "ゲスト",
       "constella: 1\ndevices:\n  pve1: { role: hypervisor }\n  vm1: { host: pve1, guest: container, vmid: 999999999 }\n",
     ],
+    [
+      "クラスタ",
+      `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1 ]
+    networks: { corosync: 10.10.0.0/24, ceph: "fd00:20::/64" }
+`,
+    ],
   ];
   const rejected: [string, string][] = [
     ["バージョンが無い", "devices: {}\n"],
@@ -201,6 +213,11 @@ layout:
       "constella: 1\ndevices:\n  r1:\n    interfaces:\n      v0: { members: eno1 }\n",
     ],
     ["空の host", 'constella: 1\ndevices:\n  vm1: { host: "" }\n'],
+    [
+      "文字列でない networks のサブネット",
+      "constella: 1\ngroups:\n  - { id: lab, kind: cluster, networks: { corosync: 10 } }\n",
+    ],
+    ["配列の networks", "constella: 1\ngroups:\n  - { id: lab, kind: cluster, networks: [ a ] }\n"],
   ];
 
   it.each(accepted)("パーサーと同じく受け付ける: %s", (_name, text) => {

@@ -552,3 +552,69 @@ layout:
     expect(out).not.toContain("VMBR0");
   });
 });
+
+describe("serializeTopology: クラスタ(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  pve2: { model: generic-hypervisor-4 }
+groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1, pve2 ]
+    networks:
+      # クラスタの通信
+      corosync: 10.10.0.0/24 # ring0
+      migration: 10.30.0.0/24
+`;
+
+  it("ホストの ID を変えても、networks はコメントを保ったまま残す", () => {
+    const { topology, base } = load(text);
+    renameDevice(topology, "pve1", "pve-a");
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain("    members: [ pve-a, pve2 ]\n");
+    expect(out).toContain(
+      "    networks:\n      # クラスタの通信\n      corosync: 10.10.0.0/24 # ring0\n      migration: 10.30.0.0/24\n",
+    );
+  });
+
+  it("networks の項目ごとに書き換え、ほかの項目のコメントは残す", () => {
+    const { topology, base } = load(text);
+    const networks = topology.groups[0].networks;
+    if (!networks) throw new Error();
+    networks.set("corosync", "10.10.1.0/24");
+    networks.delete("migration");
+    networks.set("ceph-public", "10.20.0.0/24");
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain(
+      "    networks:\n      # クラスタの通信\n      corosync: 10.10.1.0/24 # ring0\n      ceph-public: 10.20.0.0/24\n",
+    );
+    expect(out).not.toContain("migration");
+  });
+
+  it("新しいグループの networks はブロックのマップで書き、消すと YAML からも消える", () => {
+    const { topology, base } = load(text);
+    topology.groups.push({
+      id: "lab2",
+      kind: "cluster",
+      members: ["pve2"],
+      networks: new Map([["corosync", "10.11.0.0/24"]]),
+      extra: {},
+    });
+    const out = serializeTopology(topology, base).text;
+    expect(out).toContain(
+      "  - id: lab2\n    kind: cluster\n    members: [ pve2 ]\n    networks:\n      corosync: 10.11.0.0/24\n",
+    );
+    const again = load(out);
+    expect([...(again.topology.groups[1].networks ?? [])]).toEqual([["corosync", "10.11.0.0/24"]]);
+    delete again.topology.groups[0].networks;
+    expect(serializeTopology(again.topology, again.base).text).not.toContain("10.10.0.0/24");
+  });
+
+  it("解釈できなかった networks は書き換えずに残す", () => {
+    const bad = text.replace("corosync: 10.10.0.0/24 # ring0", "corosync: 10 # ring0");
+    const { topology, base } = load(bad);
+    renameDevice(topology, "pve2", "pve-b");
+    expect(serializeTopology(topology, base).text).toContain("      corosync: 10 # ring0\n");
+  });
+});

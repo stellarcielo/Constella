@@ -43,7 +43,7 @@ export interface ViewOptions {
   showIp: boolean;
   /** IF 名ラベルの下に VLAN を表示する(フェーズ3-2 Q2) */
   showVlan: boolean;
-  /** 枠を表示するグループの種類(種類なし・custom は常に表示。フェーズ3-3) */
+  /** 枠を表示するグループの種類(種類なし・custom・cluster は常に表示。フェーズ3-3) */
   groupKinds: GroupKind[];
   /** ゲスト(VM・コンテナ)とホストの枠を表示する(フェーズ4-1) */
   showGuests: boolean;

@@ -2,6 +2,7 @@
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
 import { allBridges, BRIDGE_BOX, endpointNodeId, parseBridgeKey } from "./bridges";
+import { clusterIpText } from "./clusters";
 import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
 import { resolveGuest } from "./hosts";
 import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
@@ -48,7 +49,7 @@ export interface RenderOptions {
   showVlan?: boolean;
   /** グループの枠を描くか(ツールバーの「グループ」) */
   showGroups?: boolean;
-  /** 枠を描くグループの種類(表示レイヤー。省略すればすべて。種類なし・custom はいつも描く) */
+  /** 枠を描くグループの種類(表示レイヤー。省略すればすべて。種類なし・custom・cluster はいつも描く) */
   groupKinds?: readonly GroupKind[];
   /** ゲスト(VM・コンテナ)とホストの枠を描くか(ツールバーの「ゲスト」) */
   showGuests?: boolean;
@@ -97,7 +98,8 @@ const MEDIA_STYLES: Record<Media, string> = {
 
 /**
  * グループの種類ごとの枠の見た目(Canvas.css と合わせる。フェーズ3-1 Q2)。
- * 拠点は太い実線、ラックは実線、VLAN は破線、サブネットは点線、AS は一点鎖線、種類なしは細い実線
+ * 拠点は太い実線、ラックは実線、VLAN は破線、サブネットは点線、AS は一点鎖線、
+ * クラスタは青緑のやや太い実線(フェーズ4-5)、種類なしは細い実線
  */
 const GROUP_STYLES: Record<GroupKind | "none", string> = {
   site: 'stroke="#57606a" stroke-width="2.5" fill="#f6f8fa"',
@@ -106,6 +108,7 @@ const GROUP_STYLES: Record<GroupKind | "none", string> = {
   subnet:
     'stroke="#1a7f37" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round" fill="#1a7f37" fill-opacity="0.05"',
   as: 'stroke="#bc4c00" stroke-width="1.5" stroke-dasharray="10 4 2 4" fill="#bc4c00" fill-opacity="0.05"',
+  cluster: 'stroke="#1b7c83" stroke-width="2" fill="#1b7c83" fill-opacity="0.05"',
   custom: 'stroke="#8c959f" stroke-width="1" fill="none"',
   none: 'stroke="#8c959f" stroke-width="1" fill="none"',
 };
@@ -123,6 +126,7 @@ const GROUP_TEXT_COLORS: Record<GroupKind | "none", string> = {
   vlan: "#8250df",
   subnet: "#1a7f37",
   as: "#bc4c00",
+  cluster: "#1b7c83",
   custom: "#57606a",
   none: "#57606a",
 };
@@ -362,10 +366,12 @@ export function renderSvg(
     const device = t.devices.get(id);
     return device ? estimateNameWidth(resolveLabel(device)) : undefined;
   };
+  // IP の行には、クラスタのネットワークの名前を添える(SPEC 4.6・フェーズ4-5)
+  const ipText = clusterIpText(t);
   // ホストの名前の下に出す行(bond などの IP。フェーズ4-3 Q1)。リンクのラベルはこの行も避ける
   const ipLinesOf = (id: string) => {
     const device = t.devices.get(id);
-    return labelOptions.showIp && device ? hostIpLines(device) : [];
+    return labelOptions.showIp && device ? hostIpLines(device, ipText(id)) : [];
   };
   const detailsOf = (id: string): NameDetails | undefined => nameDetails(ipLinesOf(id));
   for (const { link, a, b, na, nb } of drawable) {
@@ -376,11 +382,13 @@ export function renderSvg(
     const endLabel = (ep: typeof a, node: string) => {
       if (node !== ep.device) return undefined;
       const device = t.devices.get(ep.device);
+      const info = interfaceInfo(device, ep.iface);
       return ifLabel(
         ep.iface,
-        interfaceInfo(device, ep.iface),
+        info,
         labelOptions,
         bondOf(device, ep.iface),
+        info?.ip?.map(ipText(ep.device)),
       );
     };
     const aLabel = endLabel(a, na);
@@ -458,7 +466,8 @@ export function renderSvg(
     if (bridge) {
       const host = t.devices.get(bridge.host);
       const info = host?.interfaces.get(bridge.bridge);
-      const ips = labelOptions.showIp && host ? bridgeIpLines(host, bridge.bridge) : [];
+      const ips =
+        labelOptions.showIp && host ? bridgeIpLines(host, bridge.bridge, ipText(bridge.host)) : [];
       nodes.push(bridgeSvg(bridge.bridge, info, pos, ips, bounds));
       continue;
     }

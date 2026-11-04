@@ -39,6 +39,9 @@ export type LinkEdgeData = {
   /** 両端の IF の追加情報(IP・VLAN をラベルに出す) */
   aInfo?: InterfaceInfo;
   bInfo?: InterfaceInfo;
+  /** 両端の IP の行(クラスタのネットワークの名前を添えたもの。フェーズ4-5) */
+  aIps?: string[];
+  bIps?: string[];
   /** リンク中央に出す文字 */
   label?: string;
   /** 同じ 2 台の間(自分自身へのリンクなら同じデバイス)のリンクのうち何本目か */
@@ -66,8 +69,12 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     showIp: view.showIp,
     showVlan: view.showVlan,
   };
-  const aLabel = data.aBridge ? undefined : ifLabel(data.aName, data.aInfo, options, data.aBond);
-  const bLabel = data.bBridge ? undefined : ifLabel(data.bName, data.bInfo, options, data.bBond);
+  const aLabel = data.aBridge
+    ? undefined
+    : ifLabel(data.aName, data.aInfo, options, data.aBond, data.aIps);
+  const bLabel = data.bBridge
+    ? undefined
+    : ifLabel(data.bName, data.bInfo, options, data.bBond, data.bIps);
   const aLines = aLabel ? ifLabelLines(aLabel) : [];
   const bLines = bLabel ? ifLabelLines(bLabel) : [];
 

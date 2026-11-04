@@ -97,3 +97,17 @@ describe("ifLabel: bond(フェーズ4-3 Q2)", () => {
     });
   });
 });
+
+describe("ifLabel: クラスタのネットワーク(フェーズ4-5)", () => {
+  it("ips を渡すと、info の ip の代わりに出す。IP を出さないときは出さない", () => {
+    const data = info({ ip: ["10.10.0.1/24"], vlan: 10 });
+    const ips = ["10.10.0.1/24 (corosync)"];
+    expect(ifLabel("eno3", data, all, undefined, ips)).toEqual({
+      name: "eno3",
+      details: ["10.10.0.1/24 (corosync)", "VLAN 10"],
+    });
+    expect(ifLabel("eno3", data, { ...all, showIp: false }, undefined, ips)?.details).toEqual([
+      "VLAN 10",
+    ]);
+  });
+});

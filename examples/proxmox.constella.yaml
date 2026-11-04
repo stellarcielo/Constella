@@ -4,11 +4,13 @@
 # ホストの中のネットワーク(bond・ブリッジ・VLAN インターフェース)は、ホストの interfaces に
 # type を付けて書き、ゲストの IF とブリッジを links でつなぐ。VLAN タグは、ゲストの IF の vlan に書く。
 # ロール(機能)はゲストでも今までどおり(OPNsense の VM は firewall)。
+# 2 台のホストは、kind: cluster のグループでクラスタにする。networks に書いたサブネットに入る
+# ホストの IP には、ラベルにネットワークの名前(corosync など)が付く。
 constella: 1
 
 meta:
   title: Proxmox VE のラボ
-  description: 2 台のホストと、その上で動く VM・コンテナ
+  description: 2 台のホストのクラスタと、その上で動く VM・コンテナ
 
 devices:
   rt1:
@@ -30,12 +32,15 @@ devices:
       vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true }
       # ホストの管理用の IP(VLAN 10)
       vmbr0.10: { type: vlan, ip: [ 192.168.10.2/24 ] }
+      # クラスタの通信(corosync)用
+      eno3: { ip: [ 10.10.0.1/24 ] }
   pve2:
     model: generic-hypervisor-4
     interfaces:
       bond0: { type: bond, members: [ eno1, eno2 ], bond-mode: 802.3ad }
       vmbr0: { type: bridge, members: [ bond0 ], vlan-aware: true }
       vmbr0.10: { type: vlan, ip: [ 192.168.10.3/24 ] }
+      eno3: { ip: [ 10.10.0.2/24 ] }
   fw01:
     model: generic-vm
     role: firewall
@@ -81,6 +86,9 @@ links:
     b: sw1:Gi0/3
   - a: pve2:eno2
     b: sw1:Gi0/4
+  # クラスタの通信(corosync)は、2 台を直接つなぐ
+  - a: pve1:eno3
+    b: pve2:eno3
   # ゲストの IF を、ホストのブリッジにつなぐ(ブリッジには何本でもつなげる)
   - a: fw01:net0
     b: pve1:vmbr0
@@ -92,3 +100,12 @@ links:
     b: pve2:vmbr0
   - a: dns01:net0
     b: pve2:vmbr0
+
+groups:
+  # pve1 と pve2 でクラスタを組む
+  - id: lab
+    kind: cluster
+    members: [ pve1, pve2 ]
+    networks:
+      corosync: 10.10.0.0/24
+      migration: 192.168.10.0/24

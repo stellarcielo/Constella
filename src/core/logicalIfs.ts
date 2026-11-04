@@ -181,21 +181,29 @@ export function addVlanInterface(
 // ラベル(SPEC 7.3・フェーズ4-3 Q1・Q2)
 // ---------------------------------------------------------------------------
 
+/** IP の行の書き方。クラスタのネットワークの名前を添えるときに渡す(clusterIpText。フェーズ4-5) */
+type IpText = (ip: string) => string;
+const plainIp: IpText = (ip) => ip;
+
 /** VLAN インターフェースの IP の行(「vmbr0.10 192.168.10.2/24」) */
-function vlanIpLines(device: Device, onParent: (parent: string | undefined) => boolean): string[] {
+function vlanIpLines(
+  device: Device,
+  onParent: (parent: string | undefined) => boolean,
+  ipText: IpText,
+): string[] {
   return logicalIfsOf(device, "vlan").flatMap((name) => {
     const info = device.interfaces.get(name);
     if (!info || !onParent(vlanInterface(name, info).parent)) return [];
-    return (info.ip ?? []).map((ip) => `${name} ${ip}`);
+    return (info.ip ?? []).map((ip) => `${name} ${ipText(ip)}`);
   });
 }
 
 /** ブリッジの箱の下に出す行。ブリッジの IP と、ブリッジの上の VLAN インターフェースの IP */
-export function bridgeIpLines(device: Device, bridge: string): string[] {
+export function bridgeIpLines(device: Device, bridge: string, ipText = plainIp): string[] {
   const key = ifNameKey(bridge);
   return [
-    ...(device.interfaces.get(bridge)?.ip ?? []),
-    ...vlanIpLines(device, (parent) => parent !== undefined && ifNameKey(parent) === key),
+    ...(device.interfaces.get(bridge)?.ip ?? []).map(ipText),
+    ...vlanIpLines(device, (parent) => parent !== undefined && ifNameKey(parent) === key, ipText),
   ];
 }
 
@@ -203,13 +211,13 @@ export function bridgeIpLines(device: Device, bridge: string): string[] {
  * ホストの名前の下に出す行。bond の IP と、ブリッジ以外(bond・物理的な IF など)の上の
  * VLAN インターフェースの IP
  */
-export function hostIpLines(device: Device): string[] {
+export function hostIpLines(device: Device, ipText = plainIp): string[] {
   const bonds = logicalIfsOf(device, "bond").flatMap((name) =>
-    (device.interfaces.get(name)?.ip ?? []).map((ip) => `${name} ${ip}`),
+    (device.interfaces.get(name)?.ip ?? []).map((ip) => `${name} ${ipText(ip)}`),
   );
   const onBridge = (parent: string | undefined) =>
     parent !== undefined && findLogicalIf(device, parent)?.info.type === "bridge";
-  return [...bonds, ...vlanIpLines(device, (parent) => !onBridge(parent))];
+  return [...bonds, ...vlanIpLines(device, (parent) => !onBridge(parent), ipText)];
 }
 
 /**

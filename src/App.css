@@ -47,6 +47,8 @@
   --group-subnet-fill: rgb(26 127 55 / 0.05);
   --group-as: #bc4c00;
   --group-as-fill: rgb(188 76 0 / 0.05);
+  --group-cluster: #1b7c83;
+  --group-cluster-fill: rgb(27 124 131 / 0.05);
   --group-plain: #8c959f;
   --group-host: #6b7f00;
   --group-host-fill: rgb(107 127 0 / 0.05);
@@ -104,6 +106,8 @@
     --group-subnet-fill: rgb(86 211 100 / 0.06);
     --group-as: #ffa657;
     --group-as-fill: rgb(255 166 87 / 0.06);
+    --group-cluster: #3fb9c4;
+    --group-cluster-fill: rgb(63 185 196 / 0.06);
     --group-plain: #6e7681;
     --group-host: #a9c23f;
     --group-host-fill: rgb(169 194 63 / 0.06);

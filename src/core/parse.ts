@@ -571,8 +571,15 @@ class Parser {
               this.invalid(group.extra, key, value, ctx, "デバイスIDの配列");
             }
             break;
+          case "networks": {
+            const networks = this.networks(value, { ...ctx, path: `${ctx.path}.networks` });
+            if (networks) group.networks = networks;
+            else
+              this.invalid(group.extra, key, value, ctx, "ネットワークの名前: サブネット のマップ");
+            break;
+          }
           default:
-            this.unknownKey(key, keyNode, ctx, ["id", "kind", "label", "members"]);
+            this.unknownKey(key, keyNode, ctx, ["id", "kind", "label", "members", "networks"]);
             group.extra[key] = toJS(value);
         }
       }
@@ -582,6 +589,20 @@ class Parser {
       groups.push(group);
     });
     return groups;
+  }
+
+  /**
+   * クラスタのネットワーク(名前: サブネット。SPEC 4.6)。値がすべて文字列のマップのときだけ読む。
+   * サブネットの書き方は検証で確かめる
+   */
+  private networks(node: Node | null, ctx: Ctx): Map<string, string> | undefined {
+    if (!isMap(node)) return undefined;
+    const networks = new Map<string, string>();
+    for (const [name, value] of this.entries(node, ctx)) {
+      if (!isScalar(value) || typeof value.value !== "string") return undefined;
+      networks.set(name, value.value);
+    }
+    return networks;
   }
 
   // --- 共通処理 -------------------------------------------------------------

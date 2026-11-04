@@ -14,7 +14,7 @@ export type LayerOptions = Pick<
   "showIfLabels" | "showIp" | "showVlan" | "showGroups" | "groupKinds" | "showGuests"
 >;
 
-/** レイヤーで出し分ける枠の種類(種類なし・custom はどのレイヤーでも出す) */
+/** レイヤーで出し分ける枠の種類(種類なし・custom・cluster はどのレイヤーでも出す) */
 export const LAYER_GROUP_KINDS: readonly GroupKind[] = ["site", "rack", "vlan", "subnet", "as"];
 
 export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {

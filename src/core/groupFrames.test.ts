@@ -99,6 +99,13 @@ describe("groupFrames", () => {
     expect(onlySite.map((f) => [nameOf(f), f.inner])).toEqual([["site", 0]]);
   });
 
+  it("クラスタの枠は、どの表示レイヤーでも出す(フェーズ4-5)", () => {
+    const t = load(
+      "  - { id: lab, kind: cluster, members: [ a, b ] }\n  - { id: v10, kind: vlan, members: [ a ] }\n",
+    );
+    expect(groupFrames(t, at(t), groupKindFilter([])).map(nameOf)).toEqual(["lab"]);
+  });
+
   it("位置は渡した関数で決める(自動配置の位置を使える)", () => {
     const t = load("  - { id: g, members: [ d ] }\n");
     const frames = groupFrames(t, (id) => (id === "d" ? { x: 500, y: 500 } : at(t)(id)));
@@ -109,9 +116,15 @@ describe("groupFrames", () => {
 describe("groupTitle", () => {
   it("種類を日本語で添え、名前が無ければ id を使う", () => {
     const t = load(
-      "  - { id: r1, kind: rack, label: Rack 1 }\n  - { id: v10, kind: vlan }\n  - { id: misc, kind: custom, label: その他 }\n  - { id: plain }\n",
+      "  - { id: r1, kind: rack, label: Rack 1 }\n  - { id: v10, kind: vlan }\n  - { id: misc, kind: custom, label: その他 }\n  - { id: plain }\n  - { id: lab, kind: cluster }\n",
     );
-    expect(t.groups.map(groupTitle)).toEqual(["ラック: Rack 1", "VLAN: v10", "その他", "plain"]);
+    expect(t.groups.map(groupTitle)).toEqual([
+      "ラック: Rack 1",
+      "VLAN: v10",
+      "その他",
+      "plain",
+      "クラスタ: lab",
+    ]);
   });
 });
 

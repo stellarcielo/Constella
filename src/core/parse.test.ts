@@ -118,6 +118,45 @@ describe("parseTopology: 最小構成と既定値", () => {
     ]);
   });
 
+  it("クラスタの networks を、書いた順に読む(SPEC 4.6)", () => {
+    const { topology, issues } = parseOk(`constella: 1
+groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1 ]
+    networks:
+      migration: 10.30.0.0/24
+      corosync: 10.10.0.0/24
+      10: "fd00:10::/64"
+`);
+    expect(issues).toEqual([]);
+    expect(topology.groups[0].kind).toBe("cluster");
+    expect([...(topology.groups[0].networks ?? [])]).toEqual([
+      ["migration", "10.30.0.0/24"],
+      ["corosync", "10.10.0.0/24"],
+      ["10", "fd00:10::/64"],
+    ]);
+  });
+
+  it("文字列でないサブネットや、マップでない networks はエラーにして値を残す", () => {
+    const { topology, issues } = parseOk(`constella: 1
+groups:
+  - { id: a, kind: cluster, networks: { corosync: 10 } }
+  - { id: b, kind: cluster, networks: [ 10.10.0.0/24 ] }
+  - { id: c, kind: cluster, networks: { corosync: 10.10.0.0/24, corosync: 10.11.0.0/24 } }
+`);
+    expect(codes(issues)).toEqual(["invalid-value", "invalid-value", "duplicate-key"]);
+    expect(issues[0].message).toBe(
+      "groups[0].networks の値が不正です(ネットワークの名前: サブネット のマップ)",
+    );
+    expect(topology.groups[0].networks).toBeUndefined();
+    expect(topology.groups[0].extra).toEqual({ networks: { corosync: 10 } });
+    expect(topology.groups[1].extra).toEqual({ networks: ["10.10.0.0/24"] });
+    // 重なった名前は最初のものを使う
+    expect(issues[2].message).toBe("groups[2].networks.corosync が重複しています");
+    expect([...(topology.groups[2].networks ?? [])]).toEqual([["corosync", "10.10.0.0/24"]]);
+  });
+
   it("interfaces の各項目", () => {
     const { topology, issues } = parseOk(`constella: 1
 devices:

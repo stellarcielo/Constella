@@ -317,6 +317,13 @@
   fill: var(--group-as-fill);
 }
 
+/* クラスタの枠(フェーズ4-5)。メンバーのホストの枠を丸ごと囲む */
+.group-frame.kind-cluster {
+  stroke: var(--group-cluster);
+  stroke-width: 2;
+  fill: var(--group-cluster-fill);
+}
+
 /* ホストの枠(ホストと、その上で動くゲストを囲む。SPEC 7.3) */
 .group-frame.kind-host {
   stroke: var(--group-host);
@@ -366,6 +373,9 @@
 
 .group-label.kind-as {
   color: var(--group-as);
+}
+.group-label.kind-cluster {
+  color: var(--group-cluster);
 }
 
 .group-label.kind-host {

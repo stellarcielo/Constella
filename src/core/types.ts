@@ -53,7 +53,7 @@ export const BOND_MODES = [
 ] as const;
 export type BondMode = (typeof BOND_MODES)[number];
 
-export const GROUP_KINDS = ["site", "rack", "vlan", "subnet", "as", "custom"] as const;
+export const GROUP_KINDS = ["site", "rack", "vlan", "subnet", "as", "cluster", "custom"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
 export const PORT_TYPES = [
@@ -168,6 +168,8 @@ export interface Group {
   kind?: GroupKind;
   label?: string;
   members: string[];
+  /** クラスタのネットワーク(kind: cluster。SPEC 4.6)。名前 → サブネット(書いたとおり)。書いた順 */
+  networks?: Map<string, string>;
   extra: Extra;
 }
 
@@ -244,7 +246,11 @@ export type IssueCode =
   | "invalid-logical-link"
   | "invalid-vlan-interface"
   | "invalid-vlan-list"
-  | "vlan-not-allowed";
+  | "vlan-not-allowed"
+  | "multiple-clusters"
+  | "invalid-subnet"
+  | "networks-not-cluster"
+  | "missing-cluster-network";
 
 export type IssueTarget =
   | { kind: "document" }
@@ -253,7 +259,8 @@ export type IssueTarget =
   | { kind: "interface"; device: string; name: string }
   | { kind: "link"; id: string; end?: "a" | "b" }
   | { kind: "layout"; id: string }
-  | { kind: "group"; index: number };
+  /** field があれば、YAML ではその項目の値を指す。network があれば、networks のその名前を指す */
+  | { kind: "group"; index: number; field?: string; network?: string };
 
 /** YAML 文字列内の位置(文字オフセット) */
 export interface SourceRange {

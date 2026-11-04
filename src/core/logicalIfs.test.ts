@@ -138,6 +138,18 @@ describe("ラベル(フェーズ4-3 Q1・Q2)", () => {
     expect(hostIpLines(pve1(load()))).toEqual(["bond1 10.20.0.11/24", "vlan30 10.30.0.11/24"]);
   });
 
+  it("IP の書き方を渡すと、どの IP の行にも使う(クラスタのネットワークの名前。フェーズ4-5)", () => {
+    const mark = (ip: string) => `${ip} (net)`;
+    expect(bridgeIpLines(pve1(load()), "vmbr0", mark)).toEqual([
+      "192.168.1.2/24 (net)",
+      "vmbr0.10 192.168.10.2/24 (net)",
+    ]);
+    expect(hostIpLines(pve1(load()), mark)).toEqual([
+      "bond1 10.20.0.11/24 (net)",
+      "vlan30 10.30.0.11/24 (net)",
+    ]);
+  });
+
   it("ブリッジとホストの間の線は、members の下に bond の中身とモード", () => {
     const device = pve1(load());
     expect(uplinkLabelLines(device, "vmbr0")).toEqual(["bond0", "eno1 + eno2(802.3ad)"]);

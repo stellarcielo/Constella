@@ -250,13 +250,18 @@
           "description": "含める機器のデバイスID",
           "type": "array",
           "items": { "$ref": "#/definitions/deviceId" }
+        },
+        "networks": {
+          "description": "クラスタのネットワーク(kind: cluster のとき)。キー = ネットワークの名前(corosync・ceph-public・migration など)、値 = サブネット(10.10.0.0/24 の形。IPv4・IPv6)。サブネットに入る IP には、ラベルに名前を添える",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       }
     },
     "groupKind": {
-      "description": "グループの種類: site(拠点)/ rack(ラック)/ vlan / subnet / as / custom",
+      "description": "グループの種類: site(拠点)/ rack(ラック)/ vlan / subnet / as / cluster(ハイパーバイザのクラスタ)/ custom",
       "type": "string",
-      "enum": ["site", "rack", "vlan", "subnet", "as", "custom"]
+      "enum": ["site", "rack", "vlan", "subnet", "as", "cluster", "custom"]
     }
   }
 }

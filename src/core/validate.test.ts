@@ -428,3 +428,119 @@ links:
     expect(issues[1].target).toEqual({ kind: "interface", device: "pve1", name: "vmbr0" });
   });
 });
+
+describe("validateTopology: クラスタ(SPEC 4.6・フェーズ4-5)", () => {
+  const hosts = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      eno3: { ip: [ 10.10.0.1/24 ] }
+      vmbr0: { type: bridge, members: [ eno1 ], ip: [ 10.30.0.1/24 ] }
+  pve2:
+    model: generic-hypervisor-4
+    interfaces:
+      eno3: { ip: [ 10.10.0.2/24 ] }
+  pve3: { model: generic-hypervisor-4 }
+`;
+
+  it("問題の無いクラスタ", () => {
+    const { issues } = check(`${hosts}groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1 ]
+    networks: { corosync: 10.10.0.0/24, migration: 10.30.0.0/24 }
+`);
+    expect(issues).toEqual([]);
+  });
+
+  it("VMID は、ホストが違っても同じクラスタの中なら重ならないこと", () => {
+    const { issues } = check(`${hosts}  vm1: { model: generic-vm, host: pve1, vmid: 100 }
+  vm2: { model: generic-vm, host: pve2, vmid: 100 }
+  vm3: { model: generic-vm, host: pve3, vmid: 100 }
+  vm4: { model: generic-vm, host: pve1, vmid: 100 }
+groups:
+  - { id: lab, kind: cluster, members: [ pve1, pve2 ] }
+`);
+    expect(summary(issues)).toEqual([
+      ["error", "duplicate-vmid"],
+      ["error", "duplicate-vmid"],
+    ]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "vm2 の VMID 100 は vm1 と重なっています(pve1 と pve2 は同じクラスタ「lab」に入っています)",
+      "vm4 の VMID 100 は vm1 と重なっています(どちらも pve1 の上で動いています)",
+    ]);
+  });
+
+  it("networks のサブネットに入る IP の無いホストを、ホストごとに 1 件の警告にする", () => {
+    const { issues, text } =
+      check(`${hosts}  vm1: { model: generic-vm, host: pve2, interfaces: { net0: { ip: [ 10.30.0.11/24 ] } } }
+groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1, pve2, pve3 ]
+    networks: { corosync: 10.10.0.0/24, migration: 10.30.0.0/24 }
+`);
+    expect(summary(issues)).toEqual([
+      ["warning", "missing-cluster-network"],
+      ["warning", "missing-cluster-network"],
+    ]);
+    // ゲスト(vm1)の IP は、ホストの IP として数えない
+    expect(issues.map((i) => i.message)).toEqual([
+      "pve2 に、クラスタ「lab」のネットワーク migration(10.30.0.0/24)に入る IP がありません",
+      "pve3 に、クラスタ「lab」のネットワーク corosync(10.10.0.0/24)・migration(10.30.0.0/24)に入る IP がありません",
+    ]);
+    expect(issues[0].target).toEqual({ kind: "device", id: "pve2" });
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("pve2");
+  });
+
+  it("読めないサブネットは警告にし、そのネットワークは使わない。YAML ではその名前を指す", () => {
+    const { issues, text } = check(`${hosts}groups:
+  - id: lab
+    kind: cluster
+    members: [ pve1 ]
+    networks:
+      corosync: 10.10.0.0/24
+      ceph: 10.20.0.0
+`);
+    expect(summary(issues)).toEqual([["warning", "invalid-subnet"]]);
+    expect(issues[0].message).toBe(
+      "クラスタ「lab」のネットワーク ceph のサブネット「10.20.0.0」の書き方が分かりません(例: 10.10.0.0/24)",
+    );
+    expect(issues[0].target).toEqual({ kind: "group", index: 0, network: "ceph" });
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("ceph");
+  });
+
+  it("kind: cluster でないグループの networks は使わずに警告する。YAML では networks の値を指す", () => {
+    const { issues, text } = check(`${hosts}groups:
+  - { id: rack1, kind: rack, members: [ pve3 ], networks: { corosync: 10.10.0.0/24 } }
+`);
+    expect(summary(issues)).toEqual([["warning", "networks-not-cluster"]]);
+    expect(issues[0].message).toBe(
+      "グループ「rack1」は kind: cluster ではないので、networks を使いません",
+    );
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("{ corosync: 10.10.0.0/24 }");
+  });
+
+  it("2 つ以上のクラスタに入るホストはエラー。2 つ目以降のクラスタでは数えない", () => {
+    const { issues } = check(`${hosts}  vm1: { model: generic-vm, host: pve2, vmid: 100 }
+  vm2: { model: generic-vm, host: pve3, vmid: 100 }
+groups:
+  - { id: lab1, kind: cluster, members: [ pve1, pve2 ] }
+  - { id: lab2, kind: cluster, members: [ pve2, pve3 ], networks: { corosync: 10.10.0.0/24 } }
+`);
+    // pve2 は lab1 で数えるので、lab2 のネットワークの警告と、pve3 のゲストとの VMID の重なりは出さない
+    expect(summary(issues)).toEqual([
+      ["error", "multiple-clusters"],
+      ["warning", "missing-cluster-network"],
+    ]);
+    expect(issues[0].message).toBe(
+      "pve2 は、クラスタ「lab1」と「lab2」の両方に入っています(入れるクラスタは 1 つだけです)",
+    );
+    expect(issues[0].target).toEqual({ kind: "group", index: 1 });
+    expect(issues[1].message).toContain("pve3 に、クラスタ「lab2」");
+  });
+});

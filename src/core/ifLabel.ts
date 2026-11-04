@@ -55,17 +55,19 @@ export function interfaceInfo(
 
 /**
  * リンクの端のラベル。出す行が無ければ undefined(ラベルを描かない)。
- * bond を渡すと、IF 名の下にその bond の名前を添える(IF 名を出すときだけ。フェーズ4-3 Q2)
+ * bond を渡すと、IF 名の下にその bond の名前を添える(IF 名を出すときだけ。フェーズ4-3 Q2)。
+ * ips を渡すと、info の ip の代わりに出す(クラスタのネットワークの名前を添えた IP。フェーズ4-5)
  */
 export function ifLabel(
   iface: string,
   info: InterfaceInfo | undefined,
   options: IfLabelOptions,
   bond?: string,
+  ips?: readonly string[],
 ): IfLabel | undefined {
   const details: string[] = [];
   if (options.showIfName && bond !== undefined) details.push(bond);
-  if (options.showIp) details.push(...(info?.ip ?? []));
+  if (options.showIp) details.push(...(ips ?? info?.ip ?? []));
   const vlan = options.showVlan && info ? vlanText(info) : undefined;
   if (vlan) details.push(vlan);
   const name = options.showIfName ? (options.longIfNames ? expandIfName(iface) : iface) : undefined;

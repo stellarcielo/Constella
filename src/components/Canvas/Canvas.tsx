@@ -25,6 +25,7 @@ import {
   bondOf,
   bridgeIpLines,
   bridgeKey,
+  clusterIpText,
   type Endpoint,
   endpointNodeId,
   findBridge,
@@ -335,6 +336,8 @@ function buildNodes(
     const bridge = findBridge(t.devices.get(target.device), target.name);
     return bridge === undefined ? target.device : bridgeKey(target.device, bridge);
   });
+  // IP の行には、クラスタのネットワークの名前を添える(SPEC 4.6・フェーズ4-5)
+  const ipText = clusterIpText(t);
   const devices = [...t.devices.values()].map((device): DeviceNodeType => {
     const model = findModel(device, catalog);
     const position = nodePosition(t, autoPositions, device.id);
@@ -352,7 +355,7 @@ function buildNodes(
         guest,
         host: device.host,
         vmid: device.vmid,
-        ipLines: hostIpLines(device),
+        ipLines: hostIpLines(device, ipText(device.id)),
         problem: problems.get(device.id),
       },
     };
@@ -373,7 +376,7 @@ function buildNodes(
         vlanAware: info?.vlanAware === true,
         vlans: info?.vlans,
         // ブリッジの IP と、ブリッジの上の VLAN インターフェースの IP(フェーズ4-3 Q1)
-        ip: device ? bridgeIpLines(device, bridge) : [],
+        ip: device ? bridgeIpLines(device, bridge, ipText(host)) : [],
         problem: problems.get(key),
       },
     };
@@ -404,10 +407,13 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
   const slots = parallelSlots(
     drawable.map(({ link, na, nb }) => ({ id: link.id, source: na, target: nb })),
   );
+  const ipText = clusterIpText(t);
   const links = drawable.map(({ link, a, b, na, nb }): LinkEdgeType => {
     const media = linkMedia(link, t, catalog);
     const problem = problems.get(link.id);
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
+    const aInfo = interfaceInfo(t.devices.get(a.device), a.iface);
+    const bInfo = interfaceInfo(t.devices.get(b.device), b.iface);
     return {
       id: link.id,
       type: "link",
@@ -418,8 +424,10 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
         media,
         aName: a.iface,
         bName: b.iface,
-        aInfo: interfaceInfo(t.devices.get(a.device), a.iface),
-        bInfo: interfaceInfo(t.devices.get(b.device), b.iface),
+        aInfo,
+        bInfo,
+        aIps: aInfo?.ip?.map(ipText(a.device)),
+        bIps: bInfo?.ip?.map(ipText(b.device)),
         label: link.label,
         slotIndex: slot.index,
         slotCount: slot.count,
