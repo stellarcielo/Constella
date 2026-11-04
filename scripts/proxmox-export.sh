@@ -33,6 +33,21 @@ get() {
   fi
 }
 
+# SDN の設定は、適用済みのもの(running)を書く。読めなければ(古い Proxmox VE など)今の設定を書く
+get_running() {
+  if out=$(pvesh get "$1" --running 1 --output-format json 2>/dev/null) && [ -n "$out" ]; then
+    printf '%s' "$out"
+  else
+    get "$1"
+  fi
+}
+
+# Ceph の設定(ceph.conf)の値。ネットワークの一覧に使う文字だけを残す
+ceph_value() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$pve_dir/ceph.conf" | head -n 1 |
+    tr -cd '0-9A-Fa-f.:/, '
+}
+
 printf '{"format":"constella-proxmox","version":1'
 printf ',"exported":"%s"' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf ',"host":"%s"' "$(hostname)"
@@ -62,4 +77,33 @@ for dir in "$pve_dir"/nodes/*/; do
   printf '}'
   node_sep=','
 done
-printf ']}\n'
+printf ']'
+
+# クラスタ(クラスタ名とノード、corosync のアドレス、移行のネットワーク)と Ceph のネットワーク
+printf ',"cluster":{"status":'
+get /cluster/status
+printf ',"nodes":'
+get /cluster/config/nodes
+printf ',"options":'
+get /cluster/options
+printf ',"ceph":'
+if [ -f "$pve_dir/ceph.conf" ]; then
+  printf '{"public_network":"%s","cluster_network":"%s"}' \
+    "$(ceph_value 'public[_ ]network')" "$(ceph_value 'cluster[_ ]network')"
+else
+  printf 'null'
+fi
+printf '}'
+
+# SDN のゾーン・VNet と、VNet ごとのサブネット
+printf ',"sdn":{"zones":'
+get_running /cluster/sdn/zones
+vnets=$(get_running /cluster/sdn/vnets)
+printf ',"vnets":%s,"subnets":{' "$vnets"
+subnet_sep=''
+for vnet in $(printf '%s' "$vnets" | grep -o '"vnet": *"[A-Za-z0-9]*"' | sed 's/.*"\([A-Za-z0-9]*\)"$/\1/'); do
+  printf '%s"%s":' "$subnet_sep" "$vnet"
+  get_running "/cluster/sdn/vnets/$vnet/subnets"
+  subnet_sep=','
+done
+printf '}}}\n'

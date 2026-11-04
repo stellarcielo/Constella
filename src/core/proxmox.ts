@@ -1,7 +1,8 @@
-// Proxmox VE からの取り込み(SPEC 4.7・フェーズ5-1)。書き出しスクリプト(scripts/proxmox-export.sh)が
+// Proxmox VE からの取り込み(SPEC 4.7・フェーズ5-1・5-2)。書き出しスクリプト(scripts/proxmox-export.sh)が
 // 作った JSON を、トポロジと YAML の文字列に変える。JSON の中身は Proxmox VE の API(pvesh)が返す形のまま。
 
 import { ifNameKey } from "./ifname";
+import { networkOf, parseIpAddress, parseSubnet } from "./ip";
 import { vlanInterface } from "./logicalIfs";
 import { serializeTopology } from "./serialize";
 import { createEmptyTopology, createLinkId, createUid, DEVICE_ID_PATTERN } from "./topology";
@@ -12,9 +13,14 @@ import {
   type GuestKind,
   type InterfaceInfo,
   SCHEMA_COMMENT,
+  SDN_ZONE_TYPES,
+  type SdnVnet,
+  type SdnZone,
+  type SdnZoneType,
   type Topology,
   VMID_MAX,
   VMID_MIN,
+  VNI_MAX,
 } from "./types";
 
 /** 書き出しスクリプトの JSON の形式名と版 */
@@ -102,6 +108,8 @@ export function importProxmox(json: string): ProxmoxImportResult {
 
   // ノード(書き出した順)。ネットワークを読めたノードは、そのブリッジの名前を覚えておく
   const hosts: { device: Device; source: Json; bridges?: Set<string> }[] = [];
+  /** ノードの名前 → デバイスID */
+  const nodeIds = new Map<string, string>();
   nodes.forEach((source, i) => {
     const name = text(source.node);
     const device: Device = {
@@ -112,6 +120,7 @@ export function importProxmox(json: string): ProxmoxImportResult {
       extra: {},
     };
     t.devices.set(device.id, device);
+    if (name !== undefined) nodeIds.set(name, device.id);
     if (Array.isArray(source.network)) {
       device.interfaces = nodeInterfaces(source.network.filter(isObject));
       const bridges = [...device.interfaces]
@@ -126,7 +135,12 @@ export function importProxmox(json: string): ProxmoxImportResult {
     }
   });
 
-  // ゲスト(ノードごとに VMID の順)と、ブリッジへのリンク
+  // SDN のゾーンと VNet(フェーズ5-2)。ゲストは VNet にもつなぐ
+  importSdn(t, isObject(data.sdn) ? data.sdn : undefined, nodeIds, warnings);
+  /** ifNameKey → VNet ID */
+  const vnets = new Map([...t.sdn.vnets.keys()].map((id) => [ifNameKey(id), id]));
+
+  // ゲスト(ノードごとに VMID の順)と、ブリッジ・VNet へのリンク
   for (const { device: node, source, bridges } of hosts) {
     const guests = (["vm", "container"] as const)
       .flatMap((kind) => {
@@ -170,15 +184,17 @@ export function importProxmox(json: string): ProxmoxImportResult {
         if (Object.keys(info).some((k) => k !== "extra")) guest.interfaces.set(key, info);
         const bridge = net.get("bridge");
         if (bridge === undefined) continue;
-        if (bridges && !bridges.has(ifNameKey(bridge))) {
+        const vnet = bridges?.has(ifNameKey(bridge)) ? undefined : vnets.get(ifNameKey(bridge));
+        if (bridges && vnet === undefined && !bridges.has(ifNameKey(bridge))) {
           warnings.push(
-            `${guest.id} の ${key} のつなぎ先「${bridge}」は ${node.id} のブリッジに無いので、リンクを作りませんでした(SDN の VNet は、まだ取り込めません)`,
+            `${guest.id} の ${key} のつなぎ先「${bridge}」は、${node.id} のブリッジにも SDN の VNet にも無いので、リンクを作りませんでした`,
           );
           continue;
         }
-        // ネットワークを読めなかったノードには、ゲストの bridge= からブリッジを作る
+        // ネットワークを読めなかったノードには、ゲストの bridge= からブリッジを作る(VNet でなければ)
         if (
           !bridges &&
+          vnet === undefined &&
           ![...node.interfaces.keys()].some((k) => ifNameKey(k) === ifNameKey(bridge))
         ) {
           node.interfaces.set(bridge, { type: "bridge", extra: {} });
@@ -186,15 +202,170 @@ export function importProxmox(json: string): ProxmoxImportResult {
         t.links.push({
           id: createLinkId(),
           a: { device: guest.id, iface: key },
-          b: { device: node.id, iface: bridge },
+          b: { device: node.id, iface: vnet ?? bridge },
           extra: {},
         });
       }
     }
   }
 
+  // クラスタ(フェーズ5-2)
+  importCluster(t, isObject(data.cluster) ? data.cluster : undefined, nodeIds, warnings);
+
   const yaml = serializeTopology(t).text;
   return { ok: true, topology: t, text: `${SCHEMA_COMMENT}\n${yaml}`, warnings };
+}
+
+/**
+ * SDN のゾーンと VNet(SPEC 4.7・フェーズ5-2)。取り込めない種類のゾーンと、そこの VNet は取り込まない。
+ * ゾーンの nodes のノード名は、デバイスID に直す
+ */
+function importSdn(
+  t: Topology,
+  sdn: Json | undefined,
+  nodeIds: ReadonlyMap<string, string>,
+  warnings: string[],
+): void {
+  if (!sdn) return;
+  const skipped = new Set<string>();
+  for (const entry of Array.isArray(sdn.zones) ? sdn.zones.filter(isObject) : []) {
+    const id = text(entry.zone);
+    if (id === undefined || id === "") continue;
+    const type = text(entry.type);
+    if (type === undefined || !(SDN_ZONE_TYPES as readonly string[]).includes(type)) {
+      warnings.push(
+        `SDN のゾーン「${id}」の種類「${type ?? "?"}」は取り込めないので、そのゾーンと VNet は取り込みませんでした`,
+      );
+      skipped.add(id);
+      continue;
+    }
+    const zone: SdnZone = { type: type as SdnZoneType, extra: {} };
+    const bridge = text(entry.bridge);
+    if (bridge !== undefined && bridge !== "") zone.bridge = bridge;
+    const tag = integer(entry.tag);
+    if (tag !== undefined && tag >= 1 && tag <= 4094) zone.tag = tag;
+    const nodes = (text(entry.nodes) ?? "").split(/[\s,;]+/).filter((n) => n !== "");
+    if (nodes.length > 0) zone.nodes = nodes.map((n) => nodeIds.get(n) ?? n);
+    t.sdn.zones.set(id, zone);
+  }
+  const subnets = isObject(sdn.subnets) ? sdn.subnets : {};
+  for (const entry of Array.isArray(sdn.vnets) ? sdn.vnets.filter(isObject) : []) {
+    const id = text(entry.vnet);
+    const zone = text(entry.zone);
+    if (id === undefined || id === "" || (zone !== undefined && skipped.has(zone))) continue;
+    const vnet: SdnVnet = { extra: {} };
+    if (zone !== undefined) vnet.zone = zone;
+    const tag = integer(entry.tag);
+    if (tag !== undefined && tag >= 1 && tag <= VNI_MAX) vnet.tag = tag;
+    const list = subnets[id];
+    const cidrs = (Array.isArray(list) ? list.filter(isObject) : []).flatMap((s) => {
+      const cidr = subnetCidr(s);
+      return cidr === undefined ? [] : [cidr];
+    });
+    if (cidrs.length > 0) vnet.subnets = cidrs;
+    t.sdn.vnets.set(id, vnet);
+  }
+}
+
+/** SDN のサブネットの CIDR。cidr、無ければ network と mask、それも無ければ ID(「ゾーン-10.0.0.0-24」)から */
+function subnetCidr(subnet: Json): string | undefined {
+  const cidr = text(subnet.cidr);
+  if (cidr !== undefined) return cidr;
+  const network = text(subnet.network);
+  const mask = text(subnet.mask);
+  if (network !== undefined && mask !== undefined) return `${network}/${mask}`;
+  const id = /-([0-9A-Fa-f.:]+)-(\d+)$/.exec(text(subnet.subnet) ?? "");
+  return id ? `${id[1]}/${id[2]}` : undefined;
+}
+
+/**
+ * クラスタ(SPEC 4.7・フェーズ5-2)。kind: cluster のグループにノードを並べ、networks に
+ * corosync(リンクごと)・migration・Ceph のネットワークを書く。クラスタ名が分からなければ作らない
+ */
+function importCluster(
+  t: Topology,
+  cluster: Json | undefined,
+  nodeIds: ReadonlyMap<string, string>,
+  warnings: string[],
+): void {
+  const status = Array.isArray(cluster?.status) ? cluster.status.filter(isObject) : [];
+  const name = text(status.find((s) => s.type === "cluster")?.name);
+  if (!cluster || name === undefined || name === "") return;
+  const networks = new Map<string, string>();
+
+  // corosync: リンクごとに、そのアドレスを持つノードの IF の IP からサブネットを求める
+  const members = Array.isArray(cluster.nodes) ? cluster.nodes.filter(isObject) : [];
+  for (let link = 0; link < 8; link++) {
+    const addresses = members.flatMap((m) => {
+      const address = text(m[`ring${link}_addr`]);
+      const node = text(m.name) ?? text(m.node);
+      return address === undefined || node === undefined ? [] : [{ node, address }];
+    });
+    if (addresses.length === 0) continue;
+    const label = link === 0 ? "corosync" : `corosync-link${link}`;
+    const subnet = addresses
+      .map(({ node, address }) => ifSubnet(t, nodeIds.get(node), address))
+      .find((s) => s !== undefined);
+    if (subnet === undefined) {
+      const list = addresses.map((a) => a.address).join("・");
+      warnings.push(
+        `クラスタのネットワーク ${label} のサブネットが分からないので、書きませんでした(アドレス ${list} を持つ IF がありません)`,
+      );
+    } else {
+      networks.set(label, subnet);
+    }
+  }
+
+  // 移行のネットワーク(datacenter.cfg の migration: type=secure,network=10.30.0.0/24)
+  const migration = isObject(cluster.options) ? cluster.options.migration : undefined;
+  const network = isObject(migration)
+    ? text(migration.network)
+    : /(?:^|,)network=([^,]+)/.exec(text(migration) ?? "")?.[1];
+  if (network !== undefined) {
+    if (parseSubnet(network)) networks.set("migration", network);
+    else
+      warnings.push(`移行のネットワーク「${network}」の書き方が分からないので、書きませんでした`);
+  }
+
+  // Ceph の public_network・cluster_network(2 つ以上あれば ceph-public-2 …)
+  const ceph = isObject(cluster.ceph) ? cluster.ceph : undefined;
+  for (const [key, label] of [
+    ["public_network", "ceph-public"],
+    ["cluster_network", "ceph-cluster"],
+  ] as const) {
+    const list = (text(ceph?.[key]) ?? "").split(/[\s,]+/).filter((n) => n !== "");
+    list.forEach((subnet, i) => {
+      if (parseSubnet(subnet)) networks.set(i === 0 ? label : `${label}-${i + 1}`, subnet);
+    });
+  }
+
+  t.groups.push({
+    id: name,
+    kind: "cluster",
+    members: [...nodeIds.values()],
+    ...(networks.size > 0 ? { networks } : {}),
+    extra: {},
+  });
+}
+
+/** ノードの IF の IP のうち、address を持つもののサブネット(「10.10.0.0/24」) */
+function ifSubnet(t: Topology, nodeId: string | undefined, address: string): string | undefined {
+  const target = parseIpAddress(address);
+  const device = nodeId === undefined ? undefined : t.devices.get(nodeId);
+  if (!target || !device) return undefined;
+  for (const info of device.interfaces.values()) {
+    for (const ip of info.ip ?? []) {
+      const own = parseIpAddress(ip);
+      if (
+        own &&
+        own.version === target.version &&
+        own.bytes.every((b, i) => b === target.bytes[i])
+      ) {
+        return networkOf(ip);
+      }
+    }
+  }
+  return undefined;
 }
 
 /** ノードのネットワーク(pvesh get /nodes/<node>/network)を IF にする。並べる順は IF_ORDER と名前 */

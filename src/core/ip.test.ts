@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { type IpAddress, parseIpAddress, parseSubnet, type Subnet, subnetContains } from "./ip";
+import {
+  formatIpAddress,
+  type IpAddress,
+  networkOf,
+  parseIpAddress,
+  parseSubnet,
+  type Subnet,
+  subnetContains,
+} from "./ip";
 
 describe("parseIpAddress", () => {
   it("IPv4。/ の後ろ(プレフィックス長)は見ない", () => {
@@ -95,5 +103,30 @@ describe("subnetContains", () => {
   it("IPv4 と IPv6 は、互いに入らない", () => {
     expect(subnetContains(subnet("0.0.0.0/0"), ip("::1"))).toBe(false);
     expect(subnetContains(subnet("::/0"), ip("10.0.0.1"))).toBe(false);
+  });
+});
+
+describe("formatIpAddress・networkOf(フェーズ5-2)", () => {
+  const format = (text: string) => {
+    const address = parseIpAddress(text);
+    if (!address) throw new Error(text);
+    return formatIpAddress(address);
+  };
+
+  it("IPv6 は、0 が続くいちばん長いところ(2 組以上。同じ長さなら先)を :: にまとめる", () => {
+    expect(format("192.0.2.1")).toBe("192.0.2.1");
+    expect(format("2001:0DB8:0000:0000:0000:0000:0000:0001")).toBe("2001:db8::1");
+    expect(format("::")).toBe("::");
+    expect(format("fd00:0:0:1:0:0:0:0")).toBe("fd00:0:0:1::");
+    expect(format("2001:db8:0:1:1:1:1:1")).toBe("2001:db8:0:1:1:1:1:1");
+    expect(format("1:0:0:2:0:0:3:4")).toBe("1::2:0:0:3:4");
+  });
+
+  it("IP の入るサブネット", () => {
+    expect(networkOf("10.10.0.1/24")).toBe("10.10.0.0/24");
+    expect(networkOf("192.0.2.77/26")).toBe("192.0.2.64/26");
+    expect(networkOf("fd00:11::1/64")).toBe("fd00:11::/64");
+    expect(networkOf("2001:db8::1/127")).toBe("2001:db8::/127");
+    expect(networkOf("10.0.0.1")).toBeUndefined();
   });
 });

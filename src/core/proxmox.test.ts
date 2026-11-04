@@ -248,7 +248,7 @@ describe("importProxmox: ゲスト(SPEC 4.7)", () => {
     expect(ifs(t, "pve2")).toEqual([["vmbr0", { type: "bridge", extra: {} }]]);
     expect(warnings).toEqual([
       "pve2 のネットワークを読めませんでした(ゲストの設定から、ブリッジだけを作りました)",
-      "fw01 の net1 のつなぎ先「vmbr9」は pve1 のブリッジに無いので、リンクを作りませんでした(SDN の VNet は、まだ取り込めません)",
+      "fw01 の net1 のつなぎ先「vmbr9」は、pve1 のブリッジにも SDN の VNet にも無いので、リンクを作りませんでした",
       "VM 104(pve1)の設定を読めませんでした",
     ]);
   });
@@ -286,5 +286,162 @@ describe("importProxmox: 図(SPEC 4.7)", () => {
       ok: false,
       error: "ノードがありません",
     });
+  });
+});
+
+describe("importProxmox: クラスタと SDN(SPEC 4.7・フェーズ5-2)", () => {
+  const clustered = {
+    format: "constella-proxmox",
+    version: 1,
+    nodes: [
+      {
+        node: "pve1",
+        network: [
+          { iface: "eno1", type: "eth" },
+          { iface: "eno2", type: "eth", cidr: "10.10.0.1/24" },
+          { iface: "eno3", type: "eth", cidr: "fd00:11::1/64" },
+          {
+            iface: "vmbr0",
+            type: "bridge",
+            bridge_ports: "eno1",
+            bridge_vlan_aware: 1,
+            cidr: "192.168.10.2/24",
+          },
+        ],
+        qemu: [
+          { vmid: 100, config: { name: "app01", net0: "virtio=BC:24:11:00:00:01,bridge=vnet30" } },
+        ],
+        lxc: [],
+      },
+      {
+        node: "pve2",
+        network: null,
+        qemu: [
+          {
+            vmid: 101,
+            config: {
+              name: "app02",
+              net0: "virtio=BC:24:11:00:00:02,bridge=vnet30",
+              net1: "virtio=BC:24:11:00:00:03,bridge=vmbr1",
+            },
+          },
+        ],
+        lxc: [],
+      },
+    ],
+    cluster: {
+      status: [
+        { type: "cluster", name: "lab", nodes: 2 },
+        { type: "node", name: "pve1" },
+        { type: "node", name: "pve2" },
+      ],
+      nodes: [
+        {
+          node: "pve1",
+          name: "pve1",
+          nodeid: "1",
+          ring0_addr: "10.10.0.1",
+          ring1_addr: "fd00:11::1",
+        },
+        {
+          node: "pve2",
+          name: "pve2",
+          nodeid: "2",
+          ring0_addr: "10.10.0.2",
+          ring1_addr: "fd00:11::2",
+          ring2_addr: "pve2.local",
+        },
+      ],
+      options: { migration: { type: "secure", network: "192.168.10.0/24" } },
+      ceph: { public_network: "10.20.0.0/24, 10.22.0.0/24", cluster_network: "10.21.0.0/24" },
+    },
+    sdn: {
+      zones: [
+        { zone: "lan", type: "vlan", bridge: "vmbr0", nodes: "pve1,pve2" },
+        { zone: "fab", type: "fabric" },
+        { zone: "qz", type: "qinq", bridge: "vmbr0", tag: 100 },
+      ],
+      vnets: [
+        { vnet: "vnet30", zone: "lan", tag: 30, type: "vnet" },
+        { vnet: "fabnet", zone: "fab", tag: 5, type: "vnet" },
+        { vnet: "q1", zone: "qz", tag: 7, type: "vnet" },
+      ],
+      subnets: {
+        vnet30: [
+          { cidr: "192.168.30.0/24", subnet: "lan-192.168.30.0-24" },
+          { network: "fd00:30::", mask: "64" },
+        ],
+        q1: [{ subnet: "qz-10.7.0.0-24" }],
+      },
+    },
+  };
+
+  it("クラスタのグループに、corosync(リンクごと)・migration・Ceph のネットワークを書く", () => {
+    const { topology: t } = load(clustered);
+    expect(t.groups).toEqual([
+      {
+        id: "lab",
+        kind: "cluster",
+        members: ["pve1", "pve2"],
+        networks: new Map([
+          ["corosync", "10.10.0.0/24"],
+          ["corosync-link1", "fd00:11::/64"],
+          ["migration", "192.168.10.0/24"],
+          ["ceph-public", "10.20.0.0/24"],
+          ["ceph-public-2", "10.22.0.0/24"],
+          ["ceph-cluster", "10.21.0.0/24"],
+        ]),
+        extra: {},
+      },
+    ]);
+  });
+
+  it("SDN のゾーンと VNet(サブネットを含む)。取り込めない種類のゾーンと、そこの VNet は取り込まない", () => {
+    const { topology: t } = load(clustered);
+    expect([...t.sdn.zones]).toEqual([
+      ["lan", { type: "vlan", bridge: "vmbr0", nodes: ["pve1", "pve2"], extra: {} }],
+      ["qz", { type: "qinq", bridge: "vmbr0", tag: 100, extra: {} }],
+    ]);
+    expect([...t.sdn.vnets]).toEqual([
+      ["vnet30", { zone: "lan", tag: 30, subnets: ["192.168.30.0/24", "fd00:30::/64"], extra: {} }],
+      ["q1", { zone: "qz", tag: 7, subnets: ["10.7.0.0/24"], extra: {} }],
+    ]);
+  });
+
+  it("ゲストは VNet にもつなぐ。読めないノードにも、VNet の名前のブリッジは作らない", () => {
+    const { topology: t, warnings } = load(clustered);
+    expect(t.links.map((l) => `${l.a?.device}:${l.a?.iface} ${l.b?.device}:${l.b?.iface}`)).toEqual(
+      ["app01:net0 pve1:vnet30", "app02:net0 pve2:vnet30", "app02:net1 pve2:vmbr1"],
+    );
+    expect(ifs(t, "pve2")).toEqual([["vmbr1", { type: "bridge", extra: {} }]]);
+    expect(warnings).toEqual([
+      "pve2 のネットワークを読めませんでした(ゲストの設定から、ブリッジだけを作りました)",
+      "SDN のゾーン「fab」の種類「fabric」は取り込めないので、そのゾーンと VNet は取り込みませんでした",
+      "クラスタのネットワーク corosync-link2 のサブネットが分からないので、書きませんでした(アドレス pve2.local を持つ IF がありません)",
+    ]);
+    // 書いた YAML は、そのまま読み直せる
+    const { text } = load(clustered);
+    const parsed = parseTopology(text, { catalog: testCatalog });
+    expect(parsed.ok && parsed.issues).toEqual([]);
+  });
+
+  it("クラスタ名が無ければ(ノード 1 台だけ)グループを作らない。移行のネットワークは文字列でも読む", () => {
+    const single = {
+      ...clustered,
+      cluster: { ...clustered.cluster, status: [{ type: "node", name: "pve1" }] },
+    };
+    expect(load(single).topology.groups).toEqual([]);
+    const text = {
+      ...clustered,
+      cluster: {
+        ...clustered.cluster,
+        nodes: null,
+        ceph: null,
+        options: { migration: "type=insecure,network=10.30.0.0/24" },
+      },
+    };
+    expect([...(load(text).topology.groups[0].networks ?? [])]).toEqual([
+      ["migration", "10.30.0.0/24"],
+    ]);
   });
 });

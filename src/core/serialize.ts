@@ -400,17 +400,25 @@ class Writer {
     for (const [id, entry] of entries) {
       const pair = section.items.find((p) => keyText(p.key) === id);
       if (!pair) {
-        section.items.push(
-          new Pair(this.doc.createNode(id), this.newMap(fields(entry), entry.extra)),
-        );
+        section.items.push(new Pair(this.doc.createNode(id), this.sdnNode(fields(entry), entry)));
         continue;
       }
       const value = pair.value as Node | null;
       if (isMap(value)) this.syncFields(value, fields(entry), entry.extra);
       else if (hasContent(fields(entry), entry.extra)) {
-        pair.value = this.newMap(fields(entry), entry.extra);
+        pair.value = this.sdnNode(fields(entry), entry);
       }
     }
+  }
+
+  /** ゾーン・VNet のマップ(nodes・subnets は 1 行の配列) */
+  private sdnNode(fields: Fields, entry: { extra: Extra }): YAMLMap {
+    const map = this.newMap(fields, entry.extra);
+    for (const key of ["nodes", "subnets"]) {
+      const seq = map.get(key, true);
+      if (isSeq(seq)) seq.flow = true;
+    }
+    return map;
   }
 
   // --- ノードの作成 -----------------------------------------------------------

@@ -80,3 +80,32 @@ export function subnetContains(subnet: Subnet, address: IpAddress): boolean {
   }
   return true;
 }
+
+/** IP アドレスの書き方。IPv6 は、0 が続くいちばん長いところ(2 組以上)を :: にまとめる(RFC 5952) */
+export function formatIpAddress(address: IpAddress): string {
+  if (address.version === 4) return address.bytes.join(".");
+  const words = [0, 2, 4, 6, 8, 10, 12, 14].map(
+    (i) => (address.bytes[i] << 8) | address.bytes[i + 1],
+  );
+  let best = { at: -1, length: 0 };
+  for (let i = 0; i < 8;) {
+    let j = i;
+    while (j < 8 && words[j] === 0) j++;
+    if (j - i > best.length) best = { at: i, length: j - i };
+    i = j === i ? i + 1 : j;
+  }
+  const hex = (list: number[]) => list.map((w) => w.toString(16)).join(":");
+  if (best.length < 2) return hex(words);
+  return `${hex(words.slice(0, best.at))}::${hex(words.slice(best.at + best.length))}`;
+}
+
+/** IP(「10.10.0.1/24」)の入るサブネット(「10.10.0.0/24」)。読めなければ undefined */
+export function networkOf(cidr: string): string | undefined {
+  const subnet = parseSubnet(cidr);
+  if (!subnet) return undefined;
+  const bytes = subnet.bytes.map((byte, i) => {
+    const bits = Math.max(0, Math.min(8, subnet.prefix - i * 8));
+    return byte & ((0xff << (8 - bits)) & 0xff);
+  });
+  return `${formatIpAddress({ version: subnet.version, bytes })}/${subnet.prefix}`;
+}

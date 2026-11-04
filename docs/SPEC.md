@@ -359,7 +359,10 @@ Proxmox VE のクラスタ(ノード 1 台だけでもよい)の構成を読み�
 書き出す JSON(`format: constella-proxmox`、`version: 1`):
 - `exported`(書き出した日時)、`host`(書き出したノード)
 - `nodes`: ノードごとに `node`(名前)、`network`(`pvesh get /nodes/<node>/network` の結果)、`qemu`・`lxc`(ゲストごとに `vmid` と、`pvesh get /nodes/<node>/qemu/<vmid>/config` などの設定)
-- 停止中のノードなど、読めなかったところは `null` にして、続きを書き出す。
+- `cluster`: `status`(`/cluster/status`)、`nodes`(`/cluster/config/nodes`。corosync のアドレス)、`options`(`/cluster/options`。移行のネットワーク)、`ceph`(`/etc/pve/ceph.conf` の `public_network`・`cluster_network`。Ceph を使っていなければ `null`)
+- `sdn`: `zones`(`/cluster/sdn/zones`)、`vnets`(`/cluster/sdn/vnets`)、`subnets`(VNet ごとの `/cluster/sdn/vnets/<vnet>/subnets`)。適用済みの設定(`running`)を読み、読めなければ今の設定を読む。
+- 停止中のノードなど、読めなかったところは `null` にして、続きを書き出す。ノード 1 台だけでクラスタが無ければ、`cluster` の中は読めないところが `null` になる。
+- `cluster`・`sdn` はフェーズ5-2 で足した(どちらも無い JSON も、同じ `version: 1` として読む。クラスタと SDN は無い扱い)。
 
 取り込み方:
 
@@ -373,11 +376,20 @@ Proxmox VE のクラスタ(ノード 1 台だけでもよい)の構成を読み�
 | `cidr`・`cidr6`、`comments` | `ip`、`description` |
 | VM・CT | ゲスト(モデル `generic-vm` / `generic-container`)。`host` にノード、`vmid` に VMID |
 | ゲストの `net0` など | IF `net0` など。`tag` → `vlan`、`trunks` → `mode: trunk` と `vlans`(`;` は `,` に)、CT の `ip`・`ip6` と VM の cloud-init の `ipconfig0` などの `ip`・`ip6` → `ip`(`dhcp` などは書かない) |
-| ゲストの `bridge=` | ゲストの IF とノードのブリッジを結ぶリンク |
+| ゲストの `bridge=` | ゲストの IF とノードのブリッジ(SDN の VNet も)を結ぶリンク |
+| クラスタ | `kind: cluster` のグループ。ID はクラスタ名、`members` はノード |
+| corosync のリンク 0(`ring0_addr`)・リンク 1 … | `networks` の `corosync`・`corosync-link1` …。サブネットは、そのアドレスを持つノードの IF の IP から求める |
+| 移行のネットワーク(`migration` の `network`) | `networks` の `migration` |
+| Ceph の `public_network`・`cluster_network` | `networks` の `ceph-public`・`ceph-cluster`(2 つ以上書いてあれば `ceph-public-2` …) |
+| SDN のゾーン | `sdn.zones`。`type`・`bridge`・`tag`・`nodes`(`,` 区切りを配列に) |
+| SDN の VNet | `sdn.vnets`。`zone`・`tag`、サブネットの `cidr` → `subnets` |
 
 - ゲストのデバイスID は、VM の名前(CT はホスト名)。使えない文字は `-` に置き換え、ほかの機器と重なれば `-VMID` を付ける。名前が無ければ `vm100` / `ct200`。名前と違う ID にしたときは `label` に名前を書く。
 - 機器は、ノード(書き出した順)のあとに、ノードごとのゲスト(VMID の順)を並べる。ノードの IF は、物理的な IF・bond・ブリッジ・VLAN インターフェースの順に並べる。
-- ネットワークを読めなかったノードには、ゲストの `bridge=` からブリッジだけを作る。ネットワークを読めたノードに無いブリッジ(SDN の VNet など)へのリンクは作らない(SDN はフェーズ5-2)。
+- ネットワークを読めなかったノードには、ゲストの `bridge=` からブリッジだけを作る。ネットワークを読めたノードのブリッジにも、SDN の VNet にも無いところへのリンクは作らない。
+- クラスタのネットワークのサブネットが分からないとき(corosync のアドレスを持つ IF が無い、アドレスがホスト名など)は、そのネットワークを書かない。
+- ゾーン・VNet のうち、取り込めない種類のゾーン(SDN の 5 種類にないもの)と、そこの VNet は取り込まない。
+- 取り込めなかったもの(上の 3 つ、読めなかったノード・ゲスト)は、取り込んだあとに一覧で知らせる。
 - テンプレート(`template: 1`)の VM・CT は取り込まない。
 - スイッチと物理的な配線は取り込めない(取り込んだあとに図に足してつなぐ)。
 - 図のタイトルは「Proxmox VE」、説明は書き出した日時とノード。
@@ -633,7 +645,7 @@ ports:
   - [x] 4-6 SDN(ゾーン・VNet)
 - Proxmox VE からの取り込み(4.7)
   - [x] 5-1 書き出しスクリプトと、ノード・ネットワーク・ゲスト・リンクの取り込み
-  - [ ] 5-2 クラスタ(`kind: cluster`、corosync・migration のネットワーク)と SDN の取り込み
+  - [x] 5-2 クラスタ(`kind: cluster`、corosync・migration のネットワーク)と SDN の取り込み
   - API から直接取り込む(候補。URL と API トークンを入力する)
 - Windows / Linux ビルドとインストーラ
 - CLI / MCP サーバー

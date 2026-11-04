@@ -655,6 +655,9 @@ sdn:
     const { topology } = load(text);
     const out = serializeTopology(topology).text;
     expect(out).toContain("sdn:\n  zones:\n    lan:\n      type: vlan\n");
+    // nodes・subnets は 1 行の配列
+    expect(out).toContain("      nodes: [ pve1, pve2 ]\n");
+    expect(out).toContain("      subnets: [ 10.30.0.0/24 ]\n");
     const again = load(out).topology;
     expect([...again.sdn.zones]).toEqual([...topology.sdn.zones]);
     expect([...again.sdn.vnets]).toEqual([...topology.sdn.vnets]);
