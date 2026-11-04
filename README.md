@@ -58,6 +58,7 @@ npm install
 npm run tauri dev
 ```
 
+- `npm run tauri dev` の間、画面の部品(`.tsx`)と CSS の変更はその場で反映し、ほかのファイルを変えるとアプリを読み直します。読み直すと、開いていた図は閉じます(保存していない変更は消えます)。
 - 確認: `npm run typecheck && npm run lint && npm test && npm run format:check`
 - 配布用のビルド(ユニバーサル版): `npm run build:mac`(Intel 用のターゲットが必要: `rustup target add x86_64-apple-darwin`)
 - リリース: `v0.1.0` のようなタグを push すると、GitHub Actions がビルドして、下書きの Release に DMG を載せます。
