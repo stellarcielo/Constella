@@ -156,8 +156,9 @@ function clearDistance(origin: Point, ux: number, uy: number, size: Size, boxes:
   }));
   const EPS = 1e-6;
   let d = 0;
-  // 範囲の中にいれば、その範囲を抜けるところまで進む(範囲は 2 つなので数回で止まる)
-  for (let pass = 0; pass < 8; pass++) {
+  // 範囲の中にいれば、その範囲を抜けるところまで進む
+  // (ひとつの範囲で進むのは 1 回までなので、範囲の数 + 1 回で止まる)
+  for (let pass = 0; pass <= grown.length; pass++) {
     let moved = false;
     for (const g of grown) {
       const x = origin.x + ux * d;
@@ -281,6 +282,153 @@ export function endLabelPositions(
     a: { x: a.x + ux * da + nx * shiftA, y: a.y + uy * da + ny * shiftA },
     b: { x: b.x - ux * db + nx * shiftB, y: b.y - uy * db + ny * shiftB },
   };
+}
+
+/** placeEndLabels に渡す、線の片方の端 */
+export interface LabelEnd {
+  /** つながるノード(デバイスかブリッジの箱)の ID。同じノードに付くラベルどうしを重ならないようにする */
+  node: string;
+  /** アイコン(ブリッジなら箱)の中心 */
+  center: Point;
+  /** ラベルの行。空ならラベルを置かない */
+  text: string | readonly string[];
+  /** デバイス名の幅と、名前の下の行(endLabelPositions の nameWidths・details) */
+  nameWidth?: number;
+  details?: NameDetails;
+}
+
+/** placeEndLabels に渡す線 */
+export interface LabeledLine {
+  a: LabelEnd;
+  b: LabelEnd;
+  /** 同じ 2 台の間のリンクのうち何本目か(offsetLine でずらしてから置く) */
+  slot?: Slot;
+  /** offsetLine に渡すものと同じ */
+  reversed?: boolean;
+}
+
+/** placeEndLabels で置いたラベル */
+interface PlacedLabel {
+  end: LabelEnd;
+  /** ラベルの中心 */
+  at: Point;
+  /** 線に沿って、ノードから離れる向き */
+  dir: Point;
+  size: Size;
+  /** 線の向きのラベルの半分の長さ */
+  half: number;
+  /** 同じ線の反対の端のラベル(ラベルの無い端でも、置くはずの位置を持つ。両端を作ってから結ぶ) */
+  other?: PlacedLabel;
+}
+
+/**
+ * 全部の線の両端のラベルの中心(結果は lines と同じ順。SPEC 7.3)。
+ * 線ごとに endLabelPositions で置いたあと、同じノードに付くラベル(別々の線のものも)が重なれば、
+ * ノードに近いラベルはそのままにし、遠いほうをその線に沿って外へずらす。
+ * 反対の端のラベルの手前までしかずらさないので、線が短いと重なりが残ることがある。
+ */
+export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Point }[] {
+  const pairs = lines.map(({ a, b, slot = { index: 0, count: 1 }, reversed = false }) => {
+    const line = offsetLine(a.center, b.center, slotOffset(slot), reversed);
+    const ends = endLabelPositions(
+      line.a,
+      line.b,
+      a.text,
+      b.text,
+      slot,
+      { a: a.nameWidth, b: b.nameWidth },
+      { a: a.details, b: b.details },
+      reversed,
+    );
+    const len = Math.hypot(b.center.x - a.center.x, b.center.y - a.center.y);
+    const ux = len === 0 ? 0 : (b.center.x - a.center.x) / len;
+    const uy = len === 0 ? 0 : (b.center.y - a.center.y) / len;
+    const placed = (end: LabelEnd, at: Point, dir: Point): PlacedLabel => {
+      const size = estimateLabelSize(end.text);
+      // endLabelPositions の along と同じ
+      return {
+        end,
+        at,
+        dir,
+        size,
+        half: (Math.abs(ux) * size.width + Math.abs(uy) * size.height) / 2,
+      };
+    };
+    const pa = placed(a, ends.a, { x: ux, y: uy });
+    const pb = placed(b, ends.b, { x: -ux, y: -uy });
+    pa.other = pb;
+    pb.other = pa;
+    return { pa, pb, len };
+  });
+
+  const byNode = new Map<string, PlacedLabel[]>();
+  for (const { pa, pb, len } of pairs) {
+    if (len === 0) continue;
+    for (const label of [pa, pb]) {
+      if (!hasText(label.end.text)) continue;
+      const list = byNode.get(label.end.node);
+      if (list) list.push(label);
+      else byNode.set(label.end.node, [label]);
+    }
+  }
+  // ノードごとに、ノードに近いラベルから順に、先に置いたラベルと重なれば外へずらす
+  for (const labels of byNode.values()) {
+    const distance = ({ at, end }: PlacedLabel) =>
+      Math.hypot(at.x - end.center.x, at.y - end.center.y);
+    labels.sort((p, q) => distance(p) - distance(q));
+    const done: PlacedLabel[] = [];
+    for (const label of labels) {
+      if (done.some((other) => overlapping(label, other))) moveOut(label, done);
+      done.push(label);
+    }
+  }
+  return pairs.map(({ pa, pb }) => ({ a: pa.at, b: pb.at }));
+}
+
+function hasText(text: string | readonly string[]): boolean {
+  return typeof text === "string" ? text !== "" : text.length > 0;
+}
+
+/** 2 つのラベルが重なるか(接しているだけなら重ならない) */
+function overlapping(p: PlacedLabel, q: PlacedLabel): boolean {
+  const EPS = 1e-6;
+  return (
+    Math.abs(p.at.x - q.at.x) < (p.size.width + q.size.width) / 2 - EPS &&
+    Math.abs(p.at.y - q.at.y) < (p.size.height + q.size.height) / 2 - EPS
+  );
+}
+
+/**
+ * label を線に沿って外へ、先に置いたラベル(done)とノードのアイコン・名前から LABEL_GAP 以上離れるところまでずらす。
+ * ただし反対の端のラベルとは重ならないところまで
+ */
+function moveOut(label: PlacedLabel, done: PlacedLabel[]): void {
+  const { end, dir, other } = label;
+  const c = end.center;
+  // 範囲はノードの中心から見た座標
+  const boxes: Box[] = [
+    ...avoidBoxes(end.nameWidth, end.details),
+    ...done.map(({ at, size }) => ({
+      left: at.x - c.x - size.width / 2,
+      top: at.y - c.y - size.height / 2,
+      right: at.x - c.x + size.width / 2,
+      bottom: at.y - c.y + size.height / 2,
+    })),
+  ];
+  const push = clearDistance(
+    { x: label.at.x - c.x, y: label.at.y - c.y },
+    dir.x,
+    dir.y,
+    label.size,
+    boxes,
+  );
+  // 線の向きの位置(ノードの中心から測る)。反対の端のラベルの手前まで
+  const along = (p: Point) => (p.x - c.x) * dir.x + (p.y - c.y) * dir.y;
+  const room = other
+    ? along(other.at) - other.half - (along(label.at) + label.half)
+    : Number.POSITIVE_INFINITY;
+  const d = Math.max(0, Math.min(push, room));
+  label.at = { x: label.at.x + dir.x * d, y: label.at.y + dir.y * d };
 }
 
 export function midpoint(a: Point, b: Point): Point {

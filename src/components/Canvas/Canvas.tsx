@@ -59,6 +59,7 @@ import { MODEL_DRAG_TYPE } from "../dnd";
 import { isTyping, releaseInputFocus } from "../shortcuts";
 import { BridgeNode, type BridgeNodeType } from "./BridgeNode";
 import { ConnectOverlay } from "./ConnectOverlay";
+import { EndLabels } from "./EndLabels";
 import { GroupFrames } from "./GroupFrames";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
@@ -316,6 +317,8 @@ function CanvasInner() {
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls showInteractive={false} />
+        {/* IF 名ラベルは、グループの枠のラベルより先に(後ろに)描く(今までどおり) */}
+        <EndLabels />
         <GroupFrames />
         <ConnectOverlay />
       </ReactFlow>

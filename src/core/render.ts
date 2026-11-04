@@ -17,15 +17,17 @@ import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import { expandIfName } from "./ifname";
 import { bondOf, bridgeIpLines, hostIpLines, uplinkLabelLines } from "./logicalIfs";
 import {
-  endLabelPositions,
   estimateLabelSize,
   estimateNameWidth,
+  type LabeledLine,
+  type LabelEnd,
   midpoint,
   NAME_DETAIL_LINE,
   type NameDetails,
   nameDetails,
   offsetLine,
   parallelSlots,
+  placeEndLabels,
   type Point,
   selfLoop,
   slotOffset,
@@ -373,6 +375,15 @@ export function renderSvg(
     return labelOptions.showIp && device ? hostIpLines(device, ipText(id)) : [];
   };
   const detailsOf = (id: string): NameDetails | undefined => nameDetails(ipLinesOf(id));
+  // 両端の IF 名ラベルは、線を全部集めてから置く(同じデバイスに付くラベルを重ねない。SPEC 7.3)
+  const labeled: { line: LabeledLine; a?: IfLabel; b?: IfLabel }[] = [];
+  const labelEnd = (node: string, center: Point, text: readonly string[]): LabelEnd => ({
+    node,
+    center,
+    text,
+    nameWidth: nameWidthOf(node),
+    details: detailsOf(node),
+  });
   for (const { link, a, b, na, nb } of drawable) {
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     const ca = centerOf(na);
@@ -395,37 +406,31 @@ export function renderSvg(
     const aLines = aLabel ? ifLabelLines(aLabel) : [];
     const bLines = bLabel ? ifLabelLines(bLabel) : [];
     let path: string;
-    let ends: { a: Point; b: Point };
     let center: Point;
     if (na === nb) {
       const loop = selfLoop(ca, slot.index, link.label, { a: aLines, b: bLines });
       path = loop.path;
-      ends = { a: loop.labelA, b: loop.labelB };
       center = loop.label;
+      if (aLabel) linkLabels.push(ifLabelSvg(loop.labelA, aLabel, bounds));
+      if (bLabel) linkLabels.push(ifLabelSvg(loop.labelB, bLabel, bounds));
       // 輪の制御点の範囲(曲線はこの内側に収まる)
       const width = 46 + slot.index * 22;
       const height = 12 + slot.index * 18 + 18 + slot.index * 14;
       bounds.add(ca.x, ca.y - height, ca.x + 26 + width, ca.y + height);
     } else {
-      const line = offsetLine(ca, cb, slotOffset(slot), na > nb);
+      const reversed = na > nb;
+      const line = offsetLine(ca, cb, slotOffset(slot), reversed);
       path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
-      ends = endLabelPositions(
-        line.a,
-        line.b,
-        aLines,
-        bLines,
-        slot,
-        { a: nameWidthOf(na), b: nameWidthOf(nb) },
-        { a: detailsOf(na), b: detailsOf(nb) },
-        na > nb,
-      );
       center = midpoint(line.a, line.b);
+      labeled.push({
+        line: { a: labelEnd(na, ca, aLines), b: labelEnd(nb, cb, bLines), slot, reversed },
+        a: aLabel,
+        b: bLabel,
+      });
     }
     lines.push(
       `<path d="${path}" fill="none" stroke-width="2" ${MEDIA_STYLES[linkMedia(link, t, catalog)]}/>`,
     );
-    if (aLabel) linkLabels.push(ifLabelSvg(ends.a, aLabel, bounds));
-    if (bLabel) linkLabels.push(ifLabelSvg(ends.b, bLabel, bounds));
     if (link.label) {
       const style = { font: FONT, fontSize: 11, color: THEME.textMuted, border: false };
       linkLabels.push(label(center, link.label, estimateLabelSize(link.label), style, bounds));
@@ -458,18 +463,17 @@ export function renderSvg(
       `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
     );
     if (labelOptions.showIfName) {
-      const ends = endLabelPositions(
-        from,
-        to,
-        [],
-        text,
-        undefined,
-        { b: nameWidthOf(host) },
-        { b: detailsOf(host) },
-      );
-      linkLabels.push(ifLabelSvg(ends.b, { name: text[0], details: text.slice(1) }, bounds));
+      labeled.push({
+        line: { a: labelEnd(key, from, []), b: labelEnd(host, to, text) },
+        b: { name: text[0], details: text.slice(1) },
+      });
     }
   }
+  const ends = placeEndLabels(labeled.map(({ line }) => line));
+  labeled.forEach(({ a, b }, i) => {
+    if (a) linkLabels.push(ifLabelSvg(ends[i].a, a, bounds));
+    if (b) linkLabels.push(ifLabelSvg(ends[i].b, b, bounds));
+  });
 
   // デバイス(角丸の箱の中のアイコンと、その下の名前)とブリッジの箱
   const nodes: string[] = [];

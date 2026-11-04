@@ -331,6 +331,39 @@ sdn:
     expect(hidden).not.toContain("10.30.0.0/24");
   });
 
+  it("同じデバイスに付く、別々の線の IF 名ラベルを重ねない(SPEC 7.3)", () => {
+    // r2 から、横の r1 へ IP 付きの線、左上の r3 へ近い角度の線
+    const t = load(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2:
+    model: generic-router-4
+    interfaces:
+      Gi0/2: { ip: [ 10.10.0.2/24 ] }
+  r3: { model: generic-router-4 }
+links:
+  - { a: r2:Gi0/2, b: r1:Gi0/0 }
+  - { a: r2:Gi0/3, b: r3:Gi0/0 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 500, y: 0 }
+  r3: { x: 0, y: -140 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    // IF 名ラベルの枠(枠線のある rect)と 1 行目の文字
+    const boxes = new Map(
+      [
+        ...svg.matchAll(
+          /<rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.-]+)" height="([\d.-]+)" rx="3" [^>]*stroke="[^"]*"\/><text [^>]*>([^<]*)<\/text>/g,
+        ),
+      ].map((m) => [m[5], m.slice(1, 5).map(Number)]),
+    );
+    const [x1, y1, w1, h1] = boxes.get("Gi0/2") ?? [];
+    const [x2, y2, w2, h2] = boxes.get("Gi0/3") ?? [];
+    const apart = x1 + w1 <= x2 || x2 + w2 <= x1 || y1 + h1 <= y2 || y2 + h2 <= y1;
+    expect(apart).toBe(true);
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

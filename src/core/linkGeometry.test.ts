@@ -8,6 +8,8 @@ import {
   offsetLine,
   PARALLEL_GAP,
   parallelSlots,
+  placeEndLabels,
+  type Point,
   selfLoop,
   slotOffset,
 } from "./linkGeometry";
@@ -299,5 +301,124 @@ describe("endLabelPositions: 名前の下の行(フェーズ4-3 Q1)", () => {
     );
     expect(withLines.a.y).toBeGreaterThan(plain.a.y + 2 * NAME_DETAIL_LINE - 1);
     expect(nameDetails([])).toBeUndefined();
+  });
+});
+
+describe("placeEndLabels: 同じデバイスに付く、別々の線のラベル(SPEC 7.3)", () => {
+  type Text = string | string[];
+  const end = (node: string, center: Point, text: Text) => ({ node, center, text });
+  /** 中心と行から見た 2 つのラベルが重なるか(接しているだけなら重ならない) */
+  const overlaps = (p: Point, pText: Text, q: Point, qText: Text) => {
+    const ps = estimateLabelSize(pText);
+    const qs = estimateLabelSize(qText);
+    return (
+      Math.abs(p.x - q.x) < (ps.width + qs.width) / 2 - 1e-6 &&
+      Math.abs(p.y - q.y) < (ps.height + qs.height) / 2 - 1e-6
+    );
+  };
+  /** p が from と to を結ぶ線の上にあるか */
+  const onLine = (p: Point, from: Point, to: Point) =>
+    Math.abs((to.x - from.x) * (p.y - from.y) - (to.y - from.y) * (p.x - from.x)) /
+      Math.hypot(to.x - from.x, to.y - from.y) <
+    1e-6;
+
+  it("近い角度の 2 本では、デバイスに近いラベルはそのままにし、遠いほうを線に沿って外へずらす", () => {
+    // pve2 から、横の pve1 へ corosync の線、左上の sw1 へ bond の線
+    const pve2 = { x: 0, y: 0 };
+    const pve1 = { x: -500, y: 0 };
+    const sw1 = { x: -500, y: -140 };
+    const eno3 = ["eno3", "10.10.0.2/24 (corosync)"];
+    const eno1 = ["eno1", "bond0"];
+    const before = {
+      corosync: endLabelPositions(pve2, pve1, eno3, "eno3"),
+      bond: endLabelPositions(pve2, sw1, eno1, "Gi0/3"),
+    };
+    expect(overlaps(before.corosync.a, eno3, before.bond.a, eno1)).toBe(true);
+    const [corosync, bond] = placeEndLabels([
+      { a: end("pve2", pve2, eno3), b: end("pve1", pve1, "eno3") },
+      { a: end("pve2", pve2, eno1), b: end("sw1", sw1, "Gi0/3") },
+    ]);
+    expect(bond.a).toEqual(before.bond.a);
+    expect(onLine(corosync.a, pve2, pve1)).toBe(true);
+    expect(corosync.a.x).toBeLessThan(before.corosync.a.x);
+    expect(overlaps(corosync.a, eno3, bond.a, eno1)).toBe(false);
+    // 反対の端のラベルは動かさない
+    expect(corosync.b).toEqual(before.corosync.b);
+    expect(bond.b).toEqual(before.bond.b);
+  });
+
+  it("ほぼ同じ向きの 3 本では、ラベルが線に沿って段違いに並び、どれも重ならない", () => {
+    const sw = { x: 0, y: 0 };
+    const targets = [
+      { x: 600, y: -220 },
+      { x: 600, y: -150 },
+      { x: 600, y: -105 },
+    ];
+    const names = ["Gi0/5", "Gi0/2", "Gi0/3"];
+    const before = targets.map((to, i) => endLabelPositions(sw, to, names[i], "eth0").a);
+    expect(overlaps(before[0], names[0], before[1], names[1])).toBe(true);
+    const placed = placeEndLabels(
+      targets.map((to, i) => ({ a: end("sw", sw, names[i]), b: end(`d${i}`, to, "eth0") })),
+    );
+    for (const [i, { a }] of placed.entries()) {
+      expect(onLine(a, sw, targets[i])).toBe(true);
+      for (const [j, other] of placed.entries()) {
+        if (j > i) expect(overlaps(a, names[i], other.a, names[j])).toBe(false);
+      }
+    }
+  });
+
+  it("重ならなければ、線ごとに置いた位置のまま(並行リンクも)", () => {
+    const c = { x: 0, y: 0 };
+    const right = { x: 300, y: 0 };
+    const lines = [
+      { a: end("c", c, "Gi0/1"), b: end("up", { x: 0, y: -300 }, "eth0") },
+      { a: end("c", c, "Gi0/2"), b: end("down", { x: 0, y: 300 }, "eth0") },
+      { a: end("left", { x: -300, y: 0 }, "eth0"), b: end("c", c, "Gi0/3") },
+      // 横の並行リンク 2 本(ラベルは段違いにせず、上下に並ぶ)
+      { a: end("c", c, "Gi0/4"), b: end("right", right, "eth0"), slot: { index: 0, count: 2 } },
+      { a: end("c", c, "Gi0/5"), b: end("right", right, "eth1"), slot: { index: 1, count: 2 } },
+    ];
+    const expected = lines.map(({ a, b, slot = { index: 0, count: 1 } }) => {
+      const line = offsetLine(a.center, b.center, slotOffset(slot), false);
+      return endLabelPositions(line.a, line.b, a.text, b.text, slot);
+    });
+    expect(placeEndLabels(lines)).toEqual(expected);
+  });
+
+  it("線が短ければ、反対の端のラベルの手前までしかずらさない", () => {
+    const sw = { x: 0, y: 0 };
+    const pc = { x: -170, y: -26 };
+    const [, short] = placeEndLabels([
+      { a: end("sw", sw, "Gi0/1"), b: end("rt", { x: -600, y: 0 }, "Gi0/0") },
+      { a: end("sw", sw, "Gi0/2"), b: end("pc", pc, "eth0") },
+    ]);
+    const before = endLabelPositions(sw, pc, "Gi0/2", "eth0");
+    expect(short.a.x).toBeLessThan(before.a.x);
+    expect(onLine(short.a, sw, pc)).toBe(true);
+    expect(short.b).toEqual(before.b);
+    // 線の向きで測ると、反対の端のラベル(eth0)に接したところで止まる
+    const len = Math.hypot(pc.x, pc.y);
+    const along = (p: Point) => (p.x * pc.x + p.y * pc.y) / len;
+    const half = (text: string) => {
+      const { width, height } = estimateLabelSize(text);
+      return (Math.abs(pc.x) * width + Math.abs(pc.y) * height) / 2 / len;
+    };
+    expect(along(short.b) - along(short.a)).toBeCloseTo(half("Gi0/2") + half("eth0"));
+  });
+
+  it("片方の端だけにラベルがある線(ブリッジとホストの間)も、同じデバイスのラベルとして避ける", () => {
+    const host = { x: 0, y: 0 };
+    const bond = ["bond0", "eno1 + eno2(802.3ad)"];
+    const before = {
+      link: endLabelPositions(host, { x: 60, y: 400 }, "eno3", "Gi0/1"),
+      uplink: endLabelPositions({ x: -40, y: 300 }, host, [], bond),
+    };
+    expect(overlaps(before.link.a, "eno3", before.uplink.b, bond)).toBe(true);
+    const [link, uplink] = placeEndLabels([
+      { a: end("pve1", host, "eno3"), b: end("sw1", { x: 60, y: 400 }, "Gi0/1") },
+      { a: end("pve1/vmbr0", { x: -40, y: 300 }, []), b: end("pve1", host, bond) },
+    ]);
+    expect(overlaps(link.a, "eno3", uplink.b, bond)).toBe(false);
   });
 });

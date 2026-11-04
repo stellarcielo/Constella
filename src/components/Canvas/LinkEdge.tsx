@@ -1,7 +1,7 @@
 // リンクの線(SPEC 7.3)。デバイスのアイコンの中心同士を直線で結ぶ(フローティングエッジ)。
-// 両端に IF 名(その下に IP・VLAN。フェーズ3-2)、中央にリンクのラベルを出し、
-// 同じ 2 台の間の複数リンクは平行にずらす。線の色と種類は media で決まる(Canvas.css)。
-// ブリッジへのリンクはブリッジの箱につなぎ、ブリッジ側の端には IF 名を出さない(箱に名前があるため)。
+// 中央にリンクのラベルを出し、同じ 2 台の間の複数リンクは平行にずらす。線の色と種類は media で決まる(Canvas.css)。
+// ブリッジへのリンクはブリッジの箱につなぐ。両端の IF 名(その下に IP・VLAN。フェーズ3-2)は、
+// 同じデバイスに付くほかの線のラベルと重ならないよう、EndLabels がまとめて置いて描く。
 
 import {
   BaseEdge,
@@ -12,22 +12,14 @@ import {
 } from "@xyflow/react";
 import type { ReactNode } from "react";
 import {
-  endLabelPositions,
-  estimateNameWidth,
-  type IfLabel,
-  ifLabel,
-  ifLabelLines,
   type InterfaceInfo,
   type Media,
   midpoint,
-  nameDetails,
   offsetLine,
   type Point,
   selfLoop,
   slotOffset,
 } from "../../core";
-import { useUi } from "../../store";
-import { DEVICE_NODE_WIDTH } from "./DeviceNode";
 import { iconCenter } from "./geometry";
 import type { CanvasNode } from "./nodes";
 
@@ -60,75 +52,46 @@ export type LinkEdgeType = Edge<LinkEdgeData, "link">;
 export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkEdgeType>) {
   const s = useInternalNode<CanvasNode>(source);
   const t = useInternalNode<CanvasNode>(target);
-  const view = useUi((state) => state.view);
   if (!s || !t || !data) return null;
 
-  const options = {
-    showIfName: view.showIfLabels,
-    longIfNames: view.longIfNames,
-    showIp: view.showIp,
-    showVlan: view.showVlan,
-  };
-  const aLabel = data.aBridge
-    ? undefined
-    : ifLabel(data.aName, data.aInfo, options, data.aBond, data.aIps);
-  const bLabel = data.bBridge
-    ? undefined
-    : ifLabel(data.bName, data.bInfo, options, data.bBond, data.bIps);
-  const aLines = aLabel ? ifLabelLines(aLabel) : [];
-  const bLines = bLabel ? ifLabelLines(bLabel) : [];
-
   let path: string;
-  let ends: { a: Point; b: Point };
   let center: Point;
   if (source === target) {
-    const loop = selfLoop(iconCenter(s), data.slotIndex, data.label, { a: aLines, b: bLines });
+    const loop = selfLoop(iconCenter(s), data.slotIndex, data.label);
     path = loop.path;
-    ends = { a: loop.labelA, b: loop.labelB };
     center = loop.label;
   } else {
     const slot = { index: data.slotIndex, count: data.slotCount };
-    // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(ラベルを分ける向きも同じ)
-    const reversed = source > target;
-    const line = offsetLine(iconCenter(s), iconCenter(t), slotOffset(slot), reversed);
+    // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(IF 名ラベルを分ける向きも同じ)
+    const line = offsetLine(iconCenter(s), iconCenter(t), slotOffset(slot), source > target);
     path = `M ${line.a.x},${line.a.y} L ${line.b.x},${line.b.y}`;
-    // デバイス名はノードの幅で切れて表示される(Canvas.css)ので、それより広くはならない
-    const nameWidth = ({ data }: { data: CanvasNode["data"] }) =>
-      "label" in data ? Math.min(estimateNameWidth(data.label), DEVICE_NODE_WIDTH) : undefined;
-    // ホストの名前の下の行(bond などの IP)も避ける
-    const details = ({ data }: { data: CanvasNode["data"] }) =>
-      view.showIp && "ipLines" in data ? nameDetails(data.ipLines ?? []) : undefined;
-    ends = endLabelPositions(
-      line.a,
-      line.b,
-      aLines,
-      bLines,
-      slot,
-      { a: nameWidth(s), b: nameWidth(t) },
-      { a: details(s), b: details(t) },
-      reversed,
-    );
     center = midpoint(line.a, line.b);
   }
 
-  const state = selected ? " selected" : "";
   return (
     <>
       <BaseEdge id={id} path={path} interactionWidth={14} />
-      <EdgeLabelRenderer>
-        {aLabel && <IfLabelBox at={ends.a} label={aLabel} className={`link-if-label${state}`} />}
-        {bLabel && <IfLabelBox at={ends.b} label={bLabel} className={`link-if-label${state}`} />}
-        {data.label && (
-          <Label at={center} className={`link-label${state}`}>
+      {data.label && (
+        <EdgeLabelRenderer>
+          <Label at={center} className={`link-label${selected ? " selected" : ""}`}>
             {data.label}
           </Label>
-        )}
-      </EdgeLabelRenderer>
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 }
 
-function Label({ at, className, children }: { at: Point; className: string; children: ReactNode }) {
+/** at を中心にして置くラベル(IF 名ラベルは EndLabels が使う) */
+export function Label({
+  at,
+  className,
+  children,
+}: {
+  at: Point;
+  className: string;
+  children: ReactNode;
+}) {
   return (
     <div
       className={className}
@@ -136,19 +99,5 @@ function Label({ at, className, children }: { at: Point; className: string; chil
     >
       {children}
     </div>
-  );
-}
-
-/** 両端のラベル。IF 名の下に、IP・VLAN を 1 行ずつ小さく出す */
-function IfLabelBox({ at, label, className }: { at: Point; label: IfLabel; className: string }) {
-  return (
-    <Label at={at} className={className}>
-      {label.name !== undefined && <div>{label.name}</div>}
-      {label.details.map((line, i) => (
-        <div key={i} className="link-if-detail">
-          {line}
-        </div>
-      ))}
-    </Label>
   );
 }
