@@ -1,11 +1,13 @@
 // VLAN の一覧(vlans の書き方。SPEC 4.3)と、VLAN の通り道(SPEC 4.6・フェーズ4-4)。
-// 通り道では、ゲストやホストが使う VLAN が最初のスイッチまで通るかを確かめ、止まる場所ごとにまとめる。
+// 通り道では、ゲストやホスト、SDN の VNet(フェーズ4-6)が使う VLAN が最初のスイッチまで通るかを確かめ、
+// 止まる場所ごとにまとめる。
 
 import { findBridge } from "./bridges";
 import { interfaceInfo } from "./ifLabel";
 import { ifNameKey } from "./ifname";
 import { findLogicalIf, logicalIfsOf, vlanInterface } from "./logicalIfs";
-import type { Device, Endpoint, InterfaceInfo, Topology } from "./types";
+import { zoneHosts, zoneOfVnet } from "./sdn";
+import type { Device, Endpoint, InterfaceInfo, ModelCatalog, Topology } from "./types";
 
 /** VLAN ID の範囲([最初, 最後])の並び。小さい順で、重ならない */
 export type VlanRanges = [number, number][];
@@ -84,7 +86,10 @@ export function portVlanMode(info: InterfaceInfo | undefined): "trunk" | "access
   return info?.mode === "access" ? "access" : undefined;
 }
 
-/** VLAN を使っている IF(ゲストの IF・VLAN インターフェース)と、その IF の VLAN のうち止まるもの */
+/**
+ * VLAN を使っている IF(ゲストの IF・VLAN インターフェース・VNet の「ホスト:VNet ID」)と、
+ * その IF の VLAN のうち止まるもの
+ */
 export interface VlanUse {
   source: Endpoint;
   vlans: number[];
@@ -118,9 +123,11 @@ const endKey = (ep: Endpoint) => `${ep.device}\u0000${ifNameKey(ep.iface)}`;
 
 /**
  * VLAN の通り道を確かめ、止まる場所ごとにまとめる(SPEC 4.6)。ゲストの IF はつながるブリッジから、
- * VLAN インターフェースは親から、物理的な IF にリンクでつながる相手のポートまでたどる
+ * VLAN インターフェースは親から、SDN の VLAN はゾーンのブリッジから、物理的な IF にリンクでつながる
+ * 相手のポートまでたどる。catalog は、ゾーンのホスト(nodes の省略時はロールが hypervisor の機器)を
+ * 決めるのに使う
  */
-export function vlanBlocks(t: Topology): VlanBlock[] {
+export function vlanBlocks(t: Topology, catalog: ModelCatalog): VlanBlock[] {
   /** 物理的な IF などのリンクの相手(最初のリンク。二重使用は別のエラーで知らせる) */
   const peers = new Map<string, Endpoint>();
   for (const link of t.links) {
@@ -206,7 +213,7 @@ export function vlanBlocks(t: Topology): VlanBlock[] {
     }
   };
 
-  // ブリッジにつながったゲストの IF
+  // ブリッジにつながったゲストの IF(VNet につながったゲストの IF は、VNet が VLAN を決めるので確かめない)
   for (const link of t.links) {
     if (!link.a || !link.b) continue;
     const ends: [Endpoint, Endpoint][] = [
@@ -233,6 +240,21 @@ export function vlanBlocks(t: Topology): VlanBlock[] {
       }
       if (findLogicalIf(device, parent)?.info.type === "vlan") continue;
       walk(device, parent, { device: device.id, iface: name }, [vid], new Set());
+    }
+  }
+  // SDN の VLAN(フェーズ4-6 Q3): vlan ゾーンは VNet の tag、qinq ゾーンはゾーンの tag(外側の VLAN)を、
+  // ゾーンのすべてのホストで、ゾーンのブリッジから確かめる
+  for (const [vnet, info] of t.sdn.vnets) {
+    const zone = zoneOfVnet(t, vnet);
+    if (!zone || zone.bridge === undefined) continue;
+    const vid = zone.type === "vlan" ? info.tag : zone.type === "qinq" ? zone.tag : undefined;
+    if (vid === undefined || vid < VLAN_ID_MIN || vid > VLAN_ID_MAX) continue;
+    for (const host of zoneHosts(t, zone, catalog)) {
+      const device = t.devices.get(host);
+      const bridge = findBridge(device, zone.bridge);
+      if (device && bridge !== undefined) {
+        walk(device, bridge, { device: host, iface: vnet }, [vid], new Set());
+      }
     }
   }
 

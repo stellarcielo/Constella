@@ -2,7 +2,7 @@
 // メンバーの機器を囲む四角を、機器の位置から計算する。
 // キャンバスと SVG の書き出しで共有する。枠の位置は YAML に書かない(機器を動かせば枠も動く)。
 
-import { bridgeKey, bridgesOf, resolveBridgeKey } from "./bridges";
+import { bridgeKey, hostBridges, resolveBridgeKey } from "./bridges";
 import { guestsBelow, hostTree, resolveGuest } from "./hosts";
 import type { Group, GroupKind, ModelCatalog, Position, Topology } from "./types";
 
@@ -108,11 +108,11 @@ export function groupFrames(
   visible: (group: Group) => boolean = () => true,
 ): Frame[] {
   const tree = hostTree(t);
-  /** 座標のある機器かブリッジ(ブリッジは箱の ID で渡す) */
+  /** 座標のある機器かブリッジ(ブリッジ・VNet は箱の ID で渡す) */
   const placed = (id: string) =>
     (t.devices.has(id) || resolveBridgeKey(t, id) === id) && positionOf(id) !== undefined;
   const bridgeKeys = (id: string) =>
-    bridgesOf(t.devices.get(id))
+    hostBridges(t, id)
       .map((bridge) => bridgeKey(id, bridge))
       .filter(placed);
   /** 機器と、そのブリッジと、その上で動くゲスト(ゲストのブリッジも。座標のあるものだけ) */

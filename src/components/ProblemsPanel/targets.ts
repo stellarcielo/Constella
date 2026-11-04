@@ -1,10 +1,11 @@
 // 問題の対象の表示名と、クリックしたときに選ぶもの。
 
 import {
+  allBridges,
   bridgeKey,
   endpointNodeId,
   endpointToString,
-  findBridge,
+  findHostBridge,
   type IssueTarget,
   type Link,
   resolveBridgeKey,
@@ -33,6 +34,8 @@ export function describeTarget(
       return `layout の ${target.id}`;
     case "group":
       return `groups の ${target.index + 1} 番目`;
+    case "sdn":
+      return `sdn の ${target.section}.${target.id}`;
   }
 }
 
@@ -47,6 +50,7 @@ function describeLink(link: Link, show: (iface: string) => string): string {
  * 図に描けないリンク(端が不正など)も選ぶ(インスペクタで内容を見たり削除したりできる)。
  * グループの問題では、そのグループのメンバー(存在するもの)を選ぶ(枠のラベルのクリックと同じ)。
  * ブリッジの IF と、layout のブリッジのキーの問題では、ブリッジの箱を選ぶ(SPEC 4.6)。
+ * VNet の問題では、その VNet の箱(描いているもの)を選ぶ(フェーズ4-6)。
  * ファイル全体の問題では何も選ばない。
  */
 export function issueFocus(
@@ -62,7 +66,7 @@ export function issueFocus(
     case "layout":
       return device(target.id);
     case "interface": {
-      const bridge = findBridge(t.devices.get(target.device), target.name);
+      const bridge = findHostBridge(t, target.device, target.name);
       return device(bridge === undefined ? target.device : bridgeKey(target.device, bridge));
     }
     case "link": {
@@ -80,6 +84,15 @@ export function issueFocus(
       );
       return members.length > 0
         ? { selection: { devices: members, links: [] }, devices: members }
+        : undefined;
+    }
+    case "sdn": {
+      if (target.section !== "vnets") return undefined;
+      const boxes = allBridges(t)
+        .filter((box) => box.vnet && box.bridge === target.id)
+        .map((box) => box.key);
+      return boxes.length > 0
+        ? { selection: { devices: boxes, links: [] }, devices: boxes }
         : undefined;
     }
     case "document":

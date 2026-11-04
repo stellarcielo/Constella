@@ -291,6 +291,46 @@ groups:
     expect(svg).toContain(">10.30.0.11/24</text>");
   });
 
+  it("VNet の箱に印と tag・subnets を描き、ゾーンのブリッジの箱やホストへ点線を引く(フェーズ4-6)", () => {
+    const t = load(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+  - { a: vm1:net1, b: pve1:vx1 }
+layout:
+  pve1: { x: 0, y: 0 }
+  pve1:vmbr0: { x: -100, y: 120 }
+  pve1:vnet30: { x: 0, y: 120 }
+  pve1:vx1: { x: 100, y: 120 }
+  vm1: { x: 0, y: 240 }
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0 }
+    vx: { type: vxlan }
+  vnets:
+    vnet30: { zone: lan, tag: 30, subnets: [ 10.30.0.0/24 ] }
+    vx1: { zone: vx, tag: 5000 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    expect(svg).toContain(">vnet30</text>");
+    expect(svg.match(/>VNet<\/text>/g)).toHaveLength(2);
+    expect(svg).toContain(">VLAN 30</text>");
+    expect(svg).toContain(">10.30.0.0/24</text>");
+    expect(svg).toContain(">VXLAN 5000</text>");
+    // 点線は箱の中心から、vnet30 はゾーンのブリッジ(vmbr0)の箱へ、vx1 はホストのアイコンへ
+    expect(svg).toContain('<path d="M 48,133 L -52,133"');
+    expect(svg).toContain('<path d="M 148,133 L 48,26"');
+    // tag は「VLAN」、subnets は「IP」の表示に従う
+    const hidden = renderSvg(t, testCatalog, { showVlan: false, showIp: false }).svg;
+    expect(hidden).not.toContain("VLAN 30");
+    expect(hidden).not.toContain("10.30.0.0/24");
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

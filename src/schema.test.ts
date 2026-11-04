@@ -63,6 +63,7 @@ function semantic(t: Topology) {
     layout: [...t.layout],
     viewport: t.viewport,
     groups: t.groups,
+    sdn: t.sdn,
     extra: t.extra,
   };
 }
@@ -156,6 +157,19 @@ layout:
       "constella: 1\ndevices:\n  pve1: { role: hypervisor }\n  vm1: { host: pve1, guest: container, vmid: 999999999 }\n",
     ],
     [
+      "SDN",
+      `constella: 1
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0, nodes: [ pve1 ] }
+    qz: { type: qinq, bridge: vmbr0, tag: 100 }
+    vx: { type: vxlan }
+  vnets:
+    vnet30: { zone: lan, tag: 30, subnets: [ 10.30.0.0/24 ] }
+    vx1: { zone: vx, tag: 16777215 }
+`,
+    ],
+    [
       "クラスタ",
       `constella: 1
 devices:
@@ -218,6 +232,13 @@ groups:
       "constella: 1\ngroups:\n  - { id: lab, kind: cluster, networks: { corosync: 10 } }\n",
     ],
     ["配列の networks", "constella: 1\ngroups:\n  - { id: lab, kind: cluster, networks: [ a ] }\n"],
+    ["sdn の未知のキー", "constella: 1\nsdn:\n  controllers: {}\n"],
+    ["type の無いゾーン", "constella: 1\nsdn:\n  zones:\n    lan: { bridge: vmbr0 }\n"],
+    ["不正なゾーンの type", "constella: 1\nsdn:\n  zones:\n    lan: { type: vlans }\n"],
+    ["範囲外のゾーンの tag", "constella: 1\nsdn:\n  zones:\n    q: { type: qinq, tag: 4095 }\n"],
+    ["zone の無い VNet", "constella: 1\nsdn:\n  vnets:\n    v1: { tag: 10 }\n"],
+    ["範囲外の VNet の tag", "constella: 1\nsdn:\n  vnets:\n    v1: { zone: z, tag: 16777216 }\n"],
+    ["VNet の未知のキー", "constella: 1\nsdn:\n  vnets:\n    v1: { zone: z, alias: x }\n"],
   ];
 
   it.each(accepted)("パーサーと同じく受け付ける: %s", (_name, text) => {

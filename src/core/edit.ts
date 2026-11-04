@@ -85,8 +85,8 @@ export function moveDevices(t: Topology, positions: Iterable<[string, Position]>
 }
 
 /**
- * デバイスを削除する。接続していたリンク、layout(ブリッジの位置を含む)、グループのメンバーからも取り除く。
- * ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
+ * デバイスを削除する。接続していたリンク、layout(ブリッジの位置を含む)、グループのメンバー、
+ * SDN のゾーンの nodes からも取り除く。ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
  */
 export function removeDevices(t: Topology, ids: Iterable<string>): void {
   const removed = new Set(ids);
@@ -105,6 +105,11 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
   for (const group of t.groups) {
     if (group.members.some((m) => removed.has(m))) {
       group.members = group.members.filter((m) => !removed.has(m));
+    }
+  }
+  for (const zone of t.sdn.zones.values()) {
+    if (zone.nodes?.some((n) => removed.has(n))) {
+      zone.nodes = zone.nodes.filter((n) => !removed.has(n));
     }
   }
   for (const device of t.devices.values()) {
@@ -146,8 +151,8 @@ export function checkDeviceId(t: Topology, id: string, currentId?: string): stri
 }
 
 /**
- * デバイスID を変える。リンク・layout(ブリッジの位置のキーを含む)・グループ・ゲストの host の参照も
- * すべて書き換える
+ * デバイスID を変える。リンク・layout(ブリッジの位置のキーを含む)・グループ・ゲストの host・
+ * SDN のゾーンの nodes の参照もすべて書き換える
  */
 export function renameDevice(t: Topology, oldId: string, newId: string): void {
   if (oldId === newId) return;
@@ -175,6 +180,9 @@ export function renameDevice(t: Topology, oldId: string, newId: string): void {
     if (group.members.includes(oldId)) {
       group.members = group.members.map((m) => (m === oldId ? newId : m));
     }
+  }
+  for (const zone of t.sdn.zones.values()) {
+    if (zone.nodes?.includes(oldId)) zone.nodes = zone.nodes.map((n) => (n === oldId ? newId : n));
   }
   for (const other of t.devices.values()) {
     if (other.host === oldId) other.host = newId;

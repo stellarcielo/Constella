@@ -98,7 +98,7 @@ const uplinks = `links:
 function blocks(devices: string, links: string): string[] {
   const result = parseTopology(`${head}${devices}${uplinks}${links}`, { catalog: testCatalog });
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
-  return vlanBlocks(result.topology).map((b) => {
+  return vlanBlocks(result.topology, testCatalog).map((b) => {
     const kind = b.allowed === undefined ? b.kind : `${b.kind}(${b.allowed})`;
     const uses = b.uses.map((u) => `${endpointToString(u.source)}=${formatVlanIds(u.vlans)}`);
     return `${endpointToString(b.at)} ${kind} ${formatVlanIds(b.vlans)} ← ${uses.join(" ")}`;
@@ -244,5 +244,30 @@ describe("VLAN の通り道(SPEC 4.6・フェーズ4-4)", () => {
       "sw1:Gi0/1 trunk(10,20) 30,40 ← web01:net0=30 db01:net0=30 mon01:net0=40",
       "sw2:Gi0/1 trunk(none) 10 ← pve2:eno1.10=10",
     ]);
+  });
+
+  it("SDN: vlan ゾーンは VNet の tag、qinq ゾーンはゾーンの tag を、ゾーンのホストのブリッジから確かめる(フェーズ4-6)", () => {
+    const sdn = (nodes: string) => `  - { a: web01:net0, b: pve1:v30 }
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0${nodes} }
+    qz: { type: qinq, bridge: vmbr1, tag: 40 }
+    vx: { type: vxlan }
+  vnets:
+    v30: { zone: lan, tag: 30 }
+    v200: { zone: lan, tag: 200 }
+    q1: { zone: qz, tag: 7 }
+    x1: { zone: vx, tag: 30 }
+`;
+    // VNet につながったゲストの IF のタグ(99)は確かめない。ゲストがつながっていなくても確かめる
+    const guest =
+      "  web01: { model: generic-vm, host: pve1, interfaces: { net0: { vlan: 99 } } }\n";
+    expect(blocks(guest, sdn(""))).toEqual([
+      "sw1:Gi0/1 trunk(10,20) 30 ← pve1:v30=30",
+      "pve1:vmbr0 bridge(2-100) 200 ← pve1:v200=200",
+      "sw1:Gi0/3 access 40 ← pve1:q1=40",
+    ]);
+    // ゾーンのホストでなければ確かめない
+    expect(blocks(guest, sdn(", nodes: []"))).toEqual(["sw1:Gi0/3 access 40 ← pve1:q1=40"]);
   });
 });

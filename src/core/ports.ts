@@ -1,8 +1,9 @@
 // ポートの使用状況と、ポート選択に出す一覧(SPEC 7.2)。
 
-import { bridgeLinks, findBridge } from "./bridges";
+import { bridgeLinks, findHostBridge } from "./bridges";
 import { findLogicalIf } from "./logicalIfs";
 import { ifNameKey, normalizeIfName } from "./ifname";
+import { findVnet, hostVnets } from "./sdn";
 import { findModel } from "./topology";
 import type { Device, Endpoint, ModelCatalog, PortType, Topology } from "./types";
 
@@ -62,16 +63,17 @@ export interface PortEntry {
   defined: boolean;
   /** 使用中なら使用状況(ブリッジは何本でもつなげるので、使用中にしない) */
   use?: PortUse;
-  /** ブリッジ(SPEC 4.6)なら、つながっているリンクの本数 */
-  bridge?: { links: number };
+  /** ブリッジ(SPEC 4.6)なら、つながっているリンクの本数。vnet は SDN の VNet か(フェーズ4-6) */
+  bridge?: { links: number; vnet?: boolean };
   /** bond・VLAN インターフェース(線をつながないので、ポート選択には出さない) */
   logical?: "bond" | "vlan";
 }
 
 /**
  * デバイスのポート一覧。モデルのポートを定義順に並べ、
- * その後ろにモデルに無いが使われている IF(interfaces とリンクに書かれたもの)を出てきた順に並べる。
- * ブリッジは使用中にせず、つながっているリンクの本数を添える。bond・VLAN インターフェースには印を付ける。
+ * その後ろにモデルに無いが使われている IF(interfaces とリンクに書かれたもの)を出てきた順に並べ、
+ * ゾーンのホストなら、使える VNet(SPEC 4.6)を最後に並べる。
+ * ブリッジ・VNet は使用中にせず、つながっているリンクの本数を添える。bond・VLAN インターフェースには印を付ける。
  * reserved は作りかけの接続で押さえているポート(自分自身へつなぐとき用)。
  */
 export function listDevicePorts(
@@ -105,16 +107,20 @@ export function listDevicePorts(
     ...t.links.flatMap((l) =>
       [l.a, l.b].filter((ep) => ep?.device === device.id).map((ep) => ep?.iface ?? ""),
     ),
+    ...hostVnets(t, device.id, catalog),
   ];
   for (const name of extra) {
     const key = ifNameKey(name);
     if (name === "" || seen.has(key)) continue;
     seen.add(key);
-    if (findBridge(device, name) !== undefined) {
+    const bridge = findHostBridge(t, device.id, name);
+    if (bridge !== undefined) {
+      const links = bridgeLinks(t, device.id, name).length;
+      const vnet = findVnet(t, device, name) !== undefined;
       entries.push({
-        name,
+        name: bridge,
         defined: false,
-        bridge: { links: bridgeLinks(t, device.id, name).length },
+        bridge: vnet ? { links, vnet } : { links },
       });
       continue;
     }

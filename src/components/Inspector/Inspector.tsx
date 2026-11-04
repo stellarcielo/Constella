@@ -1,12 +1,20 @@
 // 右側のインスペクタ(SPEC 6章)。選んでいるものに合わせて表示を切り替える。
 // 何も選んでいないときは、トポロジ全体のタイトルと説明(meta)を編集できる。
 
-import { type Device, type Link, parseBridgeKey, resolveBridgeKey, updateMeta } from "../../core";
+import {
+  type Device,
+  type Link,
+  parseBridgeKey,
+  parseVnetKey,
+  resolveBridgeKey,
+  updateMeta,
+} from "../../core";
 import { topologyStore, useTopology } from "../../store";
 import { BridgeInspector } from "./BridgeInspector";
 import { DeviceInspector } from "./DeviceInspector";
 import { CommitInput, CommitTextarea, Field } from "./fields";
 import { LinkInspector } from "./LinkInspector";
+import { VnetInspector } from "./VnetInspector";
 import "./Inspector.css";
 
 export function Inspector() {
@@ -18,17 +26,22 @@ export function Inspector() {
   const links = selection.links
     .map((id) => topology.links.find((l) => l.id === id))
     .filter((l): l is Link => l !== undefined);
-  // デバイスでない ID はブリッジの箱(SPEC 4.6)
+  // デバイスでない ID はブリッジ・VNet の箱(SPEC 4.6)
   const bridges = selection.devices.flatMap((id) => {
     const parsed = resolveBridgeKey(topology, id) === id ? parseBridgeKey(id) : undefined;
     const host = parsed && topology.devices.get(parsed.host);
-    return parsed && host ? [{ host, bridge: parsed.bridge }] : [];
+    const vnet = parseVnetKey(topology, id) !== undefined;
+    return parsed && host ? [{ host, bridge: parsed.bridge, vnet }] : [];
   });
 
   let body;
   if (bridges.length === 1 && devices.length === 0 && links.length === 0) {
-    const { host, bridge } = bridges[0];
-    body = <BridgeInspector key={`${host.uid}:${bridge}`} host={host} bridge={bridge} />;
+    const { host, bridge, vnet } = bridges[0];
+    body = vnet ? (
+      <VnetInspector key={`${host.uid}:${bridge}`} host={host} vnet={bridge} />
+    ) : (
+      <BridgeInspector key={`${host.uid}:${bridge}`} host={host} bridge={bridge} />
+    );
   } else if (devices.length === 1 && links.length === 0 && bridges.length === 0) {
     // ID を変えても開いている IF などの状態が消えないよう、内部の識別子で区別する
     body = <DeviceInspector key={devices[0].uid} device={devices[0]} />;

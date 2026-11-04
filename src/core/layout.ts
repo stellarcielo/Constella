@@ -3,7 +3,7 @@
 // 上からホスト・ブリッジ・ゲストの順に並べる(SPEC 4.6)。
 
 import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
-import { allBridges, BRIDGE_NODE_SIZE, bridgeKey, bridgesOf, findBridge } from "./bridges";
+import { allBridges, BRIDGE_NODE_SIZE, bridgeKey, findHostBridge, hostBridges } from "./bridges";
 import { roundPosition } from "./edit";
 import { DEVICE_BOX, GROUP_LABEL_BAND, GROUP_NEST_GAP, GROUP_PADDING } from "./groupFrames";
 import { hostTree } from "./hosts";
@@ -69,7 +69,7 @@ export async function computeLayout(
   };
   const guestsOf = (id: string) => (tree.guestsOf.get(id) ?? []).filter((g) => ids.has(g));
   const bridgesOfHost = (id: string) =>
-    bridgesOf(t.devices.get(id))
+    hostBridges(t, id)
       .map((bridge) => bridgeKey(id, bridge))
       .filter((key) => ids.has(key));
   /** ゲストがつながっている、ホストのブリッジ(箱の ID) */
@@ -81,7 +81,7 @@ export async function computeLayout(
         [link.b, link.a],
       ]) {
         if (ep?.device !== host || other?.device !== guest) continue;
-        const bridge = findBridge(t.devices.get(host), ep.iface);
+        const bridge = findHostBridge(t, host, ep.iface);
         const key = bridge === undefined ? undefined : bridgeKey(host, bridge);
         if (key !== undefined && ids.has(key) && !keys.includes(key)) keys.push(key);
       }
@@ -317,7 +317,7 @@ export async function placeMissing(
     progressed = false;
     for (const device of t.devices.values()) {
       const hostPos = at(device.id);
-      const keys = bridgesOf(device).map((bridge) => bridgeKey(device.id, bridge));
+      const keys = hostBridges(t, device.id).map((bridge) => bridgeKey(device.id, bridge));
       const waiting = keys.filter((key) => todo.has(key) && !placed.has(key));
       if (!hostPos || waiting.length === 0) continue;
       const others = keys.flatMap((key) => {
@@ -337,7 +337,7 @@ export async function placeMissing(
         const pos = waiting.includes(g) ? undefined : at(g);
         return pos ? [pos] : [];
       });
-      const bridges = bridgesOf(t.devices.get(host)).flatMap((bridge) => {
+      const bridges = hostBridges(t, host).flatMap((bridge) => {
         const pos = at(bridgeKey(host, bridge));
         return pos ? [pos] : [];
       });

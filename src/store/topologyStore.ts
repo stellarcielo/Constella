@@ -611,6 +611,8 @@ function targetExists(issue: Issue, t: Topology): boolean {
       return t.links.some((l) => l.id === target.id);
     case "group":
       return target.index < t.groups.length;
+    case "sdn":
+      return t.sdn[target.section].has(target.id);
   }
 }
 

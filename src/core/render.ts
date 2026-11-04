@@ -1,7 +1,14 @@
 // トポロジを SVG の文字列にする(SVG / PNG の書き出し。将来の CLI の `constella render` でも使う)。
 // 見た目はキャンバスに合わせ、ライトテーマ・白背景で描く(フェーズ2-4 Q2)。選択や問題の印は描かない。
 
-import { allBridges, BRIDGE_BOX, endpointNodeId, parseBridgeKey } from "./bridges";
+import {
+  allBridges,
+  BRIDGE_BOX,
+  endpointNodeId,
+  parseBridgeKey,
+  parseVnetKey,
+  vnetUplinkTarget,
+} from "./bridges";
 import { clusterIpText } from "./clusters";
 import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
 import { resolveGuest } from "./hosts";
@@ -24,17 +31,9 @@ import {
   slotOffset,
 } from "./linkGeometry";
 import { linkMedia } from "./media";
+import { vnetTagText } from "./sdn";
 import { resolveLabel, resolveRole } from "./topology";
-import type {
-  GroupKind,
-  GuestKind,
-  InterfaceInfo,
-  Media,
-  ModelCatalog,
-  Position,
-  Role,
-  Topology,
-} from "./types";
+import type { GroupKind, GuestKind, Media, ModelCatalog, Position, Role, Topology } from "./types";
 
 export interface RenderOptions {
   /** layout に座標の無いデバイスの位置(キャンバスの自動配置。キー = デバイスID) */
@@ -168,14 +167,14 @@ function bridgeCenter(p: Position): Point {
 }
 
 /**
- * ブリッジの箱。名前を中に、VLAN aware の印を右上に、IP(とブリッジの上の VLAN インターフェースの IP)を
- * 下に描く(Canvas.css の .bridge-node と合わせる)
+ * ブリッジ・VNet の箱。名前を中に、印(VLAN aware なら「VLAN」、VNet なら「VNet」)を右上に、
+ * 下の行(ブリッジは IP、VNet は tag と subnets)を下に描く(Canvas.css の .bridge-node と合わせる)
  */
 function bridgeSvg(
   name: string,
-  info: InterfaceInfo | undefined,
+  badgeText: string | undefined,
   pos: Position,
-  ips: readonly string[],
+  lines: readonly string[],
   bounds: Bounds,
 ): string {
   const x = pos.x + (NODE_WIDTH - BRIDGE_BOX.width) / 2;
@@ -187,13 +186,13 @@ function bridgeSvg(
     `fill="${THEME.panel}" stroke="${HOST_FRAME_TEXT_COLOR}" stroke-width="1.5"/>` +
     `<text x="${n(center.x)}" y="${n(center.y + 11 * 0.35)}" text-anchor="middle" ` +
     `font-family="${escapeXml(MONO_FONT)}" font-size="11" fill="${THEME.text}">${escapeXml(name)}</text>` +
-    (info?.vlanAware ? badge(x + BRIDGE_BOX.width, pos.y, "VLAN", bounds) : "") +
-    ips
-      .map((ip, i) =>
+    (badgeText ? badge(x + BRIDGE_BOX.width, pos.y, badgeText, bounds) : "") +
+    lines
+      .map((line, i) =>
         label(
           { x: center.x, y: pos.y + BRIDGE_BOX.height + 9 + i * 14 },
-          ip,
-          { width: estimateLabelSize(ip).width, height: 14 },
+          line,
+          { width: estimateLabelSize(line).width, height: 14 },
           { font: MONO_FONT, fontSize: 10, color: THEME.textMuted, border: false },
           bounds,
         ),
@@ -435,7 +434,20 @@ export function renderSvg(
   // ブリッジとホストの間の線(点線)。ホスト側に、ブリッジの members(bond なら束ねた IF とモードも)を出す
   // (SPEC 7.3・フェーズ4-3 Q2)
   const show = (name: string) => (labelOptions.longIfNames ? expandIfName(name) : name);
-  for (const { key, host, bridge } of allBridges(t)) {
+  for (const { key, host, bridge, vnet } of allBridges(t)) {
+    // VNet の箱からは、ゾーンのブリッジの箱かホストへ、ラベル無しで引く(フェーズ4-6 Q2)
+    if (vnet) {
+      const target = vnetUplinkTarget(t, host, bridge);
+      const at = target === undefined ? undefined : positions.get(target);
+      const pos = positions.get(key);
+      if (!at || !pos || target === undefined) continue;
+      const from = bridgeCenter(pos);
+      const to = target === host ? iconCenter(at) : bridgeCenter(at);
+      lines.push(
+        `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
+      );
+      continue;
+    }
     const device = t.devices.get(host);
     const text = device ? uplinkLabelLines(device, bridge, show) : [];
     if (!positions.has(key) || !positions.has(host) || text.length === 0) continue;
@@ -463,12 +475,20 @@ export function renderSvg(
   const iconScale = ICON_SIZE / ROLE_ICON_VIEWBOX;
   for (const [id, pos] of positions) {
     const bridge = parseBridgeKey(id);
+    // VNet の箱(フェーズ4-6 Q2): 下に tag(「VLAN」の表示)と subnets(「IP」の表示)
+    const vnet = bridge && parseVnetKey(t, id);
+    if (vnet) {
+      const tag = labelOptions.showVlan ? vnetTagText(t, vnet.vnet) : undefined;
+      const subnets = labelOptions.showIp ? (t.sdn.vnets.get(vnet.vnet)?.subnets ?? []) : [];
+      nodes.push(bridgeSvg(vnet.vnet, "VNet", pos, [...(tag ? [tag] : []), ...subnets], bounds));
+      continue;
+    }
     if (bridge) {
       const host = t.devices.get(bridge.host);
       const info = host?.interfaces.get(bridge.bridge);
       const ips =
         labelOptions.showIp && host ? bridgeIpLines(host, bridge.bridge, ipText(bridge.host)) : [];
-      nodes.push(bridgeSvg(bridge.bridge, info, pos, ips, bounds));
+      nodes.push(bridgeSvg(bridge.bridge, info?.vlanAware ? "VLAN" : undefined, pos, ips, bounds));
       continue;
     }
     const device = t.devices.get(id);

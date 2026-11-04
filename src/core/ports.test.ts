@@ -192,3 +192,30 @@ devices:
     ]);
   });
 });
+
+describe("SDN の VNet(フェーズ4-6)", () => {
+  const t = load(`constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4, interfaces: { vmbr0: { type: bridge } } }
+  srv1: { model: generic-server-2 }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0 }
+  vnets:
+    vnet30: { zone: lan, tag: 30 }
+    vnet40: { zone: lan, tag: 40 }
+`);
+
+  it("ゾーンのホストには、使える VNet をブリッジとして出し、VNet の印と本数を添える", () => {
+    const bridges = listDevicePorts(device(t, "pve1"), t, testCatalog).filter((e) => e.bridge);
+    expect(bridges).toEqual([
+      { name: "vmbr0", defined: false, bridge: { links: 0 } },
+      { name: "vnet30", defined: false, bridge: { links: 1, vnet: true } },
+      { name: "vnet40", defined: false, bridge: { links: 0, vnet: true } },
+    ]);
+    expect(listDevicePorts(device(t, "srv1"), t, testCatalog).some((e) => e.bridge)).toBe(false);
+  });
+});

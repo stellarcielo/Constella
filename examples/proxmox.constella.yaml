@@ -6,6 +6,7 @@
 # ロール(機能)はゲストでも今までどおり(OPNsense の VM は firewall)。
 # 2 台のホストは、kind: cluster のグループでクラスタにする。networks に書いたサブネットに入る
 # ホストの IP には、ラベルにネットワークの名前(corosync など)が付く。
+# SDN の VNet は、ゾーンの各ホストの中のブリッジとして扱い、ゲストは「ホスト:VNet ID」につなぐ。
 constella: 1
 
 meta:
@@ -19,10 +20,10 @@ devices:
     model: generic-l2switch-24
     interfaces:
       # ホストの bond とつなぐ LAG のメンバー
-      Gi0/1: { mode: trunk, vlans: "10,20" }
-      Gi0/2: { mode: trunk, vlans: "10,20" }
-      Gi0/3: { mode: trunk, vlans: "10,20" }
-      Gi0/4: { mode: trunk, vlans: "10,20" }
+      Gi0/1: { mode: trunk, vlans: "10,20,30" }
+      Gi0/2: { mode: trunk, vlans: "10,20,30" }
+      Gi0/3: { mode: trunk, vlans: "10,20,30" }
+      Gi0/4: { mode: trunk, vlans: "10,20,30" }
   pve1:
     model: generic-hypervisor-4
     interfaces:
@@ -73,6 +74,13 @@ devices:
     vmid: 201
     interfaces:
       net0: { vlan: 20, ip: [ 192.168.20.22/24 ] }
+  app01:
+    model: generic-vm
+    host: pve2
+    vmid: 103
+    interfaces:
+      # VLAN は VNet が決めるので、vlan は書かない
+      net0: { ip: [ 192.168.30.31/24 ] }
 
 links:
   - a: rt1:Gi0/1
@@ -100,6 +108,9 @@ links:
     b: pve2:vmbr0
   - a: dns01:net0
     b: pve2:vmbr0
+  # SDN の VNet につなぐ(VNet はブリッジと同じように、ホストの中の箱になる)
+  - a: app01:net0
+    b: pve2:vnet30
 
 groups:
   # pve1 と pve2 でクラスタを組む
@@ -109,3 +120,11 @@ groups:
     networks:
       corosync: 10.10.0.0/24
       migration: 192.168.10.0/24
+
+sdn:
+  zones:
+    # vmbr0 を使う VLAN ゾーン(nodes を省略 = ロールが hypervisor の機器すべて)
+    lan: { type: vlan, bridge: vmbr0 }
+  vnets:
+    # 各ホストに vnet30 ができる(VLAN 30)
+    vnet30: { zone: lan, tag: 30, subnets: [ 192.168.30.0/24 ] }

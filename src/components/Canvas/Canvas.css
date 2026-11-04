@@ -109,7 +109,7 @@
   box-shadow: 0 0 0 3px var(--error);
 }
 
-/* VLAN aware の印。箱の右上に重ねる(ゲストの VM / CT の印と同じ形) */
+/* VLAN aware の印(VNet の箱では「VNet」の印)。箱の右上に重ねる(ゲストの VM / CT の印と同じ形) */
 .bridge-vlan-badge {
   position: absolute;
   top: -6px;

@@ -440,3 +440,86 @@ links:
     expect(topology.links[0].a).toEqual({ device: "pve1", iface: "vlan10" });
   });
 });
+
+describe("parseTopology: SDN(SPEC 4.6)", () => {
+  it("ゾーンと VNet を、書いた順に読む", () => {
+    const { topology, issues } = parseOk(`constella: 1
+sdn:
+  zones:
+    qz: { type: qinq, bridge: vmbr0, tag: 100, nodes: [ pve1, pve2 ] }
+    lan: { type: vlan, bridge: vmbr0 }
+  vnets:
+    vnet30: { zone: lan, tag: 30, subnets: [ 10.30.0.0/24 ] }
+    vxnet: { zone: vx, tag: 16777215 }
+`);
+    expect(issues).toEqual([]);
+    expect([...topology.sdn.zones]).toEqual([
+      ["qz", { type: "qinq", bridge: "vmbr0", tag: 100, nodes: ["pve1", "pve2"], extra: {} }],
+      ["lan", { type: "vlan", bridge: "vmbr0", extra: {} }],
+    ]);
+    expect([...topology.sdn.vnets]).toEqual([
+      ["vnet30", { zone: "lan", tag: 30, subnets: ["10.30.0.0/24"], extra: {} }],
+      ["vxnet", { zone: "vx", tag: 16777215, extra: {} }],
+    ]);
+  });
+
+  it("空の sdn と、sdn が無いときは、ゾーンも VNet も無い", () => {
+    for (const text of ["constella: 1\nsdn:\n", "constella: 1\n"]) {
+      const { topology, issues } = parseOk(text);
+      expect(issues).toEqual([]);
+      expect([topology.sdn.zones.size, topology.sdn.vnets.size]).toEqual([0, 0]);
+    }
+  });
+
+  it("不正な値はエラーにして値を残す。type・zone が無ければエラー(値が無ければ ID を指す)", () => {
+    const text = `constella: 1
+sdn:
+  zones:
+    a: { type: vlanx, tag: 5000, nodes: pve1 }
+    b:
+  vnets:
+    v1: { zone: a, tag: 0, subnets: 10.0.0.0/24 }
+    v2: { tag: 16777216 }
+`;
+    const { topology, issues } = parseOk(text);
+    expect(codes(issues)).toEqual([
+      "invalid-value",
+      "invalid-value",
+      "invalid-value",
+      "missing-field",
+      "invalid-value",
+      "invalid-value",
+      "invalid-value",
+      "missing-field",
+    ]);
+    expect(issues[0].message).toBe(
+      "sdn.zones.a.type の値が不正です(simple / vlan / qinq / vxlan / evpn)",
+    );
+    expect(issues[0].target).toEqual({ kind: "sdn", section: "zones", id: "a" });
+    expect(topology.sdn.zones.get("a")?.extra).toEqual({ type: "vlanx", tag: 5000, nodes: "pve1" });
+    // type を不正な値で書いたときは、type が無いエラーを重ねない。値の無いゾーンは ID を指す
+    expect(issues[3].message).toBe("ゾーン「b」に type がありません");
+    const r = issues[3].range;
+    expect(r && text.slice(r.start, r.end)).toBe("b");
+    expect(topology.sdn.vnets.get("v1")).toEqual({
+      zone: "a",
+      extra: { tag: 0, subnets: "10.0.0.0/24" },
+    });
+    expect(issues[7].message).toBe("VNet「v2」に zone がありません");
+  });
+
+  it("未知のキーは警告にする", () => {
+    const { issues } = parseOk(`constella: 1
+sdn:
+  controllers: {}
+  zones:
+    a: { type: evpn, controller: c1 }
+  vnets:
+    v1: { zone: a, tag: 1, alias: x }
+`);
+    expect(codes(issues)).toEqual(["unknown-key", "unknown-key", "unknown-key"]);
+    expect(issues[0].message).toContain("使えるキー: zones, vnets");
+    expect(issues[1].message).toContain("使えるキー: type, bridge, tag, nodes");
+    expect(issues[2].message).toContain("使えるキー: zone, tag, subnets");
+  });
+});

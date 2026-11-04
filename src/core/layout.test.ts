@@ -307,4 +307,28 @@ links:
     const pos = await placeMissing(t, testCatalog, ["pve1:vmbr1"], (id) => placed.get(id));
     expect(pos.get("pve1:vmbr1")).toEqual({ x: 118, y: 312 });
   });
+
+  it("placeMissing: VNet の箱も、ホストのブリッジの段に置く(フェーズ4-6)", async () => {
+    const t = load(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+sdn:
+  zones:
+    lan: { type: simple }
+  vnets:
+    vnet30: { zone: lan }
+`);
+    const placed = new Map([
+      ["pve1", { x: 0, y: 200 }],
+      ["pve1:vmbr0", { x: -78, y: 312 }],
+    ]);
+    const pos = await placeMissing(t, testCatalog, ["pve1:vnet30"], (id) => placed.get(id));
+    expect(pos.get("pve1:vnet30")).toEqual({ x: 118, y: 312 });
+  });
 });

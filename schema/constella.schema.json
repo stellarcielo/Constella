@@ -38,7 +38,7 @@
       "items": { "$ref": "#/definitions/link" }
     },
     "layout": {
-      "description": "機器の座標(キー = デバイスID。ブリッジは「ホストのデバイスID:ブリッジ名」)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
+      "description": "機器の座標(キー = デバイスID。ブリッジと SDN の VNet は「ホストのデバイスID:ブリッジ名」)。GUI で機器を動かすと自動で書き込まれる。座標の無い機器は自動で配置される",
       "type": ["object", "null"],
       "properties": {
         "_viewport": { "$ref": "#/definitions/viewport" }
@@ -53,6 +53,23 @@
       "description": "機器のまとまり(拠点・ラック・VLAN など)。図への表示はフェーズ3で対応する",
       "type": ["array", "null"],
       "items": { "$ref": "#/definitions/group" }
+    },
+    "sdn": {
+      "description": "SDN(Proxmox VE の SDN)のゾーンと VNet。VNet は、ゾーンの各ホストの中のブリッジとして扱い、ゲストは「ホストのデバイスID:VNet ID」につなぐ",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "zones": {
+          "description": "ゾーン(キー = ゾーンID)",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/definitions/sdnZone" }
+        },
+        "vnets": {
+          "description": "VNet(キー = VNet ID。Proxmox VE では 8 文字まで)",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/definitions/sdnVnet" }
+        }
+      }
     }
   },
   "definitions": {
@@ -255,6 +272,59 @@
           "description": "クラスタのネットワーク(kind: cluster のとき)。キー = ネットワークの名前(corosync・ceph-public・migration など)、値 = サブネット(10.10.0.0/24 の形。IPv4・IPv6)。サブネットに入る IP には、ラベルに名前を添える",
           "type": "object",
           "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "sdnZone": {
+      "description": "SDN のゾーン",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "ゾーンの種類: simple / vlan / qinq / vxlan / evpn",
+          "type": "string",
+          "enum": ["simple", "vlan", "qinq", "vxlan", "evpn"]
+        },
+        "bridge": {
+          "description": "vlan・qinq で使う、各ホストのブリッジ(vmbr0 など。vlan・qinq では必須)",
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "description": "qinq の外側の VLAN ID(qinq では必須)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4094
+        },
+        "nodes": {
+          "description": "ゾーンを使うホストのデバイスID。省略時は、ロールが hypervisor の機器すべて",
+          "type": "array",
+          "items": { "$ref": "#/definitions/deviceId" }
+        }
+      }
+    },
+    "sdnVnet": {
+      "description": "SDN の VNet",
+      "type": "object",
+      "required": ["zone"],
+      "additionalProperties": false,
+      "properties": {
+        "zone": {
+          "description": "ゾーンID",
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "description": "VLAN ID(vlan・qinq では 1〜4094。qinq では内側の VLAN)。vxlan・evpn では VNI。simple 以外では必須",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777215
+        },
+        "subnets": {
+          "description": "サブネット(10.40.0.0/24 の形)",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
         }
       }
     },

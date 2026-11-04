@@ -544,3 +544,135 @@ groups:
     expect(issues[1].message).toContain("pve3 に、クラスタ「lab2」");
   });
 });
+
+describe("validateTopology: SDN(SPEC 4.6・フェーズ4-6)", () => {
+  const hosts = `constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ], vlan-aware: true }
+  pve2:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  srv1: { model: generic-server-2 }
+  vm1: { model: generic-vm, host: pve1 }
+  vm2: { model: generic-vm, host: pve2 }
+`;
+  const at = (issues: Issue[], text: string, i: number) => {
+    const r = issues[i].range;
+    return r && text.slice(r.start, r.end);
+  };
+
+  it("問題の無い SDN。VNet へのリンクは、モデルに無い IF でもエラーにしない", () => {
+    const { issues } = check(`${hosts}links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+  - { a: vm2:net0, b: pve2:vnet30 }
+  - { a: vm1:net1, b: pve1:vx1 }
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0 }
+    vx: { type: vxlan, nodes: [ pve1 ] }
+    iso: { type: simple }
+  vnets:
+    vnet30: { zone: lan, tag: 30, subnets: [ 10.30.0.0/24 ] }
+    vx1: { zone: vx, tag: 100000 }
+    iso1: { zone: iso }
+`);
+    expect(issues).toEqual([]);
+  });
+
+  it("ゾーン: nodes のデバイス、vlan・qinq の bridge(各ホストにあるか)、qinq の tag", () => {
+    const text = `${hosts}sdn:
+  zones:
+    lan: { type: vlan, nodes: [ pve1, ghost ] }
+    q1: { type: qinq, bridge: vmbr1 }
+`;
+    const { issues } = check(text);
+    expect(summary(issues)).toEqual([
+      ["error", "unknown-device"],
+      ["error", "missing-field"],
+      ["error", "missing-zone-bridge"],
+      ["error", "missing-zone-bridge"],
+      ["error", "missing-field"],
+    ]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "ゾーン「lan」の nodes の「ghost」に対応するデバイスがありません",
+      "ゾーン「lan」(vlan)に bridge がありません",
+      "pve1 に、ゾーン「q1」のブリッジ vmbr1 がありません",
+      "pve2 に、ゾーン「q1」のブリッジ vmbr1 がありません",
+      "ゾーン「q1」(qinq)に tag(外側の VLAN ID)がありません",
+    ]);
+    expect(at(issues, text, 0)).toBe("[ pve1, ghost ]");
+    expect(issues[2].target).toEqual({ kind: "device", id: "pve1" });
+    expect(at(issues, text, 4)).toBe("q1");
+  });
+
+  it("VNet: ID の長さ・subnets・ゾーン・tag・ホストの IF 名との重なり", () => {
+    const text = `${hosts}sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0 }
+  vnets:
+    longvnet01: { zone: lan, tag: 30 }
+    v1: { zone: lan }
+    v2: { zone: lan, tag: 5000, subnets: [ 10.0.0.0, 10.2.0.0/24 ] }
+    v3: { zone: nowhere, tag: 3 }
+    vmbr0: { zone: lan, tag: 4 }
+`;
+    const { issues } = check(text);
+    expect(summary(issues)).toEqual([
+      ["warning", "long-vnet-id"],
+      ["error", "missing-field"],
+      ["warning", "invalid-subnet"],
+      ["error", "invalid-vnet-tag"],
+      ["error", "unknown-sdn-zone"],
+      ["error", "vnet-name-conflict"],
+      ["error", "vnet-name-conflict"],
+    ]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "VNet ID「longvnet01」が 8 文字より長くなっています(Proxmox VE では 8 文字まで)",
+      "VNet「v1」に tag がありません(ゾーン「lan」は vlan)",
+      "VNet「v2」の subnets の「10.0.0.0」の書き方が分かりません(例: 10.40.0.0/24)",
+      "VNet「v2」の tag(5000)は 1〜4094 の範囲にしてください(ゾーン「lan」は vlan)",
+      "VNet「v3」のゾーン「nowhere」がありません",
+      "VNet「vmbr0」は、pve1 の IF と同じ名前です(VNet ID か IF 名を変えてください)",
+      "VNet「vmbr0」は、pve2 の IF と同じ名前です(VNet ID か IF 名を変えてください)",
+    ]);
+    expect([0, 2, 3, 4].map((i) => at(issues, text, i))).toEqual([
+      "longvnet01",
+      "[ 10.0.0.0, 10.2.0.0/24 ]",
+      "5000",
+      "nowhere",
+    ]);
+    expect(issues[0].target).toEqual({ kind: "sdn", section: "vnets", id: "longvnet01" });
+  });
+
+  it("ゾーンに入っていないホストで VNet を使うとエラー。置いた箱は警告。つなげるのはそのホストのゲストだけ", () => {
+    const text = `${hosts}links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+  - { a: vm2:net0, b: pve2:vnet30 }
+  - { a: srv1:eth0, b: pve1:vnet30 }
+layout:
+  pve2:vnet30: { x: 0, y: 0 }
+sdn:
+  zones:
+    lan: { type: vlan, bridge: vmbr0, nodes: [ pve1 ] }
+  vnets:
+    vnet30: { zone: lan, tag: 30 }
+`;
+    const { issues } = check(text);
+    expect(summary(issues)).toEqual([
+      ["error", "vnet-outside-zone"],
+      ["error", "invalid-bridge-link"],
+      ["warning", "vnet-outside-zone"],
+    ]);
+    expect(issues[0].message).toBe(
+      "pve2 はゾーン「lan」に入っていないので、VNet vnet30 は使えません",
+    );
+    expect(at(issues, text, 0)).toBe("pve2:vnet30");
+    expect(issues[2].message).toBe(
+      "pve2 はゾーン「lan」に入っていないので、VNet vnet30 の箱は置けません(layout の「pve2:vnet30」)",
+    );
+  });
+});

@@ -1,7 +1,7 @@
 // GUI でブリッジやゲストを 1 つ足すときの置き場所(フェーズ4-2)。ホストの枠の中の段に並べ、
 // ほかのホストの枠や機器と重ならない場所を、右・左・下の段の順に探す。
 
-import { allBridges, BRIDGE_NODE_SIZE, bridgeKey, bridgesOf, parseBridgeKey } from "./bridges";
+import { allBridges, BRIDGE_NODE_SIZE, bridgeKey, hostBridges, parseBridgeKey } from "./bridges";
 import { roundPosition } from "./edit";
 import { DEVICE_BOX, GROUP_PADDING, groupFrames } from "./groupFrames";
 import { hostTree } from "./hosts";
@@ -61,7 +61,7 @@ export function placeNearHost(
       const p = positionOf(id);
       return p ? [p] : [];
     });
-  const bridges = positions(bridgesOf(t.devices.get(host)).map((b) => bridgeKey(host, b)));
+  const bridges = positions(hostBridges(t, host).map((b) => bridgeKey(host, b)));
   const guests = positions([...(hostTree(t).guestsOf.get(host) ?? [])]);
   const row = kind === "bridge" ? bridges : guests;
   const size = kind === "bridge" ? BRIDGE_NODE_SIZE : DEVICE_BOX;

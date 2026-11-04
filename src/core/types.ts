@@ -53,6 +53,13 @@ export const BOND_MODES = [
 ] as const;
 export type BondMode = (typeof BOND_MODES)[number];
 
+/** SDN のゾーンの種類(SPEC 4.6) */
+export const SDN_ZONE_TYPES = ["simple", "vlan", "qinq", "vxlan", "evpn"] as const;
+export type SdnZoneType = (typeof SDN_ZONE_TYPES)[number];
+
+/** VNet の tag の最大(vxlan・evpn の VNI は 24 ビット。vlan・qinq では 4094 まで) */
+export const VNI_MAX = 16777215;
+
 export const GROUP_KINDS = ["site", "rack", "vlan", "subnet", "as", "cluster", "custom"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
@@ -89,6 +96,8 @@ export interface Topology {
   layout: Map<string, Position>;
   viewport?: Viewport;
   groups: Group[];
+  /** SDN のゾーンと VNet(SPEC 4.6) */
+  sdn: Sdn;
   extra: Extra;
 }
 
@@ -173,6 +182,36 @@ export interface Group {
   extra: Extra;
 }
 
+/** SDN(SPEC 4.6)。VNet は、ゾーンの各ホストの中のブリッジとして扱う */
+export interface Sdn {
+  /** キー = ゾーンID */
+  zones: Map<string, SdnZone>;
+  /** キー = VNet ID */
+  vnets: Map<string, SdnVnet>;
+  extra: Extra;
+}
+
+export interface SdnZone {
+  /** 必須。YAML の値が無い・不正なときは undefined */
+  type?: SdnZoneType;
+  /** vlan・qinq で使う、各ホストのブリッジ */
+  bridge?: string;
+  /** qinq の外側の VLAN ID */
+  tag?: number;
+  /** ゾーンを使うホストのデバイスID。省略時は、ロールが hypervisor の機器すべて */
+  nodes?: string[];
+  extra: Extra;
+}
+
+export interface SdnVnet {
+  /** 必須。YAML の値が無い・不正なときは undefined */
+  zone?: string;
+  /** VLAN ID(qinq では内側の VLAN、vxlan・evpn では VNI) */
+  tag?: number;
+  subnets?: string[];
+  extra: Extra;
+}
+
 // ---------------------------------------------------------------------------
 // モデル(機種)
 // ---------------------------------------------------------------------------
@@ -250,7 +289,13 @@ export type IssueCode =
   | "multiple-clusters"
   | "invalid-subnet"
   | "networks-not-cluster"
-  | "missing-cluster-network";
+  | "missing-cluster-network"
+  | "unknown-sdn-zone"
+  | "missing-zone-bridge"
+  | "vnet-outside-zone"
+  | "invalid-vnet-tag"
+  | "vnet-name-conflict"
+  | "long-vnet-id";
 
 export type IssueTarget =
   | { kind: "document" }
@@ -260,7 +305,9 @@ export type IssueTarget =
   | { kind: "link"; id: string; end?: "a" | "b" }
   | { kind: "layout"; id: string }
   /** field があれば、YAML ではその項目の値を指す。network があれば、networks のその名前を指す */
-  | { kind: "group"; index: number; field?: string; network?: string };
+  | { kind: "group"; index: number; field?: string; network?: string }
+  /** SDN のゾーン・VNet。field があれば、YAML ではその項目の値を指す */
+  | { kind: "sdn"; section: "zones" | "vnets"; id: string; field?: string };
 
 /** YAML 文字列内の位置(文字オフセット) */
 export interface SourceRange {

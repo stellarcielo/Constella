@@ -26,6 +26,8 @@ import type {
   Link,
   Meta,
   ModelCatalog,
+  SdnVnet,
+  SdnZone,
   Topology,
 } from "./types";
 
@@ -55,6 +57,7 @@ export function serializeTopology(topology: Topology, base?: YamlBase): Serializ
   const newLinkNodes = w.links(root, linkNodes);
   w.layout(root);
   w.groups(root, topology.groups);
+  w.sdn(root);
 
   return {
     text: doc.toString(STRINGIFY_OPTIONS),
@@ -359,6 +362,57 @@ class Writer {
     for (const group of groups.slice(maps.length)) items.push(this.groupNode(group));
   }
 
+  /**
+   * SDN(SPEC 4.6)。GUI で変わるのはゾーンの nodes(デバイスID の変更・削除)くらいなので、
+   * ゾーン・VNet ごとに項目を書き込み、ほかの書き方やコメントはそのまま残す
+   */
+  sdn(root: YAMLMap): void {
+    const { sdn } = this.after;
+    const found = root.get("sdn", true) as Node | undefined;
+    let map: YAMLMap;
+    if (isMap(found)) map = found;
+    else if (sdn.zones.size === 0 && sdn.vnets.size === 0) return;
+    else map = this.setSection(root, "sdn", new YAMLMap());
+    this.sdnSection(map, "zones", sdn.zones, zoneFields);
+    this.sdnSection(map, "vnets", sdn.vnets, vnetFields);
+  }
+
+  private sdnSection<T extends { extra: Extra }>(
+    map: YAMLMap,
+    key: "zones" | "vnets",
+    entries: Map<string, T>,
+    fields: (entry: T) => Fields,
+  ): void {
+    const found = map.get(key, true) as Node | undefined;
+    let section: YAMLMap;
+    if (isMap(found)) section = found;
+    else if (entries.size === 0) return;
+    else {
+      section = new YAMLMap();
+      map.set(key, section);
+    }
+    // 消したもの(パースできなかった要素は前のトポロジに無いので触らない)
+    const before = this.before.sdn[key];
+    section.items = section.items.filter((pair) => {
+      const id = keyText(pair.key);
+      return entries.has(id) || !before.has(id);
+    });
+    for (const [id, entry] of entries) {
+      const pair = section.items.find((p) => keyText(p.key) === id);
+      if (!pair) {
+        section.items.push(
+          new Pair(this.doc.createNode(id), this.newMap(fields(entry), entry.extra)),
+        );
+        continue;
+      }
+      const value = pair.value as Node | null;
+      if (isMap(value)) this.syncFields(value, fields(entry), entry.extra);
+      else if (hasContent(fields(entry), entry.extra)) {
+        pair.value = this.newMap(fields(entry), entry.extra);
+      }
+    }
+  }
+
   // --- ノードの作成 -----------------------------------------------------------
 
   private deviceNode(device: Device): YAMLMap {
@@ -503,6 +557,23 @@ function groupFields(group: Group): Fields {
     ["label", group.label],
     ["members", group.members],
     ["networks", group.networks],
+  ];
+}
+
+function zoneFields(zone: SdnZone): Fields {
+  return [
+    ["type", zone.type],
+    ["bridge", zone.bridge],
+    ["tag", zone.tag],
+    ["nodes", zone.nodes],
+  ];
+}
+
+function vnetFields(vnet: SdnVnet): Fields {
+  return [
+    ["zone", vnet.zone],
+    ["tag", vnet.tag],
+    ["subnets", vnet.subnets],
   ];
 }
 

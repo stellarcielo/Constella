@@ -168,6 +168,7 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
                 >
                   <span className="port-picker-name">{entry.name}</span>
                   {entry.speed && <span className="port-picker-speed">{entry.speed}</span>}
+                  {entry.bridge?.vnet && <span className="port-picker-speed">VNet</span>}
                   {mismatch && (
                     <span
                       className="port-picker-warning"
@@ -199,7 +200,7 @@ export function PortPicker({ deviceId, side, peer, anchor, onChoose }: PortPicke
   );
 }
 
-/** ポート種別ごとのまとまり。ブリッジ(SPEC 4.6)は最後に「ブリッジ」としてまとめる */
+/** ポート種別ごとのまとまり。ブリッジ(SPEC 4.6。SDN の VNet も)は最後に「ブリッジ」としてまとめる */
 function groupByType(entries: PortEntry[]): { key: string; label: string; entries: PortEntry[] }[] {
   const order: (PortType | undefined)[] = [...PORT_TYPES, undefined];
   return [

@@ -162,6 +162,16 @@ ${groups}layout:
     expect(frame.type === "host" && hostFrameTitle(t, testCatalog, frame)).toBe("VM 1・CT 1");
   });
 
+  it("ホストの枠は、描いている VNet の箱も囲む(フェーズ4-6)", () => {
+    const t = hosts(
+      "",
+      "  vm2: { model: generic-vm, host: pve1 }\nlinks:\n  - { a: vm2:net0, b: pve1:vnet30 }\nsdn:\n  vnets:\n    vnet30: { zone: lan }\n  zones:\n    lan: { type: simple }\n",
+    );
+    t.layout.set("pve1:vnet30", { x: 0, y: 100 });
+    const [frame] = groupFrames(t, at(t));
+    expect(frame.members).toEqual(["pve1", "pve1:vnet30", "vm1", "ct1", "vm2"]);
+  });
+
   it("ゲストを隠している(位置が無い)ときは描かない", () => {
     const t = hosts();
     const hidden = (id: string) => (id === "vm1" || id === "ct1" ? undefined : at(t)(id));

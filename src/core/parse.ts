@@ -35,11 +35,16 @@ import {
   type Meta,
   type ModelCatalog,
   ROLES,
+  SDN_ZONE_TYPES,
+  type Sdn,
+  type SdnVnet,
+  type SdnZone,
   type Severity,
   type SourceRange,
   type Topology,
   VMID_MAX,
   VMID_MIN,
+  VNI_MAX,
 } from "./types";
 
 /** 保存時にコメントやキー順を保つために、読み込んだ YAML ドキュメントを持ち回る */
@@ -60,7 +65,9 @@ export interface ParseOptions {
   catalog?: ModelCatalog;
 }
 
-const TOP_LEVEL_KEYS = ["constella", "meta", "devices", "links", "layout", "groups"];
+const TOP_LEVEL_KEYS = ["constella", "meta", "devices", "links", "layout", "groups", "sdn"];
+const ZONE_KEYS = ["type", "bridge", "tag", "nodes"];
+const VNET_KEYS = ["zone", "tag", "subnets"];
 const DEVICE_KEYS = ["model", "role", "label", "host", "guest", "vmid", "interfaces"];
 const INTERFACE_KEYS = [
   "description",
@@ -166,6 +173,7 @@ class Parser {
       links: [],
       layout: new Map(),
       groups: [],
+      sdn: { zones: new Map(), vnets: new Map(), extra: {} },
       extra,
     };
     for (const [key, value, keyNode] of this.entries(root, doc)) {
@@ -186,6 +194,9 @@ class Parser {
           break;
         case "groups":
           t.groups = this.groups(value);
+          break;
+        case "sdn":
+          t.sdn = this.sdn(value);
           break;
         default:
           this.unknownKey(key, keyNode, doc, TOP_LEVEL_KEYS);
@@ -605,6 +616,113 @@ class Parser {
     return networks;
   }
 
+  /** SDN のゾーンと VNet(SPEC 4.6) */
+  private sdn(node: Node | null): Sdn {
+    const sdn: Sdn = { zones: new Map(), vnets: new Map(), extra: {} };
+    const ctx: Ctx = { target: { kind: "document" }, path: "sdn" };
+    if (!this.mapOrNull(node, ctx)) return sdn;
+    for (const [key, value, keyNode] of this.entries(node, ctx)) {
+      switch (key) {
+        case "zones":
+        case "vnets": {
+          const section = key;
+          const sectionCtx: Ctx = { target: ctx.target, path: `sdn.${section}` };
+          if (!this.mapOrNull(value, sectionCtx)) break;
+          for (const [id, item, idNode] of this.entries(value, sectionCtx)) {
+            const itemCtx: Ctx = {
+              target: { kind: "sdn", section, id },
+              path: `sdn.${section}.${id}`,
+            };
+            if (section === "zones") sdn.zones.set(id, this.zone(id, item, idNode, itemCtx));
+            else sdn.vnets.set(id, this.vnet(id, item, idNode, itemCtx));
+          }
+          break;
+        }
+        default:
+          this.unknownKey(key, keyNode, ctx, ["zones", "vnets"]);
+          sdn.extra[key] = toJS(value);
+      }
+    }
+    return sdn;
+  }
+
+  /** idNode は、値が無いときに問題の位置として使う */
+  private zone(id: string, node: Node | null, idNode: Node | null, ctx: Ctx): SdnZone {
+    const zone: SdnZone = { extra: {} };
+    if (this.mapOrNull(node, ctx)) {
+      for (const [key, value, keyNode] of this.entries(node, ctx)) {
+        switch (key) {
+          case "type": {
+            const type = enumValue(value, SDN_ZONE_TYPES);
+            if (type) zone.type = type;
+            else this.invalid(zone.extra, key, value, ctx, SDN_ZONE_TYPES.join(" / "));
+            break;
+          }
+          case "bridge":
+            if (isNonEmptyString(value)) zone.bridge = value.value.trim();
+            else this.invalid(zone.extra, key, value, ctx, "ブリッジの名前");
+            break;
+          case "tag": {
+            const tag = integerIn(value, 1, 4094);
+            if (tag !== undefined) zone.tag = tag;
+            else this.invalid(zone.extra, key, value, ctx, "1〜4094 の整数");
+            break;
+          }
+          case "nodes":
+            if (isSeq(value) && value.items.every((i) => isNonEmptyString(i as Node))) {
+              zone.nodes = value.items.map((i) => String((i as { value: unknown }).value));
+            } else {
+              this.invalid(zone.extra, key, value, ctx, "デバイスIDの配列");
+            }
+            break;
+          default:
+            this.unknownKey(key, keyNode, ctx, ZONE_KEYS);
+            zone.extra[key] = toJS(value);
+        }
+      }
+    }
+    if (zone.type === undefined && !("type" in zone.extra)) {
+      const at = node === null || isEmptyScalar(node) ? idNode : node;
+      this.add("error", "missing-field", `ゾーン「${id}」に type がありません`, ctx.target, at);
+    }
+    return zone;
+  }
+
+  private vnet(id: string, node: Node | null, idNode: Node | null, ctx: Ctx): SdnVnet {
+    const vnet: SdnVnet = { extra: {} };
+    if (this.mapOrNull(node, ctx)) {
+      for (const [key, value, keyNode] of this.entries(node, ctx)) {
+        switch (key) {
+          case "zone":
+            if (isNonEmptyString(value)) vnet.zone = value.value;
+            else this.invalid(vnet.extra, key, value, ctx, "ゾーンID");
+            break;
+          case "tag": {
+            const tag = integerIn(value, 1, VNI_MAX);
+            if (tag !== undefined) vnet.tag = tag;
+            else this.invalid(vnet.extra, key, value, ctx, `1〜${VNI_MAX} の整数`);
+            break;
+          }
+          case "subnets":
+            if (isSeq(value) && value.items.every((i) => isNonEmptyString(i as Node))) {
+              vnet.subnets = value.items.map((i) => String((i as { value: unknown }).value));
+            } else {
+              this.invalid(vnet.extra, key, value, ctx, "サブネットの配列");
+            }
+            break;
+          default:
+            this.unknownKey(key, keyNode, ctx, VNET_KEYS);
+            vnet.extra[key] = toJS(value);
+        }
+      }
+    }
+    if (vnet.zone === undefined && !("zone" in vnet.extra)) {
+      const at = node === null || isEmptyScalar(node) ? idNode : node;
+      this.add("error", "missing-field", `VNet「${id}」に zone がありません`, ctx.target, at);
+    }
+    return vnet;
+  }
+
   // --- 共通処理 -------------------------------------------------------------
 
   /** マップのキーと値を順に返す。重複したキーはエラーにして 2 つ目以降を飛ばす */
@@ -703,7 +821,7 @@ class Parser {
 // ---------------------------------------------------------------------------
 
 /**
- * IF 名の表記をそろえる。モデルのあるデバイスはモデル側の表記、
+ * IF 名の表記をそろえる。モデルのあるデバイスはモデル側の表記、VNet(SPEC 4.6)は sdn の VNet ID、
  * それ以外は最初に書かれた表記(interfaces → links の順)に合わせる。
  * members・vlan-raw-device と、layout のブリッジのキー(pve1:vmbr0)の IF 名もそろえる。
  */
@@ -718,6 +836,9 @@ function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
       for (const port of model?.ports ?? []) {
         const n = normalizeIfName(port.name);
         if (!names.has(ifNameKey(n))) names.set(ifNameKey(n), n);
+      }
+      for (const vnet of t.sdn.vnets.keys()) {
+        if (!names.has(ifNameKey(vnet))) names.set(ifNameKey(vnet), vnet);
       }
       spellings.set(deviceId, names);
     }
@@ -776,6 +897,13 @@ function isEmptyScalar(node: Node): boolean {
 
 function isNonEmptyString(node: Node | null): node is Node & { value: string } {
   return isScalar(node) && typeof node.value === "string" && node.value !== "";
+}
+
+/** min〜max の整数なら、その値 */
+function integerIn(node: Node | null, min: number, max: number): number | undefined {
+  if (!isScalar(node) || !Number.isInteger(node.value)) return undefined;
+  const value = node.value as number;
+  return value >= min && value <= max ? value : undefined;
 }
 
 function enumValue<T extends string>(node: Node | null, values: readonly T[]): T | undefined {

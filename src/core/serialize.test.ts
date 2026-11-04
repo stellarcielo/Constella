@@ -618,3 +618,45 @@ groups:
     expect(serializeTopology(topology, base).text).toContain("      corosync: 10 # ring0\n");
   });
 });
+
+describe("serializeTopology: SDN(SPEC 4.6)", () => {
+  const text = `constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  pve2: { model: generic-hypervisor-4 }
+sdn:
+  zones:
+    # VLAN ゾーン
+    lan: { type: vlan, bridge: vmbr0, nodes: [ pve1, pve2 ] } # 2 台だけ
+    vx:
+      type: vxlan
+  vnets:
+    vnet30: { zone: lan, tag: 30, subnets: [ 10.30.0.0/24 ] }
+`;
+
+  it("何も変えなければ、そのまま書き出す", () => {
+    const { topology, base } = load(text);
+    expect(serializeTopology(topology, base).text).toBe(text);
+  });
+
+  it("ホストの ID を変える・消すと、nodes を書き換え、ほかの書き方とコメントは残す", () => {
+    const { topology, base } = load(text);
+    renameDevice(topology, "pve1", "pve-a");
+    const renamed = serializeTopology(topology, base).text;
+    expect(renamed).toContain(
+      "    # VLAN ゾーン\n    lan: { type: vlan, bridge: vmbr0, nodes: [ pve-a, pve2 ] } # 2 台だけ\n",
+    );
+    expect(renamed).toContain("    vx:\n      type: vxlan\n");
+    removeDevices(topology, ["pve2"]);
+    expect(serializeTopology(topology, base).text).toContain("nodes: [ pve-a ] }");
+  });
+
+  it("新しく書き出しても、読み直すと同じ", () => {
+    const { topology } = load(text);
+    const out = serializeTopology(topology).text;
+    expect(out).toContain("sdn:\n  zones:\n    lan:\n      type: vlan\n");
+    const again = load(out).topology;
+    expect([...again.sdn.zones]).toEqual([...topology.sdn.zones]);
+    expect([...again.sdn.vnets]).toEqual([...topology.sdn.vnets]);
+  });
+});

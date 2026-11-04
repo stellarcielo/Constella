@@ -1,9 +1,12 @@
 // ブリッジ(ホストの中の仮想スイッチ。SPEC 4.6)。ホストの interfaces の type: bridge の IF を、
 // キャンバスでは小さな箱として描く。箱の ID と layout のキーは「ホストのデバイスID:ブリッジ名」
 // (デバイスID には : が使えないので、デバイスの ID と重ならない)。
+// SDN の VNet も、ホストの中のブリッジとして同じ箱で描く(フェーズ4-6)。VNet の箱は、ゲストがつながって
+// いるホストと、位置を覚えているホストにだけ描く(フェーズ4-6 Q1)。
 
 import { ifNameKey } from "./ifname";
 import { nextLogicalIfName, removeLogicalIf, renameLogicalIf } from "./logicalIfs";
+import { findVnet, zoneOfVnet } from "./sdn";
 import type { Device, Endpoint, Link, ModelCatalog, Position, Topology } from "./types";
 
 /** キャンバスの箱の大きさ(Canvas.css の .bridge-node と合わせる)。箱の下に IP などを出す */
@@ -34,34 +37,112 @@ export function findBridge(device: Device | undefined, iface: string): string | 
   return bridgesOf(device).find((name) => ifNameKey(name) === key);
 }
 
-/** 箱の ID が指すブリッジがあれば、その箱の ID(表記をそろえたもの) */
+/** ホストに描く VNet の箱の VNet ID(ゲストがつながっているか、位置を覚えているもの。sdn に書いた順) */
+export function vnetsShownOn(t: Topology, host: string): string[] {
+  const device = t.devices.get(host);
+  if (!device || t.sdn.vnets.size === 0) return [];
+  const shown = new Set<string>();
+  const add = (iface: string) => {
+    const vnet = findVnet(t, device, iface);
+    if (vnet !== undefined) shown.add(vnet);
+  };
+  for (const link of t.links) {
+    if (link.a?.device === host) add(link.a.iface);
+    if (link.b?.device === host) add(link.b.iface);
+  }
+  for (const key of t.layout.keys()) {
+    const parsed = parseBridgeKey(key);
+    if (parsed?.host === host) add(parsed.bridge);
+  }
+  return [...t.sdn.vnets.keys()].filter((id) => shown.has(id));
+}
+
+/** ホストの箱の名前。ブリッジ(YAML に書いた順)と、描く VNet(sdn に書いた順) */
+export function hostBridges(t: Topology, host: string): string[] {
+  return [...bridgesOf(t.devices.get(host)), ...vnetsShownOn(t, host)];
+}
+
+/** IF がホストのブリッジか VNet なら、その表記(ブリッジは interfaces のキー、VNet は VNet ID) */
+export function findHostBridge(t: Topology, host: string, iface: string): string | undefined {
+  const device = t.devices.get(host);
+  return findBridge(device, iface) ?? findVnet(t, device, iface);
+}
+
+/** 箱の ID が指すブリッジか VNet の箱があれば、その箱の ID(表記をそろえたもの) */
 export function resolveBridgeKey(t: Topology, key: string): string | undefined {
   const parsed = parseBridgeKey(key);
   if (!parsed) return undefined;
-  const bridge = findBridge(t.devices.get(parsed.host), parsed.bridge);
-  return bridge === undefined ? undefined : bridgeKey(parsed.host, bridge);
+  const device = t.devices.get(parsed.host);
+  const bridge = findBridge(device, parsed.bridge);
+  if (bridge !== undefined) return bridgeKey(parsed.host, bridge);
+  const vnet = findVnet(t, device, parsed.bridge);
+  return vnet !== undefined && vnetsShownOn(t, parsed.host).includes(vnet)
+    ? bridgeKey(parsed.host, vnet)
+    : undefined;
 }
 
-/** 図のすべてのブリッジ(デバイスの順、その中は YAML に書いた順) */
-export function allBridges(t: Topology): { key: string; host: string; bridge: string }[] {
-  return [...t.devices.values()].flatMap((device) =>
-    bridgesOf(device).map((bridge) => ({
+/** VNet の箱の ID なら、ホストと VNet ID */
+export function parseVnetKey(t: Topology, key: string): { host: string; vnet: string } | undefined {
+  const parsed = parseBridgeKey(key);
+  if (!parsed || resolveBridgeKey(t, key) !== key) return undefined;
+  const device = t.devices.get(parsed.host);
+  if (findBridge(device, parsed.bridge) !== undefined) return undefined;
+  const vnet = findVnet(t, device, parsed.bridge);
+  return vnet === undefined ? undefined : { host: parsed.host, vnet };
+}
+
+/**
+ * 図のすべての箱(デバイスの順、その中はブリッジ・VNet の順)。vnet は VNet の箱か
+ */
+export function allBridges(
+  t: Topology,
+): { key: string; host: string; bridge: string; vnet: boolean }[] {
+  return [...t.devices.values()].flatMap((device) => [
+    ...bridgesOf(device).map((bridge) => ({
       key: bridgeKey(device.id, bridge),
       host: device.id,
       bridge,
+      vnet: false,
     })),
-  );
+    ...vnetsShownOn(t, device.id).map((vnet) => ({
+      key: bridgeKey(device.id, vnet),
+      host: device.id,
+      bridge: vnet,
+      vnet: true,
+    })),
+  ]);
 }
 
-/** エンドポイントを描く箱の ID。ブリッジならその箱、それ以外はデバイス */
+/** エンドポイントを描く箱の ID。ブリッジや VNet ならその箱、それ以外はデバイス */
 export function endpointNodeId(t: Topology, ep: Endpoint): string {
-  const bridge = findBridge(t.devices.get(ep.device), ep.iface);
+  const bridge = findHostBridge(t, ep.device, ep.iface);
   return bridge === undefined ? ep.device : bridgeKey(ep.device, bridge);
 }
 
-/** エンドポイントがブリッジか */
+/** エンドポイントがブリッジか VNet か */
 export function isBridgeEndpoint(t: Topology, ep: Endpoint): boolean {
-  return findBridge(t.devices.get(ep.device), ep.iface) !== undefined;
+  return findHostBridge(t, ep.device, ep.iface) !== undefined;
+}
+
+/**
+ * VNet の箱から引く点線の先(SPEC 7.3)。vlan・qinq はゾーンのブリッジの箱(ホストに無ければ引かない)、
+ * vxlan・evpn はホスト、simple は引かない
+ */
+export function vnetUplinkTarget(t: Topology, host: string, vnet: string): string | undefined {
+  const zone = zoneOfVnet(t, vnet);
+  switch (zone?.type) {
+    case "vlan":
+    case "qinq": {
+      const bridge =
+        zone.bridge === undefined ? undefined : findBridge(t.devices.get(host), zone.bridge);
+      return bridge === undefined ? undefined : bridgeKey(host, bridge);
+    }
+    case "vxlan":
+    case "evpn":
+      return host;
+    default:
+      return undefined;
+  }
 }
 
 /** ブリッジにつながるリンク(YAML に書いた順) */
@@ -93,14 +174,29 @@ export function addBridge(
   return name;
 }
 
-/** ブリッジを消す(箱の ID で渡す)。つながっていたリンクと layout、ほかの IF の members からも取り除く */
+/**
+ * ブリッジを消す(箱の ID で渡す)。つながっていたリンクと layout、ほかの IF の members からも取り除く。
+ * VNet の箱は、そのホストでつながっていたリンクと位置を消す(VNet の定義は残す。フェーズ4-6 Q4)
+ */
 export function removeBridges(t: Topology, keys: Iterable<string>): void {
   for (const key of keys) {
     const parsed = parseBridgeKey(key);
-    const bridge = parsed && findBridge(t.devices.get(parsed.host), parsed.bridge);
-    if (!parsed || bridge === undefined) continue;
-    removeLogicalIf(t, parsed.host, bridge);
-    t.layout.delete(bridgeKey(parsed.host, bridge));
+    if (!parsed) continue;
+    const device = t.devices.get(parsed.host);
+    const bridge = findBridge(device, parsed.bridge);
+    if (bridge !== undefined) {
+      removeLogicalIf(t, parsed.host, bridge);
+      t.layout.delete(bridgeKey(parsed.host, bridge));
+      continue;
+    }
+    const vnet = findVnet(t, device, parsed.bridge);
+    if (vnet === undefined) continue;
+    const links = new Set(bridgeLinks(t, parsed.host, vnet));
+    t.links = t.links.filter((l) => !links.has(l));
+    for (const k of [...t.layout.keys()]) {
+      const at = parseBridgeKey(k);
+      if (at?.host === parsed.host && ifNameKey(at.bridge) === ifNameKey(vnet)) t.layout.delete(k);
+    }
   }
 }
 
@@ -117,9 +213,12 @@ export function renameBridge(t: Topology, host: string, oldName: string, newName
   t.layout = new Map([...t.layout].map(([k, p]) => [k === from ? bridgeKey(host, name) : k, p]));
 }
 
-/** ゲストのホストを変えると、どうなるリンクか(SPEC 7.1・フェーズ4-2 Q2) */
+/**
+ * ゲストのホストを変えると、どうなるリンクか(SPEC 7.1・フェーズ4-2 Q2)。
+ * VNet へのリンクは、新しいホストの同じ VNet へ付け替える(ゾーンに入っていなければエラーで知らせる)
+ */
 export interface HostChangeImpact {
-  /** 新しいホストの、同じ名前のブリッジへ付け替えるリンク */
+  /** 新しいホストの、同じ名前のブリッジ(VNet)へ付け替えるリンク */
   moved: Link[];
   /** 新しいホストに同じ名前のブリッジが無く、消えるリンク */
   lost: Link[];
@@ -149,11 +248,11 @@ export function hostChangeImpact(
   guest: string,
   newHost: string | undefined,
 ): HostChangeImpact {
-  const target = newHost === undefined ? undefined : t.devices.get(newHost);
   const impact: HostChangeImpact = { moved: [], lost: [] };
   for (const { link, end } of linksToHostBridges(t, guest)) {
     const ep = link[end];
-    if (ep && findBridge(target, ep.iface) !== undefined) impact.moved.push(link);
+    const bridge = ep && newHost !== undefined ? findHostBridge(t, newHost, ep.iface) : undefined;
+    if (bridge !== undefined) impact.moved.push(link);
     else impact.lost.push(link);
   }
   return impact;
@@ -171,11 +270,10 @@ export function changeHost(
 ): void {
   const device = t.devices.get(guest);
   if (!device) return;
-  const target = newHost === undefined ? undefined : t.devices.get(newHost);
   const lost = new Set<Link>();
   for (const { link, end } of linksToHostBridges(t, guest)) {
     const ep = link[end];
-    const bridge = ep && findBridge(target, ep.iface);
+    const bridge = ep && newHost !== undefined ? findHostBridge(t, newHost, ep.iface) : undefined;
     if (newHost !== undefined && bridge !== undefined)
       link[end] = { device: newHost, iface: bridge };
     else if (removeLost) lost.add(link);

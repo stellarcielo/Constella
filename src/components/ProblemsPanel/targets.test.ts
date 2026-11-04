@@ -103,3 +103,30 @@ links:
     ]);
   });
 });
+
+describe("SDN(フェーズ4-6)", () => {
+  const t = load(`constella: 1
+devices:
+  pve1: { model: generic-hypervisor-4 }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: vm1:net0, b: pve1:vnet30 }
+sdn:
+  zones:
+    lan: { type: simple }
+  vnets:
+    vnet30: { zone: lan }
+    vnet40: { zone: lan }
+`);
+
+  it("表示名と、VNet の問題で選ぶもの(描いている VNet の箱)", () => {
+    const vnet30 = { kind: "sdn", section: "vnets", id: "vnet30" } as const;
+    expect(describeTarget(vnet30, t, same)).toBe("sdn の vnets.vnet30");
+    expect(issueFocus(vnet30, t)).toEqual({
+      selection: { devices: ["pve1:vnet30"], links: [] },
+      devices: ["pve1:vnet30"],
+    });
+    expect(issueFocus({ kind: "sdn", section: "vnets", id: "vnet40" }, t)).toBeUndefined();
+    expect(issueFocus({ kind: "sdn", section: "zones", id: "lan" }, t)).toBeUndefined();
+  });
+});

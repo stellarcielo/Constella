@@ -28,7 +28,7 @@ import {
   clusterIpText,
   type Endpoint,
   endpointNodeId,
-  findBridge,
+  findHostBridge,
   findModel,
   guestDropTarget,
   hostIpLines,
@@ -44,6 +44,8 @@ import {
   resolveRole,
   type Severity,
   type Topology,
+  vnetTagText,
+  vnetUplinkTarget,
 } from "../../core";
 import {
   nodePosition,
@@ -333,9 +335,13 @@ function buildNodes(
   const problems = worstProblems(issues, (target) => {
     if (target.kind === "device") return target.id;
     if (target.kind !== "interface") return undefined;
-    const bridge = findBridge(t.devices.get(target.device), target.name);
+    const bridge = findHostBridge(t, target.device, target.name);
     return bridge === undefined ? target.device : bridgeKey(target.device, bridge);
   });
+  // VNet の問題(SDN。フェーズ4-6)は、その VNet の箱すべてに出す
+  const vnetProblems = worstProblems(issues, (target) =>
+    target.kind === "sdn" && target.section === "vnets" ? target.id : undefined,
+  );
   // IP の行には、クラスタのネットワークの名前を添える(SPEC 4.6・フェーズ4-5)
   const ipText = clusterIpText(t);
   const devices = [...t.devices.values()].map((device): DeviceNodeType => {
@@ -360,16 +366,33 @@ function buildNodes(
       },
     };
   });
-  // ブリッジの箱(SPEC 4.6)。ゲストと一緒に隠す
-  const bridges = allBridges(t).map(({ key, host, bridge }): BridgeNodeType => {
+  // ブリッジと VNet の箱(SPEC 4.6)。ゲストと一緒に隠す
+  const bridges = allBridges(t).map(({ key, host, bridge, vnet }): BridgeNodeType => {
     const device = t.devices.get(host);
     const info = device?.interfaces.get(bridge);
     const position = nodePosition(t, autoPositions, key);
-    return {
+    const node = {
       id: key,
-      type: "bridge",
+      type: "bridge" as const,
       position: position ?? { x: 0, y: 0 },
       hidden: !position || !showGuests,
+    };
+    if (vnet) {
+      // VNet の箱: 下に tag と subnets(フェーズ4-6 Q2)
+      return {
+        ...node,
+        data: {
+          name: bridge,
+          host,
+          vlanAware: false,
+          ip: t.sdn.vnets.get(bridge)?.subnets ?? [],
+          vnet: { zone: t.sdn.vnets.get(bridge)?.zone, tag: vnetTagText(t, bridge) },
+          problem: worse(problems.get(key), vnetProblems.get(bridge)),
+        },
+      };
+    }
+    return {
+      ...node,
       data: {
         name: bridge,
         host,
@@ -438,8 +461,26 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
       },
     };
   });
-  // ブリッジとホストの間の線(フェーズ4-2 Q3)。members の無いブリッジは、ホストの中だけのネットワーク
-  const uplinks = allBridges(t).flatMap(({ key, host, bridge }): UplinkEdgeType[] => {
+  // ブリッジとホストの間の線(フェーズ4-2 Q3)。members の無いブリッジは、ホストの中だけのネットワーク。
+  // VNet の箱からは、ゾーンのブリッジの箱かホストへ引く(simple は引かない。フェーズ4-6 Q2)
+  const uplinks = allBridges(t).flatMap(({ key, host, bridge, vnet }): UplinkEdgeType[] => {
+    if (vnet) {
+      const target = vnetUplinkTarget(t, host, bridge);
+      if (target === undefined) return [];
+      return [
+        {
+          id: `uplink:${key}`,
+          type: "uplink",
+          source: key,
+          target,
+          className: "media-virtual uplink",
+          selectable: false,
+          deletable: false,
+          focusable: false,
+          data: { bridge, vnet: true },
+        },
+      ];
+    }
     const members = t.devices.get(host)?.interfaces.get(bridge)?.members ?? [];
     if (members.length === 0) return [];
     return [
@@ -457,6 +498,11 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
     ];
   });
   return [...links, ...uplinks];
+}
+
+/** 重いほうの問題 */
+function worse(a: Severity | undefined, b: Severity | undefined): Severity | undefined {
+  return a === "error" || b === "error" ? "error" : (a ?? b);
 }
 
 /** 対象ごとに、いちばん重い問題を求める(赤 = エラー、黄 = 警告) */

@@ -1,7 +1,7 @@
 // 意味のチェック(SPEC 4.5)。パース時に分かる問題(重複・不正な値など)は parse.ts で出す。
 
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
-import { findBridge, parseBridgeKey } from "./bridges";
+import { findBridge, findHostBridge, parseBridgeKey } from "./bridges";
 import { clusterNetworks, clusterOfHosts, inClusterNetwork } from "./clusters";
 import { hostTree } from "./hosts";
 import { parseSubnet } from "./ip";
@@ -9,6 +9,7 @@ import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
 import { portTypesCompatible } from "./ports";
+import { findVnet, VNET_ID_MAX_LENGTH, zoneHosts, zoneOfVnet } from "./sdn";
 import { endpointToString, findModel, isFlexibleDevice } from "./topology";
 import { formatVlanIds, parseVlanList, type VlanBlock, vlanBlocks } from "./vlans";
 import type {
@@ -211,10 +212,28 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     );
   }
 
+  /** ゾーン ID → ゾーンのホスト(SDN。フェーズ4-6) */
+  const zoneHostCache = new Map<string, string[]>();
+  const hostsOfZone = (id: string): string[] => {
+    let hosts = zoneHostCache.get(id);
+    if (!hosts) {
+      const zone = t.sdn.zones.get(id);
+      hosts = zone ? zoneHosts(t, zone, catalog) : [];
+      zoneHostCache.set(id, hosts);
+    }
+    return hosts;
+  };
+  /** ホストが VNet のゾーンに入っていなければ、そのゾーン ID(ゾーンが無ければ別のエラーで知らせる) */
+  const zoneOutside = (host: string, vnet: string): string | undefined => {
+    const zone = t.sdn.vnets.get(vnet)?.zone;
+    if (zone === undefined || !t.sdn.zones.has(zone)) return undefined;
+    return hostsOfZone(zone).includes(host) ? undefined : zone;
+  };
+
   /** ブリッジ(bridge)と相手(other)を結ぶリンクの問題。問題が無ければ undefined(SPEC 4.6) */
   const bridgeLinkProblem = (bridge: Endpoint, other: Endpoint): string | undefined => {
     if (!t.devices.has(other.device)) return undefined; // 存在しないデバイスは別のエラーで知らせる
-    if (findBridge(t.devices.get(other.device), other.iface) !== undefined) {
+    if (findHostBridge(t, other.device, other.iface) !== undefined) {
       return `ブリッジどうしはつなげません(${endpointToString(bridge)} と ${endpointToString(other)})`;
     }
     const host = tree.hostOf.get(other.device);
@@ -239,7 +258,8 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       const logical = [...device.interfaces].some(
         ([name, info]) => info.type !== undefined && ifNameKey(name) === ifNameKey(ep.iface),
       );
-      if (!port && !logical && !isFlexibleDevice(device, catalog)) {
+      const vnet = findVnet(t, device, ep.iface);
+      if (!port && !logical && vnet === undefined && !isFlexibleDevice(device, catalog)) {
         add(
           "error",
           "unknown-interface",
@@ -249,12 +269,22 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       }
       types[end === "a" ? 0 : 1] = port?.type;
 
-      // ブリッジには何本でもつなげる(SPEC 4.3)。つなげるのは、そのホストの上で動くゲストの IF だけ
-      if (findBridge(device, ep.iface) !== undefined) {
+      // ブリッジ(VNet も)には何本でもつなげる(SPEC 4.3)。つなげるのは、そのホストの上で動くゲストの IF だけ
+      if (findHostBridge(t, ep.device, ep.iface) !== undefined) {
         const other = end === "a" ? link.b : link.a;
         const otherEnd = end === "a" ? "b" : "a";
         const reason = other && bridgeLinkProblem(ep, other);
         if (reason) add("error", "invalid-bridge-link", reason, { ...target, end: otherEnd });
+        // VNet を使えるのは、ゾーンのホストだけ(SPEC 4.6)
+        const zone = vnet === undefined ? undefined : zoneOutside(ep.device, vnet);
+        if (vnet !== undefined && zone !== undefined) {
+          add(
+            "error",
+            "vnet-outside-zone",
+            `${ep.device} はゾーン「${zone}」に入っていないので、VNet ${vnet} は使えません`,
+            target,
+          );
+        }
         continue;
       }
       // bond・VLAN インターフェースには線をつながない(束ねた線は、メンバーの物理的な IF ごとに書く)
@@ -316,7 +346,7 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       }
     }
   }
-  for (const block of vlanBlocks(t)) {
+  for (const block of vlanBlocks(t, catalog)) {
     add("warning", "vlan-not-allowed", vlanBlockMessage(block), {
       kind: "interface",
       device: block.at.device,
@@ -326,11 +356,20 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
 
   for (const id of t.layout.keys()) {
     const bridge = parseBridgeKey(id);
-    if (bridge && findBridge(t.devices.get(bridge.host), bridge.bridge) === undefined) {
+    const vnet = bridge && findVnet(t, t.devices.get(bridge.host), bridge.bridge);
+    const zone = bridge && vnet !== undefined ? zoneOutside(bridge.host, vnet) : undefined;
+    if (bridge && findHostBridge(t, bridge.host, bridge.bridge) === undefined) {
       add("warning", "unknown-layout-device", `layout の「${id}」に対応するブリッジがありません`, {
         kind: "layout",
         id,
       });
+    } else if (bridge && zone !== undefined) {
+      add(
+        "warning",
+        "vnet-outside-zone",
+        `${bridge.host} はゾーン「${zone}」に入っていないので、VNet ${vnet ?? ""} の箱は置けません(layout の「${id}」)`,
+        { kind: "layout", id },
+      );
     } else if (!bridge && !t.devices.has(id)) {
       add("warning", "unknown-layout-device", `layout の「${id}」に対応するデバイスがありません`, {
         kind: "layout",
@@ -417,6 +456,115 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
     }
   });
 
+  // SDN(SPEC 4.6・フェーズ4-6): ゾーンの nodes・bridge・tag
+  for (const [id, zone] of t.sdn.zones) {
+    const target: IssueTarget = { kind: "sdn", section: "zones", id };
+    for (const node of new Set(zone.nodes ?? [])) {
+      if (!t.devices.has(node)) {
+        add(
+          "error",
+          "unknown-device",
+          `ゾーン「${id}」の nodes の「${node}」に対応するデバイスがありません`,
+          { ...target, field: "nodes" },
+        );
+      }
+    }
+    if (zone.type === "vlan" || zone.type === "qinq") {
+      if (zone.bridge !== undefined) {
+        for (const host of hostsOfZone(id)) {
+          if (findBridge(t.devices.get(host), zone.bridge) === undefined) {
+            add(
+              "error",
+              "missing-zone-bridge",
+              `${host} に、ゾーン「${id}」のブリッジ ${zone.bridge} がありません`,
+              { kind: "device", id: host },
+            );
+          }
+        }
+      } else if (!("bridge" in zone.extra)) {
+        add(
+          "error",
+          "missing-field",
+          `ゾーン「${id}」(${zone.type})に bridge がありません`,
+          target,
+        );
+      }
+    }
+    if (zone.type === "qinq" && zone.tag === undefined && !("tag" in zone.extra)) {
+      add(
+        "error",
+        "missing-field",
+        `ゾーン「${id}」(qinq)に tag(外側の VLAN ID)がありません`,
+        target,
+      );
+    }
+  }
+  // VNet の ID・subnets・zone・tag
+  for (const [id, vnet] of t.sdn.vnets) {
+    const target: IssueTarget = { kind: "sdn", section: "vnets", id };
+    if (id.length > VNET_ID_MAX_LENGTH) {
+      add(
+        "warning",
+        "long-vnet-id",
+        `VNet ID「${id}」が ${VNET_ID_MAX_LENGTH} 文字より長くなっています(Proxmox VE では ${VNET_ID_MAX_LENGTH} 文字まで)`,
+        target,
+      );
+    }
+    for (const subnet of vnet.subnets ?? []) {
+      if (parseSubnet(subnet) === undefined) {
+        add(
+          "warning",
+          "invalid-subnet",
+          `VNet「${id}」の subnets の「${subnet}」の書き方が分かりません(例: 10.40.0.0/24)`,
+          { ...target, field: "subnets" },
+        );
+      }
+    }
+    if (vnet.zone === undefined) continue; // 無ければパースで知らせる
+    const zone = zoneOfVnet(t, id);
+    if (!zone) {
+      add("error", "unknown-sdn-zone", `VNet「${id}」のゾーン「${vnet.zone}」がありません`, {
+        ...target,
+        field: "zone",
+      });
+      continue;
+    }
+    if (zone.type !== undefined && zone.type !== "simple") {
+      if (vnet.tag === undefined) {
+        if (!("tag" in vnet.extra)) {
+          add(
+            "error",
+            "missing-field",
+            `VNet「${id}」に tag がありません(ゾーン「${vnet.zone}」は ${zone.type})`,
+            target,
+          );
+        }
+      } else if ((zone.type === "vlan" || zone.type === "qinq") && vnet.tag > 4094) {
+        add(
+          "error",
+          "invalid-vnet-tag",
+          `VNet「${id}」の tag(${vnet.tag})は 1〜4094 の範囲にしてください(ゾーン「${vnet.zone}」は ${zone.type})`,
+          { ...target, field: "tag" },
+        );
+      }
+    }
+    // ゾーンのホストに、VNet ID と同じ名前の IF があると、どちらにつなぐのか分からない
+    const key = ifNameKey(id);
+    for (const host of hostsOfZone(vnet.zone)) {
+      const device = t.devices.get(host);
+      if (!device) continue;
+      const names = [...device.interfaces.keys()];
+      if (portsOf(device).has(key) || names.some((name) => ifNameKey(name) === key)) {
+        add(
+          "error",
+          "vnet-name-conflict",
+          `VNet「${id}」は、${host} の IF と同じ名前です(VNet ID か IF 名を変えてください)`,
+          target,
+        );
+      }
+    }
+  }
+
   return issues;
 }
 
@@ -481,6 +629,16 @@ export function locateTarget(base: YamlBase, target: IssueTarget): SourceRange |
       const field =
         target.field !== undefined && isMap(item) ? item.get(target.field, true) : undefined;
       return rangeOf(field ?? item);
+    }
+    case "sdn": {
+      const sdn = doc.get("sdn", true);
+      const section = isMap(sdn) ? sdn.get(target.section, true) : undefined;
+      const pair = findPair(section, (k) => k === target.id);
+      // 項目の指定があれば、その値の位置(無ければゾーン・VNet の ID の位置)
+      const value = pair?.value;
+      const field =
+        target.field !== undefined && isMap(value) ? value.get(target.field, true) : undefined;
+      return rangeOf(field ?? pair?.key);
     }
   }
 }
