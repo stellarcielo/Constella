@@ -1,12 +1,13 @@
 // 選んだリンクの、線を曲げるつまみ(SPEC 7.3)。曲げる点(四角)はドラッグで動かし、ダブルクリックで消す。
 // 区間の真ん中の丸をドラッグすると、そこに曲げる点を足す。ドラッグ中は、隣の点(端なら機器の中心)と
-// 水平・垂直に近ければそろえる(⌥ を押している間はそろえない)。ストアには、ドロップしたときに 1 回だけ書く。
+// 水平・垂直に近ければそろえて、ガイドの線を出す(⌥ を押している間はそろえない)。
+// ストアには、ドロップしたときに 1 回だけ書く。
 // 同じ 2 台の間の線は同じ点を通るので、つまみは 2 台の組ごとに 1 組だけ出す。選択モードのときだけ出す。
 // ReactFlow の子として置く(フローの座標変換と、ドラッグ中の位置を使うため)。
 
 import { EdgeLabelRenderer, useEdges, useNodes, useReactFlow } from "@xyflow/react";
 import { type CSSProperties, type PointerEvent, useRef } from "react";
-import { midpoint, type Point, type Position, snapBend } from "../../core";
+import { midpoint, type Point, type Position, snapPoint } from "../../core";
 import { topologyStore, uiStore, useUi } from "../../store";
 import { iconCenter, liveBends } from "./geometry";
 import type { CanvasEdge, CanvasNode } from "./nodes";
@@ -93,12 +94,17 @@ export function BendHandles() {
     if (d.insert) points.splice(index, 0, now);
     // 隣の点(端なら機器の中心)と、水平・垂直にそろえる
     const all = [route.from, ...points, route.to];
-    points[index] = e.altKey ? now : snapBend(now, [all[index], all[index + 2]], SNAP / getZoom());
+    const snapped = e.altKey
+      ? { point: now, guides: [] }
+      : snapPoint(now, [all[index], all[index + 2]], SNAP / getZoom());
+    points[index] = snapped.point;
     uiStore.getState().setBendDrag({ key: route.key, points });
+    uiStore.getState().setGuides(snapped.guides);
   };
   const end = () => {
     const d = dragging.current;
     dragging.current = undefined;
+    uiStore.getState().setGuides([]);
     if (!d?.moved) return;
     const dragged = uiStore.getState().bendDrag;
     if (dragged?.key === d.route.key)
@@ -108,6 +114,7 @@ export function BendHandles() {
   const cancel = () => {
     dragging.current = undefined;
     uiStore.getState().setBendDrag(undefined);
+    uiStore.getState().setGuides([]);
   };
   const remove = (route: Route, index: number) =>
     topologyStore.getState().setBends(

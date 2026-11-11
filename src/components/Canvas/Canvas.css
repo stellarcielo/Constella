@@ -261,6 +261,19 @@
   cursor: grabbing;
 }
 
+/* ドラッグ中のガイドの線(SPEC 7.4)。座標はフロー座標のまま、はみ出して描く */
+.snap-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.snap-guides line {
+  stroke: var(--accent);
+}
+
 /* 線を曲げるつまみ(SPEC 7.3)。曲げる点は四角、点を足す区間の真ん中は小さな丸 */
 .bend-handle {
   position: absolute;

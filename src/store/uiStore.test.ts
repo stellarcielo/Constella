@@ -99,6 +99,7 @@ describe("uiStore: 表示オプション", () => {
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
       showGuests: true,
+      snapToGrid: false,
     });
   });
 
@@ -117,6 +118,7 @@ describe("uiStore: 表示オプション", () => {
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
       showGuests: true,
+      snapToGrid: false,
     };
     expect(JSON.parse(storage.data.get("constella.view") ?? "")).toEqual(saved);
     expect(createUiStore(storage).getState().view).toEqual(saved);
@@ -134,6 +136,13 @@ describe("uiStore: 表示オプション", () => {
     expect(hidden.showTransceiver).toBe(false);
     const old = createUiStore(memoryStorage('{"showIp":false}')).getState().view;
     expect(old.showTransceiver).toBe(true);
+  });
+
+  it("グリッドへのスナップを覚えておく。前の版で保存した設定には無いので、既定(切る)にする", () => {
+    expect(createUiStore(memoryStorage('{"snapToGrid":true}')).getState().view.snapToGrid).toBe(
+      true,
+    );
+    expect(createUiStore(memoryStorage('{"showIp":false}')).getState().view.snapToGrid).toBe(false);
   });
 
   it("枠の種類は、知っている種類だけを読み込む", () => {
@@ -158,6 +167,7 @@ describe("uiStore: 表示オプション", () => {
       showVlan: true,
       groupKinds: ["vlan"],
       showGuests: true,
+      snapToGrid: false,
     });
   });
 

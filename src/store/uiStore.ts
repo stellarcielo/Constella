@@ -5,6 +5,7 @@ import {
   type Endpoint,
   GROUP_KINDS,
   type GroupKind,
+  type Guide,
   type PortType,
   type Position,
   type SourceRange,
@@ -50,6 +51,8 @@ export interface ViewOptions {
   groupKinds: GroupKind[];
   /** ゲスト(VM・コンテナ)とホストの枠を表示する(フェーズ4-1) */
   showGuests: boolean;
+  /** 機器を動かす・置くときに、アイコンの中心を背景の点(方眼)に合わせる(ツールバーの「グリッド」。SPEC 7.4) */
+  snapToGrid: boolean;
 }
 
 export const DEFAULT_VIEW: ViewOptions = {
@@ -62,6 +65,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   showVlan: true,
   groupKinds: [...LAYER_GROUP_KINDS],
   showGuests: true,
+  snapToGrid: false,
 };
 const VIEW_STORAGE_KEY = "constella.view";
 
@@ -77,6 +81,8 @@ export interface UiState {
   view: ViewOptions;
   /** ドラッグ中の曲げた線の点(線とラベルを、ドラッグに付いていかせる) */
   bendDrag?: BendDrag;
+  /** ドラッグ中に出すガイドの線(SPEC 7.4) */
+  guides: Guide[];
   /**
    * 表示位置を合わせる要求。id が変わるたびにキャンバスが合わせる。
    * viewport があればその位置に、focus があればそのデバイスが見えるように、
@@ -105,6 +111,7 @@ export interface UiState {
   clickPane(): void;
   setView(view: Partial<ViewOptions>): void;
   setBendDrag(drag: BendDrag | undefined): void;
+  setGuides(guides: Guide[]): void;
   /** 表示レイヤーを選ぶ(表示オプションをまとめて設定する。フェーズ3-3) */
   setLayer(layer: ViewLayer): void;
   requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
@@ -123,6 +130,7 @@ export function createUiStore(storage?: ViewStorage) {
     connect: IDLE,
     view: loadView(storage),
     viewRequest: { id: 0 },
+    guides: [],
     problemsOpen: false,
     editorJump: { id: 0 },
 
@@ -191,6 +199,12 @@ export function createUiStore(storage?: ViewStorage) {
       set({ bendDrag });
     },
 
+    setGuides(guides) {
+      // 出していないときに、空のガイドを何度も入れ直さない(ドラッグのたびに描き直さないように)
+      if (guides.length === 0 && get().guides.length === 0) return;
+      set({ guides });
+    },
+
     setLayer(layer) {
       get().setView(LAYER_PRESETS[layer]);
     },
@@ -234,6 +248,7 @@ function loadView(storage?: ViewStorage): ViewOptions {
       showVlan,
       groupKinds,
       showGuests,
+      snapToGrid,
     } = saved as Record<string, unknown>;
     return {
       showIfLabels: typeof showIfLabels === "boolean" ? showIfLabels : DEFAULT_VIEW.showIfLabels,
@@ -248,6 +263,7 @@ function loadView(storage?: ViewStorage): ViewOptions {
         ? GROUP_KINDS.filter((kind) => groupKinds.includes(kind))
         : DEFAULT_VIEW.groupKinds,
       showGuests: typeof showGuests === "boolean" ? showGuests : DEFAULT_VIEW.showGuests,
+      snapToGrid: typeof snapToGrid === "boolean" ? snapToGrid : DEFAULT_VIEW.snapToGrid,
     };
   } catch {
     return DEFAULT_VIEW;

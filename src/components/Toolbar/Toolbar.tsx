@@ -80,6 +80,15 @@ export function Toolbar() {
         >
           ラベルを戻す
         </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-pressed={view.snapToGrid}
+          title="機器を動かす・置くときに、アイコンの中心を背景の点(20px ごと)に合わせる。ほかの機器にそろう位置が近くにあれば、そちらを優先する(⌥ を押している間は合わせない)"
+          onClick={() => uiStore.getState().setView({ snapToGrid: !view.snapToGrid })}
+        >
+          グリッド
+        </button>
       </div>
       <span className="toolbar-spacer" />
       <div className="toolbar-group" role="group" aria-label="YAML">

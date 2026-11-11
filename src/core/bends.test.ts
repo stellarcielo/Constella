@@ -9,7 +9,6 @@ import {
   resetBends,
   setBends,
   shiftBends,
-  snapBend,
 } from "./bends";
 import { renameBridge } from "./bridges";
 import { removeDevices, removeLinks, renameDevice } from "./edit";
@@ -165,20 +164,5 @@ describe("両端をまとめて動かしたとき(SPEC 7.3)", () => {
       { x: 210, y: -5 },
     ]);
     expect(t.bends.get("pve1:vmbr0 vm1")).toEqual([{ x: 5, y: 6 }]);
-  });
-});
-
-describe("snapBend(水平・垂直にそろえる)", () => {
-  const prev = { x: 0, y: 0 };
-  const next = { x: 100, y: 50 };
-
-  it("近い隣の点に、横・縦それぞれそろえる", () => {
-    expect(snapBend({ x: 4, y: 47 }, [prev, next], 8)).toEqual({ x: 0, y: 50 });
-    expect(snapBend({ x: 97, y: 3 }, [prev, next], 8)).toEqual({ x: 100, y: 0 });
-  });
-
-  it("離れていればそのまま。両方に近ければ近いほうにそろえる", () => {
-    expect(snapBend({ x: 40, y: 20 }, [prev, next], 8)).toEqual({ x: 40, y: 20 });
-    expect(snapBend({ x: 2, y: 20 }, [prev, { x: 5, y: 80 }], 8)).toEqual({ x: 0, y: 20 });
   });
 });

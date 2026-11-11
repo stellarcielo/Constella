@@ -1,5 +1,6 @@
 // React Flow のキャンバス。表示はストアのトポロジから作り、
 // ドラッグ中の位置だけは画面側で持って、ドロップしたときに 1 回ストアへ書き込む(SPEC 8.2)。
+// ドラッグ中は、ほかの機器(グリッドを使うときは方眼にも)そろうように吸い付かせる(SPEC 7.4)。
 
 import {
   applyEdgeChanges,
@@ -12,6 +13,7 @@ import {
   type Node,
   type NodeChange,
   type NodeMouseHandler,
+  type NodePositionChange,
   type NodeTypes,
   type OnSelectionChangeParams,
   ReactFlow,
@@ -31,6 +33,7 @@ import {
   endpointNodeId,
   findHostBridge,
   findModel,
+  type Guide,
   guestDropTarget,
   hostIpLines,
   type Issue,
@@ -44,6 +47,7 @@ import {
   resolveLabel,
   resolveRole,
   type Severity,
+  snapPoint,
   type Topology,
   vnetTagText,
   vnetUplinkTarget,
@@ -64,8 +68,10 @@ import { ConnectOverlay } from "./ConnectOverlay";
 import { EndLabels } from "./EndLabels";
 import { GroupFrames } from "./GroupFrames";
 import { DEVICE_ICON_BOX, DEVICE_NODE_WIDTH, DeviceNode, type DeviceNodeType } from "./DeviceNode";
+import { iconCenter } from "./geometry";
 import { LinkEdge, type LinkEdgeType } from "./LinkEdge";
 import type { CanvasEdge, CanvasNode } from "./nodes";
+import { SnapGuides } from "./SnapGuides";
 import { UplinkEdge, type UplinkEdgeType } from "./UplinkEdge";
 import "./Canvas.css";
 
@@ -75,9 +81,10 @@ const edgeTypes: EdgeTypes = { link: LinkEdge, uplink: UplinkEdge };
 const DELETE_KEYS = ["Backspace", "Delete"];
 const MULTI_SELECT_KEYS = ["Shift", "Meta"];
 const PAN_BUTTONS = [1, 2];
-
-const onNodeDragStop = (_e: unknown, _node: Node, dragged: Node[]) =>
-  topologyStore.getState().moveDevices(dragged.map((n) => [n.id, n.position]));
+/** 背景の点の間隔。グリッドを使うときは、アイコンの中心をこの方眼に合わせる(SPEC 7.4) */
+const GRID = 20;
+/** ほかの機器とそろえる距離(画面の px) */
+const SNAP = 8;
 const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
   topologyStore.getState().deleteElements({
     devices: nodes.map((n) => n.id),
@@ -121,7 +128,8 @@ function CanvasInner() {
   const placing = useTopology((s) => s.placing);
   const mode = useUi((s) => s.mode);
   const showGuests = useUi((s) => s.view.showGuests);
-  const { screenToFlowPosition, getNodes, fitView, setViewport, getZoom } = useReactFlow();
+  const { screenToFlowPosition, getNodes, getInternalNode, fitView, setViewport, getZoom } =
+    useReactFlow();
 
   // 表示位置の要求: ファイルを開いたとき・新規のとき(_viewport が無ければ全体が見えるように)と、
   // 問題パネルで項目を選んだとき(そのデバイスが見えるように。今より拡大はしない)。
@@ -232,17 +240,83 @@ function CanvasInner() {
     }
   }
 
-  const onNodesChange = useCallback((changes: NodeChange<CanvasNode>[]) => {
-    setNodes((ns) => applyNodeChanges(changes, ns));
-    // ドラッグを終えたときは dragging: false の位置の変化が届く(onNodeDragStop と同じ内容。保存は 1 回だけになる)
-    const moved: [string, Position][] = [];
-    for (const change of changes) {
-      if (change.type === "position" && change.dragging === false && change.position) {
-        moved.push([change.id, change.position]);
-      }
-    }
-    if (moved.length > 0) topologyStore.getState().moveDevices(moved);
+  // ドラッグ中のスナップ(SPEC 7.4)。つかんでいる機器のアイコンの中心を、ほかの機器・ブリッジの箱の中心に
+  // そろえ(グリッドを使うときは、そろう機器が近くに無い向きを方眼に合わせ)、一緒に動かす機器も同じだけずらす。
+  // ⌥ を押している間はそろえない
+  const dragPrimary = useRef<string | undefined>(undefined);
+  const altDown = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      altDown.current = e.altKey;
+    };
+    const onBlur = () => {
+      altDown.current = false;
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
+  const onNodeDragStart = useCallback((_e: unknown, node: Node) => {
+    dragPrimary.current = node.id;
+  }, []);
+  const snapDrag = useCallback(
+    (changes: NodeChange<CanvasNode>[]): NodeChange<CanvasNode>[] => {
+      const moving = changes.filter(
+        (c): c is NodePositionChange => c.type === "position" && c.position !== undefined,
+      );
+      if (moving.length === 0) return changes;
+      const ending = moving.some((c) => c.dragging === false);
+      // 範囲選択の枠をつかんで動かしたときは、最初の機器を基準にする
+      const primary = moving.find((c) => c.id === dragPrimary.current) ?? moving[0];
+      const node = getInternalNode(primary.id);
+      let offset = { x: 0, y: 0 };
+      let guides: Guide[] = [];
+      if (node && primary.position && !altDown.current) {
+        const center = iconCenter(node);
+        const { x, y } = node.internals.positionAbsolute;
+        const at = { x: primary.position.x + center.x - x, y: primary.position.y + center.y - y };
+        const ids = new Set(moving.map((c) => c.id));
+        const targets = getNodes().flatMap((n) => {
+          const other = n.hidden || ids.has(n.id) ? undefined : getInternalNode(n.id);
+          return other ? [iconCenter(other)] : [];
+        });
+        const grid = uiStore.getState().view.snapToGrid ? GRID : undefined;
+        const snapped = snapPoint(at, targets, SNAP / getZoom(), grid);
+        offset = { x: snapped.point.x - at.x, y: snapped.point.y - at.y };
+        guides = snapped.guides;
+      }
+      uiStore.getState().setGuides(ending ? [] : guides);
+      if (ending) dragPrimary.current = undefined;
+      if (offset.x === 0 && offset.y === 0) return changes;
+      return changes.map((c) =>
+        c.type === "position" && c.position
+          ? { ...c, position: { x: c.position.x + offset.x, y: c.position.y + offset.y } }
+          : c,
+      );
+    },
+    [getInternalNode, getNodes, getZoom],
+  );
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<CanvasNode>[]) => {
+      const snapped = snapDrag(changes);
+      setNodes((ns) => applyNodeChanges(snapped, ns));
+      // ドラッグを終えたときは dragging: false の位置の変化が届く(吸い付かせた位置で、1 回だけ保存する)
+      const moved: [string, Position][] = [];
+      for (const change of snapped) {
+        if (change.type === "position" && change.dragging === false && change.position) {
+          moved.push([change.id, change.position]);
+        }
+      }
+      if (moved.length > 0) topologyStore.getState().moveDevices(moved);
+    },
+    [snapDrag],
+  );
   const onEdgesChange = useCallback((changes: EdgeChange<CanvasEdge>[]) => {
     setEdges((es) => applyEdgeChanges(changes, es));
   }, []);
@@ -259,9 +333,15 @@ function CanvasInner() {
       if (!modelId) return;
       e.preventDefault();
       const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      // カーソルの位置がアイコンの中心になるように置く
+      // カーソルの位置がアイコンの中心になるように置く。グリッドを使うときは、中心を方眼に合わせる(SPEC 7.4)
       const store = topologyStore.getState();
-      let position: Position = { x: p.x - DEVICE_NODE_WIDTH / 2, y: p.y - DEVICE_ICON_BOX / 2 };
+      const center = uiStore.getState().view.snapToGrid
+        ? { x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID }
+        : p;
+      let position: Position = {
+        x: center.x - DEVICE_NODE_WIDTH / 2,
+        y: center.y - DEVICE_ICON_BOX / 2,
+      };
       // VM・コンテナは、ホストの上か枠の中に落とせば、そのホストのゲストにする(フェーズ4-1 Q2)
       let host: string | undefined;
       if (store.catalog.get(modelId)?.guest !== undefined) {
@@ -297,7 +377,7 @@ function CanvasInner() {
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={onNodeDragStart}
         onSelectionChange={onSelectionChange}
         onDelete={onDelete}
         onNodeClick={onNodeClick}
@@ -317,11 +397,12 @@ function CanvasInner() {
         minZoom={0.2}
         maxZoom={4}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} />
         <Controls showInteractive={false} />
         {/* IF 名ラベルは、グループの枠のラベルより先に(後ろに)描く(今までどおり) */}
         <EndLabels />
         <BendHandles />
+        <SnapGuides />
         <GroupFrames />
         <ConnectOverlay />
       </ReactFlow>

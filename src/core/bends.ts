@@ -97,23 +97,3 @@ export function shiftBends(t: Topology, moved: ReadonlyMap<string, Position>): v
     if (delta) t.bends.set(key, moveBends(points, delta).map(round));
   }
 }
-
-/**
- * ドラッグ中の点を、隣の点と水平・垂直にそろえる(SPEC 7.3)。
- * 横・縦それぞれ、threshold より近い隣の点のうち、いちばん近いものに合わせる
- */
-export function snapBend(p: Position, neighbors: readonly Position[], threshold: number): Position {
-  const snap = (axis: "x" | "y") => {
-    let best = p[axis];
-    let distance = threshold;
-    for (const n of neighbors) {
-      const d = Math.abs(n[axis] - p[axis]);
-      if (d < distance) {
-        best = n[axis];
-        distance = d;
-      }
-    }
-    return best;
-  };
-  return { x: snap("x"), y: snap("y") };
-}
