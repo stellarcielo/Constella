@@ -1,4 +1,4 @@
-// リンクのインスペクタ: 両端(表示だけ)、両端のトランシーバ、media、label。
+// リンクのインスペクタ: 両端(表示だけ)、両端のトランシーバ、media、label。曲げた線をまっすぐに戻す。
 
 import {
   bidiPartner,
@@ -8,6 +8,7 @@ import {
   findTransceiver,
   inferMedia,
   type Link,
+  linkBendKey,
   MEDIA,
   type Media,
   portTypeOf,
@@ -38,6 +39,9 @@ export function LinkInspector({ link }: { link: Link }) {
   const ends = [link.a, link.b].filter(
     (ep): ep is Endpoint => ep !== undefined && endpointTakesTransceiver(topology, ep, catalog),
   );
+  // 曲げた線(同じ 2 台の間の線すべて。SPEC 7.3)
+  const bendKey = linkBendKey(topology, link);
+  const bent = bendKey !== undefined && topology.bends.has(bendKey);
 
   return (
     <>
@@ -96,6 +100,16 @@ export function LinkInspector({ link }: { link: Link }) {
       </section>
 
       <section className="inspector-actions">
+        {bent && (
+          <button
+            type="button"
+            className="inspector-button"
+            title="曲げる点を消して、まっすぐな線に戻す(同じ 2 台の間の線すべて)"
+            onClick={() => topologyStore.getState().resetBends([bendKey])}
+          >
+            まっすぐに戻す
+          </button>
+        )}
         <button
           type="button"
           className="inspector-button danger"

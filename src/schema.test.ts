@@ -63,6 +63,7 @@ function semantic(t: Topology) {
     links: t.links.map((l) => ({ a: l.a, b: l.b, media: l.media, label: l.label, extra: l.extra })),
     layout: [...t.layout],
     labelLayout: [...t.labelLayout],
+    bends: [...t.bends],
     viewport: t.viewport,
     groups: t.groups,
     sdn: t.sdn,
@@ -168,6 +169,18 @@ devices:
 `,
     ],
     [
+      "曲げた線の点",
+      `constella: 1
+links:
+  - { a: r1:Gi0/1, b: r2:eth0 }
+  - { a: vm1:net0, b: pve1:vmbr0 }
+layout:
+  _bends:
+    r1 r2: [ { x: 100, y: 200 }, { x: 100.5, y: -20 } ]
+    pve1:vmbr0 vm1: [ { x: 0, y: 0 } ]
+`,
+    ],
+    [
       "ラベルの位置",
       `constella: 1
 links:
@@ -240,6 +253,9 @@ groups:
       "空のトランシーバ",
       'constella: 1\ndevices:\n  sw1:\n    interfaces:\n      Te0/25: { transceiver: "" }\n',
     ],
+    ["点の無い曲げた線", "constella: 1\nlayout:\n  _bends:\n    r1 r2: []\n"],
+    ["空白の無い曲げた線のキー", "constella: 1\nlayout:\n  _bends:\n    r1: [ { x: 0, y: 0 } ]\n"],
+    ["y の無い曲げた線の点", "constella: 1\nlayout:\n  _bends:\n    r1 r2: [ { x: 0 } ]\n"],
     ["side の無いラベルの位置", "constella: 1\nlayout:\n  _labels:\n    r1:Gi0/1: { along: 60 }\n"],
     [
       ": の無いラベルの位置のキー",

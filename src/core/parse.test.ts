@@ -422,6 +422,23 @@ devices:
   });
 });
 
+describe("parseTopology: 曲げた線の点(layout._bends。SPEC 4.3)", () => {
+  it("キーと点が読めなければエラーにして、その線は曲げない", () => {
+    const { topology, issues } = parseOk(`constella: 1
+layout:
+  _bends:
+    r1: [ { x: 0, y: 0 } ]
+    r1 r2: []
+    r1 r3: [ { x: 0 } ]
+    r1 r4: { x: 0, y: 0 }
+    r1 r5: [ { x: 1, y: 2 } ]
+`);
+    expect(codes(issues)).toEqual(Array(4).fill("invalid-value"));
+    expect(issues[0].message).toContain("空白でつないで");
+    expect([...topology.bends.keys()]).toEqual(["r1 r5"]);
+  });
+});
+
 describe("parseTopology: トランシーバ(SPEC 4.3・5.4)", () => {
   it("書いたとおりの名前で読む(一覧に無い名前も)", () => {
     const { topology, issues } = parseOk(`constella: 1

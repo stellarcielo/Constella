@@ -261,6 +261,35 @@
   cursor: grabbing;
 }
 
+/* 線を曲げるつまみ(SPEC 7.3)。曲げる点は四角、点を足す区間の真ん中は小さな丸 */
+.bend-handle {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.bend-handle:active {
+  cursor: grabbing;
+}
+
+.bend-handle.point {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--bg);
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.bend-handle.add {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  opacity: 0.85;
+}
+
 /* IF 名の下の IP・VLAN(フェーズ3-2)。IF 名より目立たないよう薄い色にする */
 .link-if-detail {
   color: var(--text-muted);

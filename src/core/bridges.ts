@@ -4,6 +4,7 @@
 // SDN の VNet も、ホストの中のブリッジとして同じ箱で描く(フェーズ4-6)。VNet の箱は、ゲストがつながって
 // いるホストと、位置を覚えているホストにだけ描く(フェーズ4-6 Q1)。
 
+import { renameBendNodes } from "./bendKeys";
 import { ifNameKey } from "./ifname";
 import { nextLogicalIfName, removeLogicalIf, renameLogicalIf } from "./logicalIfs";
 import { findVnet, zoneOfVnet } from "./sdn";
@@ -201,7 +202,7 @@ export function removeBridges(t: Topology, keys: Iterable<string>): void {
 }
 
 /**
- * ブリッジの名前を変える。IF の順序は保ち、リンク・layout(箱とラベルの位置)・ほかの IF の members と
+ * ブリッジの名前を変える。IF の順序は保ち、リンク・layout(箱とラベルの位置、曲げた線の点)・ほかの IF の members と
  * vlan-raw-device も書き換える
  */
 export function renameBridge(t: Topology, host: string, oldName: string, newName: string): void {
@@ -218,6 +219,8 @@ export function renameBridge(t: Topology, host: string, oldName: string, newName
   if (t.labelLayout.has(from)) {
     t.labelLayout = new Map([...t.labelLayout].map(([k, o]) => [k === from ? to : k, o]));
   }
+  // 曲げた線の点(キーの片方が箱の ID)
+  renameBendNodes(t, (node) => (node === from ? to : node));
 }
 
 /**

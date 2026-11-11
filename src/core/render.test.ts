@@ -404,6 +404,55 @@ layout:
     );
   });
 
+  it("曲げた線は曲げる点を順に通る折れ線に描き、リンクのラベルは長さの真ん中に置く(SPEC 7.3)", () => {
+    const t = load(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r2:Gi0/1, b: r1:Gi0/1, label: up }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  _bends:
+    r1 r2: [ { x: 198, y: 226 } ]
+`);
+    const { svg, height } = renderSvg(t, testCatalog);
+    // アイコンの中心は r1 が (48, 26)、r2 が (348, 26)。線は r2 → r1 の向きで書いても同じ点を通る
+    expect(svg).toContain('<path d="M 348,26 L 198,226 L 48,26" fill="none"');
+    // 折れ線の長さの真ん中は、曲げる点(ラベル「up」の大きさは 20.4 × 15)
+    expect(svg).toContain('<rect x="187.8" y="218.5"');
+    // 曲げる点も図の範囲に入れる
+    expect(height).toBeGreaterThan(226);
+  });
+
+  it("同じ 2 台の間の線は同じ点を通り、平行にずらして描く(SPEC 7.3)", () => {
+    const t = load(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/1, b: r2:Gi0/1 }
+  - { a: r1:Gi0/2, b: r2:Gi0/2 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  _bends:
+    r1 r2: [ { x: 198, y: 226 } ]
+`);
+    const corners = [
+      ...renderSvg(t, testCatalog).svg.matchAll(
+        /<path d="M [\d.-]+,[\d.-]+ L ([\d.-]+),([\d.-]+) L/g,
+      ),
+    ].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    expect(corners).toHaveLength(2);
+    // 曲げる点の上下に 9 ずつ(角では、ずらした区間が交わる点)
+    expect(corners[0].x).toBeCloseTo(198, 0);
+    expect(corners[1].x).toBeCloseTo(198, 0);
+    expect(Math.abs(corners[0].y - 226)).toBeCloseTo(Math.abs(corners[1].y - 226), 0);
+    expect(corners[0].y).not.toBe(corners[1].y);
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

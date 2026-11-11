@@ -1,6 +1,7 @@
 // 意味のチェック(SPEC 4.5)。パース時に分かる問題(重複・不正な値など)は parse.ts で出す。
 
 import { isMap, isScalar, isSeq, type Node, type YAMLMap } from "yaml";
+import { bendKeyNorm, movableBendKeys } from "./bends";
 import { findBridge, findHostBridge, parseBridgeKey } from "./bridges";
 import { clusterNetworks, clusterOfHosts, inClusterNetwork } from "./clusters";
 import { hostTree } from "./hosts";
@@ -460,6 +461,17 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
       });
     }
   }
+  // 曲げた線の点(SPEC 4.3)。線の無い 2 台や、自分自身へのリンクなど、曲げられる線の無いもの
+  if (t.bends.size > 0) {
+    const movable = movableBendKeys(t);
+    for (const key of t.bends.keys()) {
+      if (movable.has(key)) continue;
+      add("warning", "unknown-bend", `layout._bends の「${key}」に対応する線がありません`, {
+        kind: "bend",
+        key,
+      });
+    }
+  }
 
   // グループ(フェーズ3-1 Q6): 存在しないメンバー(SPEC 4.5 の「存在しないデバイスへの参照」)と id の重複
   const groupIds = new Set<string>();
@@ -706,6 +718,12 @@ export function locateTarget(base: YamlBase, target: IssueTarget): SourceRange |
       const labels = isMap(layout) ? layout.get("_labels", true) : undefined;
       const key = labelKeyNorm(target.key);
       return rangeOf(findPair(labels, (k) => labelKeyNorm(k) === key)?.key);
+    }
+    case "bend": {
+      const layout = doc.get("layout", true);
+      const bends = isMap(layout) ? layout.get("_bends", true) : undefined;
+      const key = bendKeyNorm(target.key);
+      return rangeOf(findPair(bends, (k) => bendKeyNorm(k) === key)?.key);
     }
     case "group": {
       const seq = doc.get("groups", true);

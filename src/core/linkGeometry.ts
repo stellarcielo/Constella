@@ -131,6 +131,76 @@ export function offsetLine(
   return { a: { x: a.x + nx, y: a.y + ny }, b: { x: b.x + nx, y: b.y + ny } };
 }
 
+/**
+ * リンクの線の点(端 a から端 b の順。SPEC 7.3)。via は曲げる点(a から b の順。ずらす前)。
+ * 同じ 2 台の間の線は offset だけ平行にずらす。ずらす向きは offsetLine と同じく、
+ * ID の小さいデバイス → 大きいデバイスを基準にする(reversed は a の ID のほうが大きいとき)
+ */
+export function linkPoints(
+  a: Point,
+  b: Point,
+  via: readonly Point[],
+  offset: number,
+  reversed: boolean,
+): Point[] {
+  const forward = [a, ...via, b];
+  if (offset === 0) return forward;
+  const shifted = offsetPolyline(reversed ? forward.reverse() : forward, offset);
+  return reversed ? shifted.reverse() : shifted;
+}
+
+/**
+ * 折れ線を、区間ごとに offsetLine と同じ向き(進む向き (dx, dy) に対して (-dy, dx) の向き)へ offset だけずらす。
+ * 角は、ずらした 2 つの区間が交わる点にする(鋭い角で伸びすぎないよう、角からの距離は |offset| の 4 倍まで)
+ */
+function offsetPolyline(points: readonly Point[], offset: number): Point[] {
+  const normals: (Point | undefined)[] = points.slice(1).map((q, i) => {
+    const p = points[i];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    return len === 0 ? undefined : { x: -(q.y - p.y) / len, y: (q.x - p.x) / len };
+  });
+  // 長さ 0 の区間は、前(無ければ後ろ)の区間の向きを使う
+  for (let i = 1; i < normals.length; i++) normals[i] ??= normals[i - 1];
+  for (let i = normals.length - 2; i >= 0; i--) normals[i] ??= normals[i + 1];
+  return points.map((p, i) => {
+    const before = normals[i - 1] ?? normals[i];
+    const after = normals[i] ?? normals[i - 1];
+    if (!before || !after) return p;
+    const mx = before.x + after.x;
+    const my = before.y + after.y;
+    const m = Math.hypot(mx, my);
+    // 折り返す角は、手前の区間の向きでずらす
+    if (m < 1e-9) return { x: p.x + before.x * offset, y: p.y + before.y * offset };
+    // 角の半分の cos で割ると、ずらした 2 つの区間が交わる点になる
+    const scale = offset / Math.max((mx * before.x + my * before.y) / m, 0.25);
+    return { x: p.x + (mx / m) * scale, y: p.y + (my / m) * scale };
+  });
+}
+
+/** 折れ線の、長さの真ん中の点(リンク中央のラベルの位置) */
+export function polylineMidpoint(points: readonly Point[]): Point {
+  const lengths = points.slice(1).map((q, i) => Math.hypot(q.x - points[i].x, q.y - points[i].y));
+  let rest = lengths.reduce((sum, len) => sum + len, 0) / 2;
+  for (let i = 0; i < lengths.length; i++) {
+    if (lengths[i] > 0 && rest <= lengths[i]) {
+      const t = rest / lengths[i];
+      const p = points[i];
+      const q = points[i + 1];
+      return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+    }
+    rest -= lengths[i];
+  }
+  return points[0];
+}
+
+/** 折れ線の SVG の path(d 属性)。format で数を書く形を変えられる */
+export function polylinePath(
+  points: readonly Point[],
+  format: (value: number) => string | number = (value) => value,
+): string {
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${format(p.x)},${format(p.y)}`).join(" ");
+}
+
 /** ラベルの大きさ。複数行(IF 名の下の IP・VLAN など)は行の配列で渡す */
 export function estimateLabelSize(text: string | readonly string[]): {
   width: number;
@@ -309,6 +379,8 @@ export interface LabeledLine {
   slot?: Slot;
   /** offsetLine に渡すものと同じ */
   reversed?: boolean;
+  /** 曲げる点(a から b の順。ずらす前。SPEC 7.3)。あれば、ラベルは端の区間に沿って置く */
+  via?: readonly Point[];
 }
 
 /** placeEndLabels で置いたラベル */
@@ -323,57 +395,124 @@ interface PlacedLabel {
   half: number;
   /** 手で動かしたラベル(ずらさない) */
   fixed: boolean;
-  /** 同じ線の反対の端のラベル(ラベルの無い端でも、置くはずの位置を持つ。両端を作ってから結ぶ) */
+  /**
+   * 外へずらすときの行き止まり。まっすぐな線は反対の端のラベル(ラベルの無い端でも、置くはずの位置を持つ。
+   * 両端を作ってから結ぶ)、曲げた線は最初の曲げる点
+   */
   other?: PlacedLabel;
 }
+
+/** 線の区間(from が機器の側) */
+interface Segment {
+  from: Point;
+  to: Point;
+}
+
+/**
+ * ラベルを置く、線の両端の区間(機器の中心から、次の点まで。SPEC 7.3)。曲げる点が無ければ線全体。
+ * 機器の中心に重なる曲げる点は飛ばす
+ */
+function endSegments(line: LabeledLine): { a: Segment; b: Segment; bent: boolean } {
+  const { slot = { index: 0, count: 1 }, reversed = false, via = [] } = line;
+  const points = linkPoints(line.a.center, line.b.center, via, slotOffset(slot), reversed);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const same = (p: Point, q: Point) => p.x === q.x && p.y === q.y;
+  const inner = points.slice(1, -1);
+  return {
+    a: { from: first, to: inner.find((p) => !same(p, first)) ?? last },
+    b: { from: last, to: [...inner].reverse().find((p) => !same(p, last)) ?? first },
+    bent: inner.length > 0,
+  };
+}
+
+const segmentLength = ({ from, to }: Segment) => Math.hypot(to.x - from.x, to.y - from.y);
 
 /**
  * 全部の線の両端のラベルの中心(結果は lines と同じ順。SPEC 7.3)。
  * 線ごとに endLabelPositions で置いたあと、同じノードに付くラベル(別々の線のものも)が重なれば、
  * ノードに近いラベルはそのままにし、遠いほうをその線に沿って外へずらす。
  * 反対の端のラベルの手前までしかずらさないので、線が短いと重なりが残ることがある。
+ * 曲げた線は、端の区間(機器から最初の曲げる点まで)に沿って置き、最初の曲げる点までしかずらさない。
  * 手で動かしたラベル(offset)は、その位置に置いてずらさず、ほかのラベルがそれを避ける。
  */
 export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Point }[] {
-  const pairs = lines.map(({ a, b, slot = { index: 0, count: 1 }, reversed = false }) => {
-    const line = offsetLine(a.center, b.center, slotOffset(slot), reversed);
-    const ends = endLabelPositions(
-      line.a,
-      line.b,
-      a.text,
-      b.text,
-      slot,
-      { a: a.nameWidth, b: b.nameWidth },
-      { a: a.details, b: b.details },
-      reversed,
-    );
-    const len = Math.hypot(b.center.x - a.center.x, b.center.y - a.center.y);
-    const ux = len === 0 ? 0 : (b.center.x - a.center.x) / len;
-    const uy = len === 0 ? 0 : (b.center.y - a.center.y) / len;
-    const placed = (end: LabelEnd, from: Point, auto: Point, dir: Point): PlacedLabel => {
+  const pairs = lines.map((line) => {
+    const { a, b, slot = { index: 0, count: 1 }, reversed = false } = line;
+    const seg = endSegments(line);
+    const auto = seg.bent
+      ? {
+          a: endLabelPositions(
+            seg.a.from,
+            seg.a.to,
+            a.text,
+            [],
+            slot,
+            { a: a.nameWidth },
+            { a: a.details },
+            reversed,
+          ).a,
+          b: endLabelPositions(
+            seg.b.to,
+            seg.b.from,
+            [],
+            b.text,
+            slot,
+            { b: b.nameWidth },
+            { b: b.details },
+            reversed,
+          ).b,
+        }
+      : endLabelPositions(
+          seg.a.from,
+          seg.b.from,
+          a.text,
+          b.text,
+          slot,
+          { a: a.nameWidth, b: b.nameWidth },
+          { a: a.details, b: b.details },
+          reversed,
+        );
+    const placed = (end: LabelEnd, { from, to }: Segment, at: Point): PlacedLabel => {
+      const len = Math.hypot(to.x - from.x, to.y - from.y);
+      const dir =
+        len === 0 ? { x: 0, y: 0 } : { x: (to.x - from.x) / len, y: (to.y - from.y) / len };
       const size = estimateLabelSize(end.text);
       return {
         end,
-        at: end.offset ? offsetPoint(from, dir, end.offset) : auto,
+        at: end.offset ? offsetPoint(from, dir, end.offset) : at,
         dir,
         size,
         // endLabelPositions の along と同じ
-        half: (Math.abs(ux) * size.width + Math.abs(uy) * size.height) / 2,
+        half: (Math.abs(dir.x) * size.width + Math.abs(dir.y) * size.height) / 2,
         fixed: end.offset !== undefined,
       };
     };
-    const pa = placed(a, line.a, ends.a, { x: ux, y: uy });
-    const pb = placed(b, line.b, ends.b, { x: -ux, y: -uy });
-    pa.other = pb;
-    pb.other = pa;
-    return { pa, pb, len };
+    const pa = placed(a, seg.a, auto.a);
+    const pb = placed(b, seg.b, auto.b);
+    if (seg.bent) {
+      const corner = (label: PlacedLabel, at: Point): PlacedLabel => ({
+        ...label,
+        at,
+        size: { width: 0, height: 0 },
+        half: 0,
+      });
+      pa.other = corner(pa, seg.a.to);
+      pb.other = corner(pb, seg.b.to);
+    } else {
+      pa.other = pb;
+      pb.other = pa;
+    }
+    return { pa, pb, lenA: segmentLength(seg.a), lenB: segmentLength(seg.b) };
   });
 
   const byNode = new Map<string, PlacedLabel[]>();
-  for (const { pa, pb, len } of pairs) {
-    if (len === 0) continue;
-    for (const label of [pa, pb]) {
-      if (!hasText(label.end.text)) continue;
+  for (const { pa, pb, lenA, lenB } of pairs) {
+    for (const [label, len] of [
+      [pa, lenA],
+      [pb, lenB],
+    ] as const) {
+      if (len === 0 || !hasText(label.end.text)) continue;
       const list = byNode.get(label.end.node);
       if (list) list.push(label);
       else byNode.set(label.end.node, [label]);
@@ -395,12 +534,10 @@ export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Po
 
 /**
  * ラベルを at に置いたときの、手で動かした位置(線の端から線に沿った距離と、横のずれ。整数に丸める)。
- * line は placeEndLabels に渡すものと同じ
+ * line は placeEndLabels に渡すものと同じ。曲げた線は、端の区間を基準にする
  */
 export function endLabelOffset(line: LabeledLine, end: "a" | "b", at: Point): LabelOffset {
-  const { slot = { index: 0, count: 1 }, reversed = false } = line;
-  const ends = offsetLine(line.a.center, line.b.center, slotOffset(slot), reversed);
-  const [from, to] = end === "a" ? [ends.a, ends.b] : [ends.b, ends.a];
+  const { from, to } = endSegments(line)[end];
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   if (len === 0) return { along: 0, side: 0 };
   const ux = (to.x - from.x) / len;

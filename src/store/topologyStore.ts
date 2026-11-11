@@ -18,12 +18,14 @@ import {
   checkDeviceId,
   computeLayout,
   createEmptyTopology,
+  dropRemovedBends,
   dropRemovedLabels,
   type Endpoint,
   ifNameKey,
   type Issue,
   type LabelOffset,
   type ModelCatalog,
+  movableBendKeys,
   movableLabelKeys,
   moveDevices,
   parseBridgeKey,
@@ -35,12 +37,15 @@ import {
   removeBridges,
   removeDevices,
   removeLinks,
+  resetBends,
   resetLabels,
   resolveBridgeKey,
   renameDevice,
   SCHEMA_COMMENT,
   serializeTopology,
+  setBends,
   setLabelOffset,
+  shiftBends,
   type Topology,
   validateTopology,
   type YamlBase,
@@ -143,6 +148,10 @@ export interface TopologyState {
   moveLabel(key: string, offset: LabelOffset): void;
   /** ラベルを自動の位置に戻す(keys を省けばすべて) */
   resetLabels(keys?: string[]): void;
+  /** 曲げた線の点を書く(ドロップしたときに 1 回呼ぶ。キーは bendKey。点が無ければまっすぐに戻す。SPEC 7.3) */
+  setBends(key: string, points: Position[]): void;
+  /** 線をまっすぐに戻す(keys を省けばすべて) */
+  resetBends(keys?: string[]): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
   /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
@@ -154,7 +163,7 @@ export interface TopologyState {
   /** モデルの一覧を差し替え、検証をやり直す(ユーザーモデルの読み込み・変更。フェーズ3-4) */
   setCatalog(catalog: ModelCatalog): void;
   /**
-   * 全デバイスを並べ直して layout に書き、手で動かしたラベルを自動の位置に戻す
+   * 全デバイスを並べ直して layout に書き、手で動かしたラベルを自動の位置に戻し、曲げた線をまっすぐに戻す
    * (SPEC 9章の「自動整列」。1 ステップで取り消せる)
    */
   autoArrange(): Promise<void>;
@@ -409,11 +418,14 @@ export function createTopologyStore(
           return;
         }
         const { topology, base, selection, savedText } = get();
-        // 編集でラベルが無くなった端(消したリンクやデバイスなど)の、手で動かした位置も消す
+        // 編集でラベルが無くなった端(消したリンクやデバイスなど)の、手で動かした位置も消す。
+        // 線が無くなった 2 台の、曲げた点も消す
         const movable = topology.labelLayout.size > 0 ? movableLabelKeys(topology) : undefined;
+        const bendable = topology.bends.size > 0 ? movableBendKeys(topology) : undefined;
         const next = produce(topology, (draft) => {
           recipe(draft);
           if (movable) dropRemovedLabels(draft, movable);
+          if (bendable) dropRemovedBends(draft, bendable);
         });
         if (next === topology) return;
         record(editOptions.coalesce);
@@ -466,9 +478,19 @@ export function createTopologyStore(
 
       moveDevices(positions, moveOptions) {
         // 位置が変わっていなければ編集にしない(クリックだけで未保存にならないように)
-        const changed = changedPositions(get().topology.layout, positions);
+        const { topology, autoPositions } = get();
+        const changed = changedPositions(topology.layout, positions);
         if (changed.length === 0) return;
-        get().edit((t) => moveDevices(t, changed), moveOptions);
+        // 両端をそろって動かした線は、曲げた点も一緒に動かす(SPEC 7.3)
+        const moved = new Map<string, Position>();
+        for (const [id, pos] of changed) {
+          const from = nodePosition(topology, autoPositions, id);
+          if (from) moved.set(id, { x: pos.x - from.x, y: pos.y - from.y });
+        }
+        get().edit((t) => {
+          moveDevices(t, changed);
+          shiftBends(t, moved);
+        }, moveOptions);
       },
 
       moveLabel(key, offset) {
@@ -479,6 +501,19 @@ export function createTopologyStore(
 
       resetLabels(keys) {
         get().edit((t) => resetLabels(t, keys));
+      },
+
+      setBends(key, points) {
+        const cur = get().topology.bends.get(key) ?? [];
+        const same =
+          cur.length === points.length &&
+          cur.every((p, i) => p.x === Math.round(points[i].x) && p.y === Math.round(points[i].y));
+        if (same) return;
+        get().edit((t) => setBends(t, key, points));
+      },
+
+      resetBends(keys) {
+        get().edit((t) => resetBends(t, keys));
       },
 
       deleteDevices(ids) {
@@ -545,11 +580,12 @@ export function createTopologyStore(
         get().commitYamlDraft();
         const positions = await computeLayout(get().topology, catalog);
         // 並べている間に消えたデバイスは飛ばす(moveDevices が無い ID を無視する)。
-        // 並べ直すと手で動かしたラベルの位置が合わなくなるので、自動の位置に戻す(SPEC 9章)
+        // 並べ直すと手で動かしたラベルの位置と曲げた点が合わなくなるので、自動の位置・まっすぐに戻す(SPEC 9章)
         const changed = changedPositions(get().topology.layout, positions);
         get().edit((t) => {
           moveDevices(t, changed);
           resetLabels(t);
+          resetBends(t);
         });
       },
     };
@@ -628,6 +664,7 @@ function targetExists(issue: Issue, t: Topology): boolean {
     case "document":
     case "layout":
     case "label":
+    case "bend":
       return true;
     case "device":
       return t.devices.has(target.id);

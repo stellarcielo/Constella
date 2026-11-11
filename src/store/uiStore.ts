@@ -6,6 +6,7 @@ import {
   GROUP_KINDS,
   type GroupKind,
   type PortType,
+  type Position,
   type SourceRange,
   type Viewport,
 } from "../core";
@@ -64,10 +65,18 @@ export const DEFAULT_VIEW: ViewOptions = {
 };
 const VIEW_STORAGE_KEY = "constella.view";
 
+/** ドラッグ中の、曲げた線の点(SPEC 7.3)。キーは bendKey、点はキーの順。ドロップしたときにストアへ書く */
+export interface BendDrag {
+  key: string;
+  points: Position[];
+}
+
 export interface UiState {
   mode: Mode;
   connect: ConnectState;
   view: ViewOptions;
+  /** ドラッグ中の曲げた線の点(線とラベルを、ドラッグに付いていかせる) */
+  bendDrag?: BendDrag;
   /**
    * 表示位置を合わせる要求。id が変わるたびにキャンバスが合わせる。
    * viewport があればその位置に、focus があればそのデバイスが見えるように、
@@ -95,6 +104,7 @@ export interface UiState {
   /** 空いている所をクリックした。作りかけの接続を取りやめる */
   clickPane(): void;
   setView(view: Partial<ViewOptions>): void;
+  setBendDrag(drag: BendDrag | undefined): void;
   /** 表示レイヤーを選ぶ(表示オプションをまとめて設定する。フェーズ3-3) */
   setLayer(layer: ViewLayer): void;
   requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
@@ -175,6 +185,10 @@ export function createUiStore(storage?: ViewStorage) {
 
     setView(view) {
       set({ view: { ...get().view, ...view } });
+    },
+
+    setBendDrag(bendDrag) {
+      set({ bendDrag });
     },
 
     setLayer(layer) {

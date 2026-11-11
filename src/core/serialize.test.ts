@@ -3,6 +3,7 @@ import { parseDocument } from "yaml";
 import { parseTopology, type YamlBase } from "./parse";
 import { rebaseOnText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize";
 import { specExample, testCatalog } from "./testFixtures";
+import { resetBends, setBends } from "./bends";
 import { addDevice, addLink, removeDevices, renameDevice, setDeviceRole } from "./edit";
 import { resetLabels, setLabelOffset } from "./labelLayout";
 import { createEmptyTopology, createLinkId } from "./topology";
@@ -28,6 +29,7 @@ function semantic(t: Topology): unknown {
         })),
         links: t.links.map((l) => ({ ...l, id: undefined })),
         layout: [...t.layout],
+        bends: [...t.bends],
       },
       (_k, v: unknown) => (v === undefined ? null : v),
     ),
@@ -644,6 +646,79 @@ layout:
     const out = serializeTopology(topology, base).text;
     expect(out).toContain("    r1:Gi0/0: { along: 30, side: 2 }\n");
     expect(out).not.toContain("GigabitEthernet");
+  });
+});
+
+describe("serializeTopology: 曲げた線の点(layout._bends。SPEC 4.3)", () => {
+  const text = `constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  _bends:
+    # 手で曲げた
+    r1 r2:
+      - { x: 150, y: 80 }
+`;
+
+  it("曲げた線の項目だけを書き換え(1 行の配列で書く)、コメントは残す", () => {
+    const { topology, base } = load(text);
+    setBends(topology, "r1 r2", [
+      { x: 150, y: 90.4 },
+      { x: 200, y: 90 },
+    ]);
+    expect(serializeTopology(topology, base).text).toContain(
+      "  _bends:\n    # 手で曲げた\n    r1 r2: [ { x: 150, y: 90 }, { x: 200, y: 90 } ]\n",
+    );
+  });
+
+  it("点を変えていなければ、書き方をそのまま残す", () => {
+    const { topology, base } = load(text);
+    topology.layout.set("r1", { x: 10, y: 0 });
+    expect(serializeTopology(topology, base).text).toContain(
+      "    r1 r2:\n      - { x: 150, y: 80 }\n",
+    );
+  });
+
+  it("キーが名前の順でなければ、名前の順に直して点も並べ直す", () => {
+    const { topology, base } = load(
+      text.replace(
+        "r1 r2:\n      - { x: 150, y: 80 }",
+        "r2 r1: [ { x: 1, y: 2 }, { x: 3, y: 4 } ]",
+      ),
+    );
+    topology.layout.set("r1", { x: 10, y: 0 });
+    expect(serializeTopology(topology, base).text).toContain(
+      "    r1 r2: [ { x: 3, y: 4 }, { x: 1, y: 2 } ]\n",
+    );
+  });
+
+  it("layout が無くても書き、すべてまっすぐに戻すと _bends ごと消す", () => {
+    const empty = load("constella: 1\nlinks:\n  - { a: r1:e0, b: r2:e0 }\n");
+    setBends(empty.topology, "r1 r2", [{ x: 40, y: 4 }]);
+    expect(serializeTopology(empty.topology, empty.base).text).toContain(
+      "layout:\n  _bends:\n    r1 r2: [ { x: 40, y: 4 } ]\n",
+    );
+    const { topology, base } = load(text);
+    resetBends(topology);
+    const out = serializeTopology(topology, base).text;
+    expect(out).not.toContain("_bends");
+    expect(out).toContain("layout:\n  r1: { x: 0, y: 0 }\n  r2: { x: 300, y: 0 }\n");
+  });
+
+  it("デバイスの ID を変えるとキーを書き換え、デバイスを消すと項目も消す", () => {
+    const renamed = load(text);
+    renameDevice(renamed.topology, "r2", "a0");
+    expect(serializeTopology(renamed.topology, renamed.base).text).toContain(
+      "    # 手で曲げた\n    a0 r1:\n      - { x: 150, y: 80 }\n",
+    );
+    const removed = load(text);
+    removeDevices(removed.topology, ["r1"]);
+    expect(serializeTopology(removed.topology, removed.base).text).not.toContain("_bends");
   });
 });
 

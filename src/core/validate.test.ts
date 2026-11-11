@@ -138,6 +138,20 @@ layout:
     expect(r && text.slice(r.start, r.end)).toBe("r1:Gi0/1");
   });
 
+  it("曲げた線の点に対応する線が無ければ警告(位置はそのキー)", () => {
+    const { issues, text } = check(`${devices}  - { a: rt1:Gi0/0, b: sw1:Gi0/1 }
+layout:
+  _bends:
+    sw1 rt1: [ { x: 0, y: 0 } ]
+    rt1 srv1: [ { x: 0, y: 0 } ]
+`);
+    // 1 つ目は書いた順が逆なだけで、線がある
+    expect(summary(issues)).toEqual([["warning", "unknown-bend"]]);
+    expect(issues[0].message).toBe("layout._bends の「rt1 srv1」に対応する線がありません");
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toBe("rt1 srv1");
+  });
+
   it("グループのメンバーに存在しないデバイスがあればエラー(位置はそのグループ)", () => {
     const { issues, text } = check(
       `${devices}groups:\n  - { id: rack1, kind: rack, members: [ rt1, ghost, ghost ] }\n`,

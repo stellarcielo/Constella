@@ -1,6 +1,8 @@
 // トポロジの編集操作(SPEC 7章)。
 // 引数のトポロジを直接書き換える。ストアでは Immer の produce の中で呼ぶ。
 
+import { renameBendNodes } from "./bendKeys";
+import { removeBendsOf } from "./bends";
 import { bridgeKey, parseBridgeKey, resolveBridgeKey } from "./bridges";
 import { resolveGuest } from "./hosts";
 import { ifNameKey } from "./ifname";
@@ -94,7 +96,7 @@ export function moveDevices(t: Topology, positions: Iterable<[string, Position]>
 }
 
 /**
- * デバイスを削除する。接続していたリンク、layout(ブリッジとラベルの位置を含む)、グループのメンバー、
+ * デバイスを削除する。接続していたリンク、layout(ブリッジとラベルの位置、曲げた線の点を含む)、グループのメンバー、
  * SDN のゾーンの nodes からも取り除く。ホストを削除しても、ゲストは残して host を外す(フェーズ4-1 Q3)
  */
 export function removeDevices(t: Topology, ids: Iterable<string>): void {
@@ -112,6 +114,7 @@ export function removeDevices(t: Topology, ids: Iterable<string>): void {
     const ep = parseEndpoint(key);
     if (ep && removed.has(ep.device)) t.labelLayout.delete(key);
   }
+  removeBendsOf(t, removed);
   t.links = t.links.filter(
     (l) => !(l.a && removed.has(l.a.device)) && !(l.b && removed.has(l.b.device)),
   );
@@ -164,7 +167,7 @@ export function checkDeviceId(t: Topology, id: string, currentId?: string): stri
 }
 
 /**
- * デバイスID を変える。リンク・layout(ブリッジの位置とラベルの位置のキーを含む)・グループ・ゲストの host・
+ * デバイスID を変える。リンク・layout(ブリッジ・ラベルの位置と曲げた線の点のキーを含む)・グループ・ゲストの host・
  * SDN のゾーンの nodes の参照もすべて書き換える
  */
 export function renameDevice(t: Topology, oldId: string, newId: string): void {
@@ -189,6 +192,11 @@ export function renameDevice(t: Topology, oldId: string, newId: string): void {
       return [ep?.device === oldId ? endpointToString({ ...ep, device: newId }) : key, offset];
     }),
   );
+  renameBendNodes(t, (node) => {
+    if (node === oldId) return newId;
+    const bridge = parseBridgeKey(node);
+    return bridge?.host === oldId ? bridgeKey(newId, bridge.bridge) : node;
+  });
   for (const link of t.links) {
     for (const end of ["a", "b"] as const) {
       const ep = link[end];

@@ -9,6 +9,7 @@ import {
   parseVnetKey,
   vnetUplinkTarget,
 } from "./bridges";
+import { bendKey, orientBends } from "./bendKeys";
 import { clusterIpText } from "./clusters";
 import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
 import { resolveGuest } from "./hosts";
@@ -22,14 +23,15 @@ import {
   estimateNameWidth,
   type LabeledLine,
   type LabelEnd,
-  midpoint,
+  linkPoints,
   NAME_DETAIL_LINE,
   type NameDetails,
   nameDetails,
-  offsetLine,
   parallelSlots,
   placeEndLabels,
   type Point,
+  polylineMidpoint,
+  polylinePath,
   selfLoop,
   slotOffset,
 } from "./linkGeometry";
@@ -441,15 +443,20 @@ export function renderSvg(
       bounds.add(ca.x, ca.y - height, ca.x + 26 + width, ca.y + height);
     } else {
       const reversed = na > nb;
-      const line = offsetLine(ca, cb, slotOffset(slot), reversed);
-      path = `M ${n(line.a.x)},${n(line.a.y)} L ${n(line.b.x)},${n(line.b.y)}`;
-      center = midpoint(line.a, line.b);
+      // 曲げた線は、曲げる点を順に通る折れ線(SPEC 7.3)。同じ 2 台の間の線は同じ点を通り、平行にずらす
+      const key = bendKey(na, nb);
+      const via = key === undefined ? [] : orientBends(t.bends.get(key) ?? [], na, nb);
+      const points = linkPoints(ca, cb, via, slotOffset(slot), reversed);
+      path = polylinePath(points, n);
+      center = polylineMidpoint(points);
+      for (const p of points) bounds.add(p.x, p.y, p.x, p.y);
       labeled.push({
         line: {
           a: labelEnd(na, ca, aLines, linkEndKey(a, na)),
           b: labelEnd(nb, cb, bLines, linkEndKey(b, nb)),
           slot,
           reversed,
+          via,
         },
         a: aLabel,
         b: bLabel,

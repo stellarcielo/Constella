@@ -585,6 +585,79 @@ layout:
   });
 });
 
+describe("曲げた線(SPEC 7.3)", () => {
+  const text = `constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+  r3: { model: generic-router-4 }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+  - { a: r1:Gi0/1, b: r2:Gi0/1 }
+  - { a: r1:Gi0/2, b: r3:Gi0/0 }
+layout:
+  r1: { x: 0, y: 0 }
+  r2: { x: 300, y: 0 }
+  r3: { x: 0, y: 300 }
+`;
+
+  it("曲げた点を YAML に書き、1 回で取り消せる。同じ点なら編集にしない", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setBends("r1 r2", [{ x: 150.4, y: 100 }]);
+    expect(store.getState().yamlText).toContain("  _bends:\n    r1 r2: [ { x: 150, y: 100 } ]\n");
+    store.getState().setBends("r1 r2", [{ x: 150, y: 100 }]);
+    store.getState().undo();
+    expect(store.getState().yamlText).toBe(text);
+  });
+
+  it("キーを渡せばその線だけ、省けばすべてをまっすぐに戻す", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setBends("r1 r2", [{ x: 150, y: 100 }]);
+    store.getState().setBends("r1 r3", [{ x: -50, y: 150 }]);
+    store.getState().resetBends(["r1 r2"]);
+    expect([...store.getState().topology.bends.keys()]).toEqual(["r1 r3"]);
+    store.getState().resetBends();
+    expect(store.getState().yamlText).toBe(text);
+  });
+
+  it("両端をそろって動かすと点も動かし、片方だけなら点はそのまま", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setBends("r1 r2", [{ x: 150, y: 100 }]);
+    store.getState().setBends("r1 r3", [{ x: -50, y: 150 }]);
+    store.getState().moveDevices([
+      ["r1", { x: 10, y: 20 }],
+      ["r2", { x: 310, y: 20 }],
+    ]);
+    const bends = store.getState().topology.bends;
+    expect(bends.get("r1 r2")).toEqual([{ x: 160, y: 120 }]);
+    expect(bends.get("r1 r3")).toEqual([{ x: -50, y: 150 }]);
+  });
+
+  it("同じ 2 台の間の線がすべて無くなったら、点も消す", () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setBends("r1 r2", [{ x: 150, y: 100 }]);
+    const [first, second] = store.getState().topology.links;
+    store.getState().deleteElements({ links: [first.id] });
+    expect(store.getState().topology.bends.has("r1 r2")).toBe(true);
+    store.getState().deleteElements({ links: [second.id] });
+    expect(store.getState().topology.bends.has("r1 r2")).toBe(false);
+  });
+
+  it("自動整列すると、まっすぐに戻す(1 回で取り消せる)", async () => {
+    const store = setup();
+    store.getState().openText(text);
+    store.getState().setBends("r1 r2", [{ x: 150, y: 100 }]);
+    await store.getState().autoArrange();
+    expect(store.getState().topology.bends.size).toBe(0);
+    store.getState().undo();
+    expect([...store.getState().topology.bends.keys()]).toEqual(["r1 r2"]);
+  });
+});
+
 describe("モデルの一覧の差し替え(フェーズ3-4)", () => {
   it("差し替えると検証をやり直し、新しいモデルの機器を置ける", () => {
     const store = setup();

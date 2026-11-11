@@ -26,6 +26,8 @@ export * from "./fragment";
 export * from "./layout";
 export * from "./linkGeometry";
 export * from "./labelLayout";
+export * from "./bendKeys";
+export * from "./bends";
 export * from "./icons";
 export * from "./render";
 export * from "./groupFrames";

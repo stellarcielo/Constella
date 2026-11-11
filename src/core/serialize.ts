@@ -13,6 +13,8 @@ import {
   YAMLMap,
   YAMLSeq,
 } from "yaml";
+import { parseBendKey } from "./bendKeys";
+import { bendKeyNorm } from "./bends";
 import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey } from "./ifname";
 import { labelKeyNorm } from "./labelLayout";
@@ -168,6 +170,25 @@ class Writer {
     return device === undefined ? undefined : endpointToString({ ...ep, device });
   }
 
+  /** 曲げた線の点のキーの、書き出し後のキー(どちらかの端のデバイスが削除されていれば undefined) */
+  private bendKeyAfter(key: string): string | undefined {
+    const nodes = parseBendKey(key);
+    if (!nodes) return key;
+    const renamed: string[] = [];
+    for (const node of nodes) {
+      const bridge = parseBridgeKey(node);
+      const device = bridge ? bridge.host : node;
+      if (!this.idAfter.has(device)) {
+        renamed.push(node);
+        continue;
+      }
+      const after = this.idAfter.get(device);
+      if (after === undefined) return undefined;
+      renamed.push(bridge ? bridgeKey(after, bridge.bridge) : after);
+    }
+    return renamed.join(" ");
+  }
+
   /** layout のキーの、書き出し後のキー(デバイスが削除されていれば undefined) */
   private layoutKeyAfter(key: string): string | undefined {
     const bridge = parseBridgeKey(key);
@@ -292,11 +313,11 @@ class Writer {
   }
 
   layout(root: YAMLMap): void {
-    const { layout, viewport, labelLayout } = this.after;
+    const { layout, viewport, labelLayout, bends } = this.after;
     const found = root.get("layout", true) as Node | undefined;
     let map: YAMLMap;
     if (isMap(found)) map = found;
-    else if (layout.size === 0 && !viewport && labelLayout.size === 0) return;
+    else if (layout.size === 0 && !viewport && labelLayout.size === 0 && bends.size === 0) return;
     else map = this.setSection(root, "layout", new YAMLMap());
 
     // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)。
@@ -342,6 +363,7 @@ class Writer {
     }
     for (const [key, fields] of entries) this.setFlowEntry(map, key, fields);
     this.labelLayout(map);
+    this.bendLayout(map);
   }
 
   /** layout._labels(手で動かしたラベルの位置。SPEC 4.3)。項目が無くなれば _labels ごと消す */
@@ -386,6 +408,67 @@ class Writer {
         ["along", offset.along],
         ["side", offset.side],
       ]);
+    }
+    if (map.items.length === 0) layout.items = layout.items.filter((p) => p !== pair);
+  }
+
+  /** layout._bends(曲げた線の点。SPEC 4.3)。項目が無くなれば _bends ごと消す */
+  private bendLayout(layout: YAMLMap): void {
+    const { bends } = this.after;
+    const pair = layout.items.find((p) => keyText(p.key) === "_bends");
+    const found = pair?.value as Node | null | undefined;
+    // 読めない値は、線を曲げるまでそのまま残す
+    if (bends.size === 0 && !isMap(found)) return;
+    let map: YAMLMap;
+    if (isMap(found)) map = found;
+    else {
+      map = new YAMLMap();
+      if (pair) pair.value = map;
+      else layout.items.push(new Pair(this.doc.createNode("_bends"), map));
+    }
+
+    // 削除の判定と、デバイスID の変更に合わせたキーの書き換えは、ラベルの位置と同じ。
+    // ノードの順とブリッジの IF 名の書き方の違いは同じとみなし、今の表記(名前の順)にそろえる
+    const after = new Set([...bends.keys()].map(bendKeyNorm));
+    const before = new Set([...this.before.bends.keys()].map(bendKeyNorm));
+    map.items = map.items.filter((p) => {
+      const key = keyText(p.key);
+      const moved = this.bendKeyAfter(key);
+      return (
+        (moved !== undefined && after.has(bendKeyNorm(moved))) || !before.has(bendKeyNorm(key))
+      );
+    });
+    const byNorm = new Map([...bends.keys()].map((key) => [bendKeyNorm(key), key]));
+    const done = new Set<string>();
+    for (const p of map.items) {
+      const key = keyText(p.key);
+      const moved = this.bendKeyAfter(key) ?? key;
+      const next = byNorm.get(bendKeyNorm(moved)) ?? moved;
+      if (next === key || done.has(next)) continue;
+      done.add(next);
+      if (isScalar(p.key)) p.key.value = next;
+      else p.key = this.doc.createNode(next);
+    }
+    for (const [key, points] of bends) {
+      const p = map.items.find((item) => keyText(item.key) === key);
+      const value = p?.value as Node | null | undefined;
+      // 点が変わっていなければ(キーの順を直しただけでも)、書き方をそのまま残す
+      if (value && JSON.stringify(value.toJSON()) === JSON.stringify(points)) continue;
+      const seq = new YAMLSeq();
+      seq.flow = true;
+      for (const point of points) {
+        const item = this.newMap(
+          [
+            ["x", point.x],
+            ["y", point.y],
+          ],
+          {},
+        );
+        item.flow = true;
+        seq.items.push(item);
+      }
+      if (p) p.value = seq;
+      else map.items.push(new Pair(this.doc.createNode(key), seq));
     }
     if (map.items.length === 0) layout.items = layout.items.filter((p) => p !== pair);
   }

@@ -99,6 +99,11 @@ export interface Topology {
    * キー = ラベルの付く端(デバイスID:IF名。IF 名は短い形)
    */
   labelLayout: Map<string, LabelOffset>;
+  /**
+   * 曲げた線の点(layout._bends。SPEC 4.3)。キー = 線の両端のノードを名前の順に空白でつないだもの、
+   * 点はキーの 1 つ目のノードの側から順
+   */
+  bends: Map<string, Position[]>;
   viewport?: Viewport;
   groups: Group[];
   /** SDN のゾーンと VNet(SPEC 4.6) */
@@ -293,6 +298,7 @@ export type IssueCode =
   | "transceiver-mismatch"
   | "unknown-layout-device"
   | "unknown-label"
+  | "unknown-bend"
   | "host-cycle"
   | "duplicate-vmid"
   | "member-in-use"
@@ -322,6 +328,8 @@ export type IssueTarget =
   | { kind: "layout"; id: string }
   /** 手で動かしたラベルの位置(layout._labels のキー) */
   | { kind: "label"; key: string }
+  /** 曲げた線の点(layout._bends のキー) */
+  | { kind: "bend"; key: string }
   /** field があれば、YAML ではその項目の値を指す。network があれば、networks のその名前を指す */
   | { kind: "group"; index: number; field?: string; network?: string }
   /** SDN のゾーン・VNet。field があれば、YAML ではその項目の値を指す */

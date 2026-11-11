@@ -22,6 +22,7 @@ import "@xyflow/react/dist/style.css";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   allBridges,
+  bendKey,
   bondOf,
   bridgeIpLines,
   bridgeKey,
@@ -57,6 +58,7 @@ import {
 } from "../../store";
 import { MODEL_DRAG_TYPE } from "../dnd";
 import { isTyping, releaseInputFocus } from "../shortcuts";
+import { BendHandles } from "./BendHandles";
 import { BridgeNode, type BridgeNodeType } from "./BridgeNode";
 import { ConnectOverlay } from "./ConnectOverlay";
 import { EndLabels } from "./EndLabels";
@@ -189,7 +191,7 @@ function CanvasInner() {
   const derived = useMemo(
     () => ({
       nodes: buildNodes(topology, autoPositions, catalog, issues, showGuests),
-      edges: buildEdges(topology, catalog, issues),
+      edges: buildEdges(topology, autoPositions, catalog, issues),
     }),
     [topology, autoPositions, catalog, issues, showGuests],
   );
@@ -319,6 +321,7 @@ function CanvasInner() {
         <Controls showInteractive={false} />
         {/* IF 名ラベルは、グループの枠のラベルより先に(後ろに)描く(今までどおり) */}
         <EndLabels />
+        <BendHandles />
         <GroupFrames />
         <ConnectOverlay />
       </ReactFlow>
@@ -415,7 +418,12 @@ function buildNodes(
   return [...devices, ...bridges];
 }
 
-function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): CanvasEdge[] {
+function buildEdges(
+  t: Topology,
+  autoPositions: ReadonlyMap<string, Position>,
+  catalog: ModelCatalog,
+  issues: Issue[],
+): CanvasEdge[] {
   const problems = worstProblems(issues, (target) =>
     target.kind === "link" ? target.id : undefined,
   );
@@ -445,6 +453,8 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
     const slot = slots.get(link.id) ?? { index: 0, count: 1 };
     const aInfo = interfaceInfo(t.devices.get(a.device), a.iface);
     const bInfo = interfaceInfo(t.devices.get(b.device), b.iface);
+    // 曲げた線の点(SPEC 7.3)。同じ 2 台の間の線は、同じ点を通る
+    const key = bendKey(na, nb);
     return {
       id: link.id,
       type: "link",
@@ -466,6 +476,10 @@ function buildEdges(t: Topology, catalog: ModelCatalog, issues: Issue[]): Canvas
         bBridge: nb !== b.device,
         aBond: bondOf(t.devices.get(a.device), a.iface),
         bBond: bondOf(t.devices.get(b.device), b.iface),
+        bendKey: key,
+        bends: (key !== undefined && t.bends.get(key)) || [],
+        sourceAt: nodePosition(t, autoPositions, na),
+        targetAt: nodePosition(t, autoPositions, nb),
       },
     };
   });

@@ -11,6 +11,7 @@ import {
   parseDocument,
   type YAMLMap,
 } from "yaml";
+import { bendKey, orientBends, parseBendKey, renameBendNodes } from "./bendKeys";
 import { bridgeKey, parseBridgeKey } from "./bridges";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { labelKey } from "./labelLayout";
@@ -41,6 +42,7 @@ import {
   MEDIA,
   type Meta,
   type ModelCatalog,
+  type Position,
   ROLES,
   SDN_ZONE_TYPES,
   type Sdn,
@@ -181,6 +183,7 @@ class Parser {
       links: [],
       layout: new Map(),
       labelLayout: new Map(),
+      bends: new Map(),
       groups: [],
       sdn: { zones: new Map(), vnets: new Map(), extra: {} },
       extra,
@@ -513,6 +516,10 @@ class Parser {
         this.labelLayout(value, t);
         continue;
       }
+      if (key === "_bends") {
+        this.bendLayout(value, t);
+        continue;
+      }
       const pos = this.numbers(value, ["x", "y"], {
         target: { kind: "layout", id: key },
         path: `layout.${key}`,
@@ -543,6 +550,48 @@ class Parser {
         path: `layout._labels.${key}`,
       });
       if (offset) t.labelLayout.set(labelKey(ep.device, ep.iface), offset);
+    }
+  }
+
+  /**
+   * 曲げた線の点(layout._bends。キー = 線の両端のノードを空白でつないだもの。SPEC 4.3)。
+   * キーは名前の順にそろえ、点もその順に並べ直す
+   */
+  private bendLayout(node: Node | null, t: Topology): void {
+    const ctx: Ctx = { target: { kind: "document" }, path: "layout._bends" };
+    if (!this.mapOrNull(node, ctx)) return;
+    for (const [key, value, keyNode] of this.entries(node, ctx)) {
+      const target: IssueTarget = { kind: "bend", key };
+      const nodes = parseBendKey(key);
+      if (!nodes) {
+        this.add(
+          "error",
+          "invalid-value",
+          "layout._bends のキーは、線の両端のデバイスID(ブリッジならホスト:ブリッジ名)を空白でつないで書いてください",
+          target,
+          keyNode,
+        );
+        continue;
+      }
+      const path = `layout._bends.${key}`;
+      if (!isSeq(value) || value.items.length === 0) {
+        this.add(
+          "error",
+          "invalid-value",
+          `${path} は { x: 数値, y: 数値 } の配列(1 つ以上)で書いてください`,
+          target,
+          value,
+        );
+        continue;
+      }
+      const points: Position[] = [];
+      for (const item of value.items) {
+        const point = this.numbers(item as Node | null, ["x", "y"], { target, path });
+        if (point) points.push({ x: point.x, y: point.y });
+      }
+      if (points.length !== value.items.length) continue;
+      const [a, b] = nodes;
+      t.bends.set(bendKey(a, b) ?? key, orientBends(points, a, b));
     }
   }
 
@@ -928,6 +977,11 @@ function canonicalizeIfNames(t: Topology, catalog: ModelCatalog): void {
       }),
     );
   }
+  renameBendNodes(t, (node) => {
+    const parsed = parseBridgeKey(node);
+    if (!parsed || !t.devices.has(parsed.host)) return node;
+    return bridgeKey(parsed.host, canonical(parsed.host, parsed.bridge));
+  });
 }
 
 function rangeOf(node: Node | null | undefined): SourceRange | undefined {

@@ -8,6 +8,7 @@ import {
   findHostBridge,
   type IssueTarget,
   type Link,
+  parseBendKey,
   parseEndpoint,
   resolveBridgeKey,
   type Topology,
@@ -35,6 +36,8 @@ export function describeTarget(
       return `layout の ${target.id}`;
     case "label":
       return `layout._labels の ${target.key}`;
+    case "bend":
+      return `layout._bends の ${target.key}`;
     case "group":
       return `groups の ${target.index + 1} 番目`;
     case "sdn":
@@ -72,6 +75,13 @@ export function issueFocus(
       // ラベルの位置の問題では、その端のデバイスを選ぶ
       const ep = parseEndpoint(target.key);
       return ep ? device(ep.device) : undefined;
+    }
+    case "bend": {
+      // 曲げた線の点の問題では、線の両端のうち図にあるもの(デバイスかブリッジの箱)を選ぶ
+      const nodes = (parseBendKey(target.key) ?? []).filter((id) => device(id) !== undefined);
+      return nodes.length > 0
+        ? { selection: { devices: nodes, links: [] }, devices: nodes }
+        : undefined;
     }
     case "interface": {
       const bridge = findHostBridge(t, target.device, target.name);

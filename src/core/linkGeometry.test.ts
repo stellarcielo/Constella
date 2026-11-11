@@ -6,11 +6,14 @@ import {
   nameDetails,
   estimateLabelSize,
   estimateNameWidth,
+  linkPoints,
   offsetLine,
   PARALLEL_GAP,
   parallelSlots,
   placeEndLabels,
   type Point,
+  polylineMidpoint,
+  polylinePath,
   selfLoop,
   slotOffset,
 } from "./linkGeometry";
@@ -465,5 +468,91 @@ describe("placeEndLabels: 同じデバイスに付く、別々の線のラベル
     expect(onLine(toDown.a, c, down)).toBe(true);
     expect(toDown.a.y).toBeGreaterThan(before.y);
     expect(overlaps(toDown.a, "Gi0/1", toRight.a, "Gi0/2")).toBe(false);
+  });
+});
+
+describe("曲げた線(SPEC 7.3)", () => {
+  const a = { x: 0, y: 0 };
+  const b = { x: 200, y: 100 };
+  const via = [{ x: 100, y: 0 }];
+  const close = (p: Point, q: Point) => {
+    expect(p.x).toBeCloseTo(q.x, 6);
+    expect(p.y).toBeCloseTo(q.y, 6);
+  };
+
+  it("曲げる点が無ければ、offsetLine と同じ線", () => {
+    for (const reversed of [false, true]) {
+      const line = offsetLine(a, b, 9, reversed);
+      const points = linkPoints(a, b, [], 9, reversed);
+      expect(points).toHaveLength(2);
+      close(points[0], line.a);
+      close(points[1], line.b);
+    }
+  });
+
+  it("ずらすと、角はずらした 2 つの区間が交わる点になる", () => {
+    // 右へ進んでから下へ曲がる線を 9 だけずらす(offsetLine と同じく (-dy, dx) の向き。
+    // 最初の区間では下、次の区間では左)
+    const points = linkPoints(a, { x: 100, y: 100 }, via, 9, false);
+    close(points[0], { x: 0, y: 9 });
+    close(points[1], { x: 91, y: 9 });
+    close(points[2], { x: 91, y: 100 });
+  });
+
+  it("向きが逆のリンク(reversed)も、同じ側にずらす", () => {
+    const forward = linkPoints(a, b, via, 9, false);
+    const backward = linkPoints(b, a, [...via].reverse(), 9, true);
+    forward.forEach((p, i) => close(p, backward[backward.length - 1 - i]));
+  });
+
+  it("真ん中は、折れ線の長さの真ん中", () => {
+    expect(polylineMidpoint([a, { x: 100, y: 0 }, { x: 100, y: 100 }])).toEqual({ x: 100, y: 0 });
+    expect(polylineMidpoint([a, { x: 0, y: 0 }])).toEqual(a);
+    expect(polylinePath([a, { x: 1.5, y: 2 }])).toBe("M 0,0 L 1.5,2");
+  });
+
+  it("両端の IF 名ラベルは、端の区間(機器から最初の点まで)に沿って置く", () => {
+    const line = {
+      a: { node: "a", center: a, text: "Gi0/1" },
+      b: { node: "b", center: { x: 100, y: 200 }, text: "eth0" },
+      via,
+    };
+    const [ends] = placeEndLabels([line]);
+    // a の区間は右向き、b の区間は上向き
+    expect(ends.a.y).toBe(0);
+    expect(ends.a.x).toBeGreaterThan(0);
+    expect(ends.b.x).toBe(100);
+    expect(ends.b.y).toBeLessThan(200);
+    expect(ends.b.y).toBeGreaterThan(0);
+  });
+
+  it("手で動かした位置も、端の区間を基準にする", () => {
+    const line = {
+      a: { node: "a", center: a, text: "Gi0/1" },
+      b: { node: "b", center: { x: 100, y: 200 }, text: "eth0" },
+      via,
+    };
+    // b の端から区間に沿って上へ 50、外を向いたときの右(画面の右)へ 10
+    expect(endLabelOffset(line, "b", { x: 110, y: 150 })).toEqual({ along: 50, side: 10 });
+    const [ends] = placeEndLabels([{ ...line, b: { ...line.b, offset: { along: 50, side: 10 } } }]);
+    expect(ends.b).toEqual({ x: 110, y: 150 });
+  });
+
+  it("重なったラベルは、最初の曲げる点までしかずらさない", () => {
+    // 同じ機器から同じ向きに出る 2 本の線。2 本目は 40 先で曲がる
+    const center = { x: 0, y: 0 };
+    const [first, second] = placeEndLabels([
+      {
+        a: { node: "s", center, text: "Gi0/1" },
+        b: { node: "x", center: { x: 300, y: 0 }, text: [] },
+      },
+      {
+        a: { node: "s", center, text: "Gi0/2" },
+        b: { node: "y", center: { x: 40, y: 300 }, text: [] },
+        via: [{ x: 40, y: 0 }],
+      },
+    ]);
+    expect(first.a.y).toBe(0);
+    expect(second.a.x).toBeLessThanOrEqual(40);
   });
 });

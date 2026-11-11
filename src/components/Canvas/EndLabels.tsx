@@ -26,6 +26,7 @@ import {
   type LabelOffset,
   labelKey,
   nameDetails,
+  orientBends,
   placeEndLabels,
   type Point,
   selfLoop,
@@ -33,7 +34,7 @@ import {
 } from "../../core";
 import { topologyStore, useTopology, useUi } from "../../store";
 import { DEVICE_NODE_WIDTH } from "./DeviceNode";
-import { iconCenter } from "./geometry";
+import { iconCenter, liveBends } from "./geometry";
 import { Label } from "./LinkEdge";
 import type { CanvasEdge, CanvasNode } from "./nodes";
 
@@ -92,6 +93,8 @@ export function EndLabels() {
   const { getInternalNode, screenToFlowPosition } = useReactFlow<CanvasNode, CanvasEdge>();
   const view = useUi((s) => s.view);
   const mode = useUi((s) => s.mode);
+  // 曲げる点をドラッグしている間も、端の区間に沿って置き直す(SPEC 7.3)
+  const bendDrag = useUi((s) => s.bendDrag);
   const devices = useTopology((s) => s.topology.devices);
   const labelLayout = useTopology((s) => s.topology.labelLayout);
   const dragging = useRef<Dragging | undefined>(undefined);
@@ -159,6 +162,7 @@ export function EndLabels() {
           slot: { index: data.slotIndex, count: data.slotCount },
           // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(LinkEdge と同じ)
           reversed: edge.source > edge.target,
+          via: orientBends(liveBends(data, s, t, bendDrag), edge.source, edge.target),
         },
         a,
         b,

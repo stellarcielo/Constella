@@ -49,6 +49,18 @@
             "^[A-Za-z0-9][A-Za-z0-9._-]*:\\S+$": { "$ref": "#/definitions/labelOffset" }
           },
           "additionalProperties": false
+        },
+        "_bends": {
+          "description": "曲げた線の点(キー = 線の両端のデバイスID。ブリッジなら「ホスト:ブリッジ名」。名前の順に並べて空白でつなぐ)。点は、キーの 1 つ目の機器の側から順に並べる。同じ 2 台の間の線は、まとめて同じ点を通る。GUI で線を曲げると自動で書き込まれる",
+          "type": ["object", "null"],
+          "patternProperties": {
+            "^[A-Za-z0-9][A-Za-z0-9._-]*(:\\S+)? [A-Za-z0-9][A-Za-z0-9._-]*(:\\S+)?$": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/point" }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "patternProperties": {
@@ -274,6 +286,16 @@
       "description": "線の種類: copper(メタル)/ fiber(光)/ dac(ダイレクトアタッチケーブル)/ wireless(無線)/ virtual(仮想)。省略するとポートの種類から推定する",
       "type": "string",
       "enum": ["copper", "fiber", "dac", "wireless", "virtual"]
+    },
+    "point": {
+      "description": "線の点の座標",
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
     },
     "position": {
       "description": "機器の左上の座標",

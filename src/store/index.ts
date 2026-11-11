@@ -61,7 +61,7 @@ export function useUserModels<T>(selector: (state: UserModelsState) => T): T {
 
 export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";
 export { autoPositionKey, nodePosition } from "./topologyStore";
-export type { ChosenPort, ConnectState, Mode, UiState, ViewOptions } from "./uiStore";
+export type { BendDrag, ChosenPort, ConnectState, Mode, UiState, ViewOptions } from "./uiStore";
 export { currentLayer, LAYER_LABELS, VIEW_LAYERS, type ViewLayer } from "./viewLayers";
 
 /** 表示オプションと最近使ったファイルの保存先。使えない環境では覚えておかない */
