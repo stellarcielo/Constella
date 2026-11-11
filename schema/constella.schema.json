@@ -168,6 +168,47 @@
           "type": ["string", "number", "boolean"],
           "examples": ["10,20,100-110"]
         },
+        "transceiver": {
+          "description": "挿しているトランシーバ(光モジュール)。一覧の名前(大文字小文字は区別しない)なら、ポートに合うかと、リンクの両端が合うかを確かめる。一覧に無い名前(製品の型番など)も書けるが、確かめない",
+          "anyOf": [
+            {
+              "enum": [
+                "1000BASE-SX",
+                "1000BASE-LX",
+                "1000BASE-EX",
+                "1000BASE-ZX",
+                "1000BASE-BX-U",
+                "1000BASE-BX-D",
+                "1000BASE-T",
+                "10GBASE-SR",
+                "10GBASE-LRM",
+                "10GBASE-LR",
+                "10GBASE-ER",
+                "10GBASE-ZR",
+                "10GBASE-BX-U",
+                "10GBASE-BX-D",
+                "10GBASE-T",
+                "10G-DAC",
+                "10G-AOC",
+                "25GBASE-SR",
+                "25GBASE-LR",
+                "25G-DAC",
+                "25G-AOC",
+                "40GBASE-SR4",
+                "40GBASE-LR4",
+                "40G-DAC",
+                "40G-AOC",
+                "100GBASE-SR4",
+                "100GBASE-LR4",
+                "100GBASE-CWDM4",
+                "100GBASE-DR",
+                "100G-DAC",
+                "100G-AOC"
+              ]
+            },
+            { "type": "string", "minLength": 1 }
+          ]
+        },
         "type": {
           "description": "論理的な IF の種類: bond / bridge(ブリッジ。ホストの中の仮想スイッチ)/ vlan(VLAN インターフェース)。省略すると物理的な IF。type を書いた IF は、モデルに無い名前でも使える",
           "type": "string",

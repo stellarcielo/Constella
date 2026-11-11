@@ -94,6 +94,7 @@ describe("uiStore: 表示オプション", () => {
       longIfNames: false,
       showYaml: true,
       showGroups: true,
+      showTransceiver: true,
       showIp: true,
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
@@ -111,6 +112,7 @@ describe("uiStore: 表示オプション", () => {
       longIfNames: true,
       showYaml: true,
       showGroups: false,
+      showTransceiver: true,
       showIp: false,
       showVlan: true,
       groupKinds: ["site", "rack", "vlan", "subnet", "as"],
@@ -125,6 +127,13 @@ describe("uiStore: 表示オプション", () => {
       false,
     );
     expect(createUiStore(memoryStorage('{"showIp":false}')).getState().view.showGuests).toBe(true);
+  });
+
+  it("トランシーバの表示を覚えておく。前の版で保存した設定には無いので、既定(表示する)にする", () => {
+    const hidden = createUiStore(memoryStorage('{"showTransceiver":false}')).getState().view;
+    expect(hidden.showTransceiver).toBe(false);
+    const old = createUiStore(memoryStorage('{"showIp":false}')).getState().view;
+    expect(old.showTransceiver).toBe(true);
   });
 
   it("枠の種類は、知っている種類だけを読み込む", () => {
@@ -144,6 +153,7 @@ describe("uiStore: 表示オプション", () => {
       longIfNames: true,
       showYaml: false,
       showGroups: true,
+      showTransceiver: false,
       showIp: false,
       showVlan: true,
       groupKinds: ["vlan"],

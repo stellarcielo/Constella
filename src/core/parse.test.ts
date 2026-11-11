@@ -422,6 +422,36 @@ devices:
   });
 });
 
+describe("parseTopology: トランシーバ(SPEC 4.3・5.4)", () => {
+  it("書いたとおりの名前で読む(一覧に無い名前も)", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces:
+      TenGigabitEthernet0/25: { transceiver: 10gbase-sr }
+      Te0/26: { description: spare, transceiver: SFP-10G-LR }
+`);
+    expect(issues).toEqual([]);
+    const ifs = topology.devices.get("sw1")?.interfaces;
+    expect(ifs?.get("Te0/25")).toEqual({ transceiver: "10gbase-sr", extra: {} });
+    expect(ifs?.get("Te0/26")?.transceiver).toBe("SFP-10G-LR");
+  });
+
+  it("文字列でなければエラーにして値を残す", () => {
+    const { topology, issues } = parseOk(`constella: 1
+devices:
+  sw1:
+    interfaces:
+      a: { transceiver: 10 }
+      b: { transceiver: "" }
+`);
+    expect(codes(issues)).toEqual(["invalid-value", "invalid-value"]);
+    expect(issues[0].message).toContain("トランシーバの名前");
+    expect(topology.devices.get("sw1")?.interfaces.get("a")?.extra).toEqual({ transceiver: 10 });
+  });
+});
+
 describe("parseTopology: 論理的な IF の名前(SPEC 4.4)", () => {
   it("type を書いた IF の名前は書いたとおりに保ち、リンクと members もその表記にそろえる", () => {
     const { topology } = parseOk(`constella: 1

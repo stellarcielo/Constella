@@ -12,6 +12,7 @@ function setup(choose: string | null = "/tmp/out.svg") {
     showIfLabels: true,
     longIfNames: false,
     showGroups: true,
+    showTransceiver: true,
     showIp: true,
     showVlan: true,
     groupKinds: ["site", "rack", "vlan", "subnet", "as"] as GroupKind[],

@@ -145,6 +145,27 @@ layout:
     expect(noNames).toContain(">192.0.2.1/30</text>");
   });
 
+  it("IF 名の下にトランシーバを描き、表示の切り替えに従う(SPEC 5.4)", () => {
+    const t = load(`constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces:
+      Te0/25: { transceiver: 10GBASE-SR, ip: [ 192.0.2.1/30 ] }
+  sw2: { model: generic-l2switch-24 }
+links:
+  - { a: sw1:Te0/25, b: sw2:Te0/25 }
+layout:
+  sw1: { x: 0, y: 0 }
+  sw2: { x: 0, y: 300 }
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    // IP と同じ薄い色で、IP より上の行に描く
+    expect(svg).toContain('fill="#646b75">10GBASE-SR</text>');
+    expect(svg.indexOf(">10GBASE-SR</text>")).toBeLessThan(svg.indexOf(">192.0.2.1/30</text>"));
+    expect(renderSvg(t, testCatalog, { showTransceiver: false }).svg).not.toContain("10GBASE-SR");
+  });
+
   it("ゲストに VM / CT の印を付け、ホストの枠を描く。「ゲスト」を隠すと、どちらも描かない(フェーズ4-1)", () => {
     const t = load(`constella: 1
 devices:

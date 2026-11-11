@@ -9,9 +9,17 @@ import { labelKeyNorm, movableLabelKeys } from "./labelLayout";
 import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
-import { portTypesCompatible } from "./ports";
+import { PORT_TYPE_LABELS, portTypesCompatible } from "./ports";
 import { findVnet, VNET_ID_MAX_LENGTH, zoneHosts, zoneOfVnet } from "./sdn";
 import { endpointToString, findModel, isFlexibleDevice } from "./topology";
+import {
+  effectivePortType,
+  endpointTransceiver,
+  findTransceiver,
+  takesTransceiver,
+  transceiverFits,
+  transceiversMatch,
+} from "./transceivers";
 import { formatVlanIds, parseVlanList, type VlanBlock, vlanBlocks } from "./vlans";
 import type {
   Device,
@@ -19,6 +27,7 @@ import type {
   Issue,
   IssueCode,
   IssueTarget,
+  LogicalIfType,
   ModelCatalog,
   PortDef,
   PortType,
@@ -26,6 +35,13 @@ import type {
   SourceRange,
   Topology,
 } from "./types";
+
+/** トランシーバを挿せない論理的な IF の呼び名(問題のメッセージ用) */
+const LOGICAL_IF_NAMES: Record<LogicalIfType, string> = {
+  bond: "bond",
+  bridge: "ブリッジ",
+  vlan: "VLAN インターフェース",
+};
 
 /**
  * トポロジを検証する。base を渡すと、問題に YAML 上の位置を付ける。
@@ -69,6 +85,42 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
             device: device.id,
             name,
           },
+        );
+      }
+    }
+  }
+
+  // トランシーバ(SPEC 5.4): 挿せない IF(論理的な IF と、RJ45 などのポート)と、ポートに合わない形。
+  // 挿せない IF は一覧に無い名前でも知らせ、形は一覧にある名前だけ確かめる
+  for (const device of t.devices.values()) {
+    for (const [name, info] of device.interfaces) {
+      if (info.transceiver === undefined) continue;
+      const target: IssueTarget = { kind: "interface", device: device.id, name };
+      if (info.type) {
+        add(
+          "warning",
+          "transceiver-port",
+          `${device.id} の ${name}(${LOGICAL_IF_NAMES[info.type]})には、トランシーバを挿せません`,
+          target,
+        );
+        continue;
+      }
+      const type = portsOf(device).get(ifNameKey(name))?.type;
+      if (!type) continue;
+      const transceiver = findTransceiver(info.transceiver);
+      if (!takesTransceiver(type)) {
+        add(
+          "warning",
+          "transceiver-port",
+          `${device.id} の ${name}(${PORT_TYPE_LABELS[type]})には、トランシーバを挿せません`,
+          target,
+        );
+      } else if (transceiver && !transceiverFits(transceiver, type)) {
+        add(
+          "warning",
+          "transceiver-port",
+          `${device.id} の ${name}(${PORT_TYPE_LABELS[type]})には、${info.transceiver}(${PORT_TYPE_LABELS[transceiver.form]})を挿せません`,
+          target,
         );
       }
     }
@@ -323,12 +375,31 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
         id: link.id,
       });
     }
+    if (!link.a || !link.b) continue;
+    // 銅線のトランシーバを挿したポートは RJ45 とみなす(SPEC 4.5)
     const [ta, tb] = types;
-    if (ta && tb && !portTypesCompatible(ta, tb) && link.a && link.b) {
+    const trA = endpointTransceiver(t, link.a);
+    const trB = endpointTransceiver(t, link.b);
+    const portText = (type: PortType, transceiver?: string) =>
+      transceiver === undefined ? type : `${type}・${transceiver}`;
+    if (ta && tb && !portTypesCompatible(effectivePortType(ta, trA), effectivePortType(tb, trB))) {
       add(
         "warning",
         "port-type-mismatch",
-        `ポート種別が合いません: ${endpointToString(link.a)}(${ta})と ${endpointToString(link.b)}(${tb})`,
+        `ポート種別が合いません: ${endpointToString(link.a)}(${portText(ta, trA)})と ${endpointToString(link.b)}(${portText(tb, trB)})`,
+        { kind: "link", id: link.id },
+      );
+    }
+    // 両端のトランシーバ(SPEC 5.4)。どちらも一覧にある名前のときだけ確かめる
+    const specA = findTransceiver(trA);
+    const specB = findTransceiver(trB);
+    if (specA && specB && !transceiversMatch(specA, specB)) {
+      const sameBidi =
+        specA.bidi !== undefined && specA.bidi === specB.bidi && specA.form === specB.form;
+      add(
+        "warning",
+        "transceiver-mismatch",
+        `${sameBidi ? "BiDi のトランシーバは、U と D を組み合わせてください" : "両端のトランシーバが合いません"}: ${endpointToString(link.a)}(${trA})と ${endpointToString(link.b)}(${trB})`,
         { kind: "link", id: link.id },
       );
     }

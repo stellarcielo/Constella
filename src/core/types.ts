@@ -136,6 +136,8 @@ export interface InterfaceInfo {
   mode?: InterfaceMode;
   vlan?: number;
   vlans?: string;
+  /** 挿しているトランシーバ(光モジュール)。書いたとおりの名前(SPEC 5.4) */
+  transceiver?: string;
   /** 論理的な IF の種類。省略時は物理的な IF(SPEC 4.6) */
   type?: LogicalIfType;
   /** bond で束ねる IF、ブリッジにつなぐ IF(同じデバイスの IF 名) */
@@ -287,6 +289,8 @@ export type IssueCode =
   | "port-in-use"
   | "self-loop"
   | "port-type-mismatch"
+  | "transceiver-port"
+  | "transceiver-mismatch"
   | "unknown-layout-device"
   | "unknown-label"
   | "host-cycle"

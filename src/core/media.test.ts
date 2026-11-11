@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { inferMedia, linkMedia, portTypeOf } from "./media";
+import { inferMedia, linkMedia } from "./media";
+import { portTypeOf } from "./ports";
 import { parseTopology } from "./parse";
 import { testCatalog } from "./testFixtures";
 import type { DeviceModel, Link, ModelCatalog, Topology } from "./types";
@@ -107,5 +108,45 @@ links:
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     const t = result.topology;
     expect(t.links.map((l) => inferMedia(l, t, catalog))).toEqual(["virtual", "copper"]);
+  });
+});
+
+describe("inferMedia: トランシーバ(SPEC 5.4)", () => {
+  function withTransceivers(sw1: string, sw2: string, link: string): string {
+    const result = parseTopology(
+      `constella: 1
+devices:
+  sw1: { model: generic-l2switch-24, interfaces: ${sw1} }
+  sw2: { model: generic-l2switch-24, interfaces: ${sw2} }
+  isp: { role: cloud, interfaces: { wan: { transceiver: 10GBASE-LR } } }
+  x: {}
+links:
+${link}`,
+      { catalog },
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return inferMedia(result.topology.links[0], result.topology, catalog);
+  }
+
+  it("DAC は dac、銅線のトランシーバは copper(ポート種別より優先する)", () => {
+    const sfp = "  - { a: sw1:Te0/25, b: sw2:Te0/25 }\n";
+    expect(withTransceivers("{ Te0/25: { transceiver: 10G-DAC } }", "{}", sfp)).toBe("dac");
+    expect(withTransceivers("{}", "{ Te0/25: { transceiver: 10GBASE-T } }", sfp)).toBe("copper");
+  });
+
+  it("光は fiber。種別の分からない IF でも、トランシーバから決める", () => {
+    expect(withTransceivers("{}", "{}", "  - { a: x:eth0, b: isp:wan }\n")).toBe("fiber");
+  });
+
+  it("両端で違えば端 a、一覧に無い名前ならポート種別で決める", () => {
+    const sfp = "  - { a: sw1:Te0/25, b: sw2:Te0/25 }\n";
+    expect(
+      withTransceivers(
+        "{ Te0/25: { transceiver: 10G-DAC } }",
+        "{ Te0/25: { transceiver: 10GBASE-T } }",
+        sfp,
+      ),
+    ).toBe("dac");
+    expect(withTransceivers("{ Te0/25: { transceiver: SFP-10G-T } }", "{}", sfp)).toBe("fiber");
   });
 });

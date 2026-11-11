@@ -695,3 +695,103 @@ sdn:
     );
   });
 });
+
+describe("validateTopology: トランシーバ(SPEC 5.4)", () => {
+  const switches = (sw1: string, sw2 = "{}") => `constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces: ${sw1}
+  sw2:
+    model: generic-l2switch-24
+    interfaces: ${sw2}
+links:
+`;
+
+  it("RJ45 のポートには、一覧に無い名前でも挿せないと警告する", () => {
+    const { issues, text } = check(
+      switches("{ Gi0/1: { transceiver: 1000BASE-T }, Gi0/2: { transceiver: GLC-T } }"),
+    );
+    expect(summary(issues)).toEqual([
+      ["warning", "transceiver-port"],
+      ["warning", "transceiver-port"],
+    ]);
+    expect(issues[0].message).toBe("sw1 の Gi0/1(RJ45)には、トランシーバを挿せません");
+    expect(issues[0].target).toEqual({ kind: "interface", device: "sw1", name: "Gi0/1" });
+    const r = issues[0].range;
+    expect(r && text.slice(r.start, r.end)).toContain("Gi0/1");
+  });
+
+  it("ポートに合わない形は警告し、下の速度と一覧に無い名前は警告しない", () => {
+    const { issues } = check(
+      switches(
+        "{ Te0/25: { transceiver: 100GBASE-SR4 }, Te0/26: { transceiver: 1000BASE-SX }, Te0/27: { transceiver: SFP-10G-SR } }",
+      ),
+    );
+    expect(summary(issues)).toEqual([["warning", "transceiver-port"]]);
+    expect(issues[0].message).toBe("sw1 の Te0/25(SFP+)には、100GBASE-SR4(QSFP28)を挿せません");
+  });
+
+  it("論理的な IF と仮想のポートには挿せない", () => {
+    const { issues } = check(`constella: 1
+devices:
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      bond0: { type: bond, members: [eno1, eno2], transceiver: 10GBASE-SR }
+  vm1:
+    model: generic-vm
+    host: pve1
+    interfaces:
+      net0: { transceiver: 10GBASE-SR }
+`);
+    expect(issues.map((i) => i.message)).toEqual([
+      "pve1 の bond0(bond)には、トランシーバを挿せません",
+      "vm1 の net0(仮想)には、トランシーバを挿せません",
+    ]);
+  });
+
+  it("両端が合わなければ警告する。別名・大文字小文字の違いは同じとみなす", () => {
+    const { issues } = check(
+      `${switches(
+        "{ Te0/25: { transceiver: 10GBASE-SR }, Te0/26: { transceiver: 10G-DAC } }",
+        "{ Te0/25: { transceiver: 10GBASE-LR }, Te0/26: { transceiver: 10gbase-cr } }",
+      )}  - { a: sw1:Te0/25, b: sw2:Te0/25 }
+  - { a: sw1:Te0/26, b: sw2:Te0/26 }
+`,
+    );
+    expect(summary(issues)).toEqual([["warning", "transceiver-mismatch"]]);
+    expect(issues[0].message).toBe(
+      "両端のトランシーバが合いません: sw1:Te0/25(10GBASE-SR)と sw2:Te0/25(10GBASE-LR)",
+    );
+    expect(issues[0].target).toMatchObject({ kind: "link" });
+  });
+
+  it("BiDi は U と D の組み合わせでなければ警告する。片方の端だけなら確かめない", () => {
+    const { issues } = check(
+      `${switches(
+        "{ Te0/25: { transceiver: 10GBASE-BX-U }, Te0/26: { transceiver: 10GBASE-BX-U }, Te0/27: { transceiver: 10GBASE-LR } }",
+        "{ Te0/25: { transceiver: 10GBASE-BX-D }, Te0/26: { transceiver: 10GBASE-BX10-U } }",
+      )}  - { a: sw1:Te0/25, b: sw2:Te0/25 }
+  - { a: sw1:Te0/26, b: sw2:Te0/26 }
+  - { a: sw1:Te0/27, b: sw2:Te0/27 }
+`,
+    );
+    expect(issues.map((i) => i.message)).toEqual([
+      "BiDi のトランシーバは、U と D を組み合わせてください: sw1:Te0/26(10GBASE-BX-U)と sw2:Te0/26(10GBASE-BX10-U)",
+    ]);
+  });
+
+  it("銅線のトランシーバを挿した SFP のポートは、RJ45 とつないでも種別の不一致にしない", () => {
+    const { issues } = check(
+      `${switches("{}", "{ Te0/25: { transceiver: 1000BASE-T }, Te0/26: { transceiver: 10GBASE-T } }")}  - { a: sw1:Gi0/1, b: sw2:Te0/25 }
+  - { a: sw1:Te0/26, b: sw2:Te0/26 }
+`,
+    );
+    // 反対側がトランシーバを書いていない SFP のポートなら、RJ45 と SFP の不一致になる
+    expect(summary(issues)).toEqual([["warning", "port-type-mismatch"]]);
+    expect(issues[0].message).toBe(
+      "ポート種別が合いません: sw1:Te0/26(sfp+)と sw2:Te0/26(sfp+・10GBASE-T)",
+    );
+  });
+});

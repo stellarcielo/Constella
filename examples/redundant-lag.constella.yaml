@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json
 # 冗長構成 + LAG: 回線・ファイアウォール・コア・アクセスをすべて 2 系統にする。
 # コアの間は 10G × 2 本を束ねた LAG(Po1)。アクセスは両方のコアに、サーバーは両方のアクセスにつなぐ。
+# 10G の線は、SFP+ のポートに挿したトランシーバ(光モジュール)でつなぐ。
 constella: 1
 
 meta:
@@ -21,17 +22,27 @@ devices:
   core1:
     model: generic-l3switch-48
     interfaces:
-      Te1/1/3: { description: Po1 メンバー }
-      Te1/1/4: { description: Po1 メンバー }
+      Te1/1/1: { transceiver: 10GBASE-SR }
+      Te1/1/2: { transceiver: 10GBASE-SR }
+      Te1/1/3: { description: Po1 メンバー, transceiver: 10G-DAC }
+      Te1/1/4: { description: Po1 メンバー, transceiver: 10G-DAC }
   core2:
     model: generic-l3switch-48
     interfaces:
-      Te1/1/3: { description: Po1 メンバー }
-      Te1/1/4: { description: Po1 メンバー }
+      Te1/1/1: { transceiver: 10GBASE-SR }
+      Te1/1/2: { transceiver: 10GBASE-SR }
+      Te1/1/3: { description: Po1 メンバー, transceiver: 10G-DAC }
+      Te1/1/4: { description: Po1 メンバー, transceiver: 10G-DAC }
   acc1:
     model: generic-l2switch-24
+    interfaces:
+      Te0/25: { transceiver: 10GBASE-SR }
+      Te0/26: { transceiver: 10GBASE-SR }
   acc2:
     model: generic-l2switch-24
+    interfaces:
+      Te0/25: { transceiver: 10GBASE-SR }
+      Te0/26: { transceiver: 10GBASE-SR }
   srv1:
     model: generic-server-2
   srv2:
@@ -50,14 +61,13 @@ links:
     b: core1:Gi1/0/1
   - a: fw2:port2
     b: core2:Gi1/0/1
-  # LAG は、束ねる線を同じ 2 台の間の並列リンクとして書き、label に LAG の名前を付ける
+  # LAG は、束ねる線を同じ 2 台の間の並列リンクとして書き、label に LAG の名前を付ける。
+  # 線の種類(media)は、両端のトランシーバ(10G-DAC)から DAC になる
   - a: core1:Te1/1/3
     b: core2:Te1/1/3
-    media: dac
     label: Po1
   - a: core1:Te1/1/4
     b: core2:Te1/1/4
-    media: dac
     label: Po1
   # アクセスは両方のコアにつなぐ
   - a: core1:Te1/1/1

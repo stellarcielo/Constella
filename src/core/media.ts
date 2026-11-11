@@ -1,10 +1,10 @@
-// リンクの media(ケーブルの種類)。書かれていなければ両端のポート種別から推定する(SPEC 4.3)。
-// 推定した値は YAML には書き込まない。
+// リンクの media(ケーブルの種類)。書かれていなければ両端のトランシーバ、無ければポート種別から推定する
+// (SPEC 4.3)。推定した値は YAML には書き込まない。
 
 import { isBridgeEndpoint } from "./bridges";
-import { ifNameKey } from "./ifname";
-import { findModel } from "./topology";
-import type { Endpoint, Link, Media, ModelCatalog, PortType, Topology } from "./types";
+import { portTypeOf } from "./ports";
+import { endpointTransceiver, findTransceiver, transceiverMedia } from "./transceivers";
+import type { Link, Media, ModelCatalog, PortType, Topology } from "./types";
 
 const MEDIA_OF_PORT: Record<PortType, Media> = {
   rj45: "copper",
@@ -19,19 +19,12 @@ const MEDIA_OF_PORT: Record<PortType, Media> = {
   virtual: "virtual",
 };
 
-/** エンドポイントのポート種別。フレキシブルデバイスでモデルに無い IF などは undefined */
-export function portTypeOf(t: Topology, ep: Endpoint, catalog: ModelCatalog): PortType | undefined {
-  const device = t.devices.get(ep.device);
-  if (!device) return undefined;
-  const key = ifNameKey(ep.iface);
-  return findModel(device, catalog)?.ports.find((p) => ifNameKey(p.name) === key)?.type;
-}
-
 /**
- * ポート種別から media を推定する。
+ * media を推定する。
  * どちらかが無線なら wireless、仮想(ブリッジへのリンクを含む。SPEC 4.3)なら virtual。
- * それ以外は分かる側の種別で決め、両方分からなければ copper。
- * dac は見た目で光ファイバーと区別できないので推定では選ばない(YAML に書いたときだけ使う)。
+ * それ以外は、一覧にあるトランシーバ(SPEC 5.4)を書いた端があればそれで決め(両端で違えば端 a)、
+ * 無ければ分かる側のポート種別で決め、どちらも分からなければ copper。
+ * dac は見た目で光ファイバーと区別できないので、ポート種別からは選ばない(DAC のトランシーバからだけ)。
  */
 export function inferMedia(link: Link, t: Topology, catalog: ModelCatalog): Media {
   if ([link.a, link.b].some((ep) => ep && isBridgeEndpoint(t, ep))) return "virtual";
@@ -40,6 +33,10 @@ export function inferMedia(link: Link, t: Topology, catalog: ModelCatalog): Medi
     .filter((type): type is PortType => type !== undefined);
   if (types.includes("wireless")) return "wireless";
   if (types.includes("virtual")) return "virtual";
+  for (const ep of [link.a, link.b]) {
+    const transceiver = ep && findTransceiver(endpointTransceiver(t, ep));
+    if (transceiver) return transceiverMedia(transceiver);
+  }
   return types.length > 0 ? MEDIA_OF_PORT[types[0]] : "copper";
 }
 

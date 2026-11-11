@@ -148,6 +148,15 @@ export function Toolbar() {
         <button
           type="button"
           className="toolbar-button"
+          aria-pressed={view.showTransceiver}
+          title="IF 名ラベルの下に、挿しているトランシーバ(光モジュール)を表示する"
+          onClick={() => uiStore.getState().setView({ showTransceiver: !view.showTransceiver })}
+        >
+          トランシーバ
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
           aria-pressed={view.showIp}
           title="IF 名ラベルの下に IP アドレスを表示する"
           onClick={() => uiStore.getState().setView({ showIp: !view.showIp })}

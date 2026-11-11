@@ -70,7 +70,11 @@ export function CommitInput({
   label,
   placeholder,
   monospace,
-}: CommitProps) {
+  list,
+}: CommitProps & {
+  /** 候補の一覧(datalist)の id。候補に無い値も入れられる */
+  list?: string;
+}) {
   const [draft, setDraft] = useDraft(value);
   const keys = useCommitKeys(() => setDraft(value));
   const next = draft.trim();
@@ -89,6 +93,7 @@ export function CommitInput({
         aria-invalid={error ? true : undefined}
         value={draft}
         placeholder={placeholder}
+        list={list}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"

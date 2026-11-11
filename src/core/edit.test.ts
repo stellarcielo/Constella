@@ -15,6 +15,7 @@ import {
   setDeviceLabel,
   setDeviceRole,
   setDeviceVmid,
+  setLinkTransceiver,
   updateInterface,
   updateLink,
   updateMeta,
@@ -480,5 +481,71 @@ layout:
     const t = bridged();
     removeDevices(t, ["pve1"]);
     expect([...t.layout.keys()]).toEqual([]);
+  });
+});
+
+describe("setLinkTransceiver(SPEC 7.1)", () => {
+  function load(): Topology {
+    const result = parseTopology(
+      `constella: 1
+devices:
+  sw1: { model: generic-l2switch-24 }
+  sw2:
+    model: generic-l2switch-24
+    interfaces:
+      Te0/26: { description: uplink, transceiver: 10GBASE-SR }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge }
+  vm1: { model: generic-vm, host: pve1 }
+links:
+  - { a: sw1:Te0/25, b: sw2:TenGigabitEthernet0/25 }
+  - { a: sw1:Te0/26, b: sw2:Te0/26 }
+  - { a: sw1:Gi0/1, b: sw2:Te0/27 }
+  - { a: vm1:net0, b: pve1:vmbr0 }
+`,
+      { catalog: testCatalog },
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return result.topology;
+  }
+  const transceiverOf = (t: Topology, device: string, iface: string) =>
+    t.devices.get(device)?.interfaces.get(iface)?.transceiver;
+
+  it("両端の IF に同じものを入れる(IF 名はそろえる)", () => {
+    const t = load();
+    setLinkTransceiver(t, t.links[0].id, "10G-DAC", testCatalog);
+    expect(transceiverOf(t, "sw1", "Te0/25")).toBe("10G-DAC");
+    expect(transceiverOf(t, "sw2", "Te0/25")).toBe("10G-DAC");
+  });
+
+  it("BiDi なら、端 b には対になるものを入れる", () => {
+    const t = load();
+    setLinkTransceiver(t, t.links[0].id, "10GBASE-BX-D", testCatalog);
+    expect(transceiverOf(t, "sw1", "Te0/25")).toBe("10GBASE-BX-D");
+    expect(transceiverOf(t, "sw2", "Te0/25")).toBe("10GBASE-BX-U");
+  });
+
+  it("空にすると両端から消し、ほかに何も無い IF は設定ごと消す", () => {
+    const t = load();
+    setLinkTransceiver(t, t.links[1].id, "10GBASE-SR", testCatalog);
+    setLinkTransceiver(t, t.links[1].id, "", testCatalog);
+    expect(t.devices.get("sw1")?.interfaces.has("Te0/26")).toBe(false);
+    expect(t.devices.get("sw2")?.interfaces.get("Te0/26")).toEqual({
+      description: "uplink",
+      extra: {},
+    });
+  });
+
+  it("RJ45 のポートとブリッジ・仮想のポートには入れない", () => {
+    const t = load();
+    setLinkTransceiver(t, t.links[2].id, "1000BASE-BX-U", testCatalog);
+    expect(t.devices.get("sw1")?.interfaces.has("Gi0/1")).toBe(false);
+    // 挿せる端が 1 つだけなら、BiDi でも書いたものをそのまま入れる
+    expect(transceiverOf(t, "sw2", "Te0/27")).toBe("1000BASE-BX-U");
+    setLinkTransceiver(t, t.links[3].id, "10GBASE-SR", testCatalog);
+    expect(t.devices.get("vm1")?.interfaces.size).toBe(0);
+    expect(t.devices.get("pve1")?.interfaces.get("vmbr0")?.transceiver).toBeUndefined();
   });
 });

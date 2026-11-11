@@ -34,6 +34,16 @@ describe("表示レイヤー(フェーズ3-3)", () => {
     expect(currentLayer(withLayer("l1", { showGuests: true }))).toBeUndefined();
   });
 
+  it("トランシーバは「すべて」と L1 で出し、L2・L3 では隠す(SPEC 5.4)", () => {
+    expect(VIEW_LAYERS.map((layer) => LAYER_PRESETS[layer].showTransceiver)).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(currentLayer(withLayer("l1", { showTransceiver: false }))).toBeUndefined();
+  });
+
   it("既定の表示は「すべて」に当たる", () => {
     expect(currentLayer(DEFAULT_VIEW)).toBe("all");
   });

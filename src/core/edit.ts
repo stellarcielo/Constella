@@ -5,6 +5,7 @@ import { bridgeKey, parseBridgeKey, resolveBridgeKey } from "./bridges";
 import { resolveGuest } from "./hosts";
 import { ifNameKey } from "./ifname";
 import { canonicalIfName } from "./ports";
+import { bidiPartner, endpointTakesTransceiver, findTransceiver } from "./transceivers";
 import {
   createLinkId,
   createUid,
@@ -359,6 +360,30 @@ export type LinkChanges = Partial<Pick<Link, "media" | "label">>;
 export function updateLink(t: Topology, linkId: string, changes: LinkChanges): void {
   const link = t.links.find((l) => l.id === linkId);
   if (link) applyChanges(link, changes);
+}
+
+/**
+ * リンクの両端の IF に、同じトランシーバを入れる(SPEC 7.1)。空にすると両端から消す。
+ * 挿せない端(ブリッジ・論理的な IF・RJ45 などのポート)には入れない。
+ * 両端に入れる BiDi なら、端 b には対になるもの(U なら D)を入れる
+ */
+export function setLinkTransceiver(
+  t: Topology,
+  linkId: string,
+  transceiver: string,
+  catalog: ModelCatalog,
+): void {
+  const link = t.links.find((l) => l.id === linkId);
+  if (!link) return;
+  const ends = [link.a, link.b].filter(
+    (ep): ep is Endpoint => ep !== undefined && endpointTakesTransceiver(t, ep, catalog),
+  );
+  const spec = findTransceiver(transceiver);
+  const partner = spec && bidiPartner(spec);
+  ends.forEach((ep, i) => {
+    const value = i === 1 && partner ? partner.name : transceiver;
+    updateInterface(t, ep.device, ep.iface, { transceiver: value }, catalog);
+  });
 }
 
 export type MetaChanges = Partial<Pick<Meta, "title" | "description">>;

@@ -54,6 +54,8 @@ export interface RenderOptions {
   showIfLabels?: boolean;
   /** IF 名を長い形で描くか(ツールバーの「長い名前」) */
   longIfNames?: boolean;
+  /** IF 名の下にトランシーバを描くか(ツールバーの「トランシーバ」) */
+  showTransceiver?: boolean;
   /** IF 名の下に IP を描くか(ツールバーの「IP」) */
   showIp?: boolean;
   /** IF 名の下に VLAN を描くか(ツールバーの「VLAN」) */
@@ -306,6 +308,7 @@ export function renderSvg(
   const labelOptions = {
     showIfName: options.showIfLabels ?? true,
     longIfNames: options.longIfNames ?? false,
+    showTransceiver: options.showTransceiver ?? true,
     showIp: options.showIp ?? true,
     showVlan: options.showVlan ?? true,
   };

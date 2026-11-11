@@ -82,6 +82,7 @@ const INTERFACE_KEYS = [
   "mode",
   "vlan",
   "vlans",
+  "transceiver",
   "type",
   "members",
   "bond-mode",
@@ -382,6 +383,10 @@ class Parser {
           break;
         case "vlans":
           this.setText(info, key, value, ctx);
+          break;
+        case "transceiver":
+          if (isNonEmptyString(value)) info.transceiver = value.value;
+          else this.invalid(info.extra, key, value, ctx, "トランシーバの名前(例: 10GBASE-SR)");
           break;
         case "type": {
           const type = enumValue(value, LOGICAL_IF_TYPES);

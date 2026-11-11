@@ -101,6 +101,7 @@ export function EndLabels() {
   const options = {
     showIfName: view.showIfLabels,
     longIfNames: view.longIfNames,
+    showTransceiver: view.showTransceiver,
     showIp: view.showIp,
     showVlan: view.showVlan,
   };

@@ -11,7 +11,13 @@ export type ViewLayer = (typeof VIEW_LAYERS)[number];
 /** レイヤーで決まる表示オプション(長い名前・YAML エディタの表示は含めない) */
 export type LayerOptions = Pick<
   ViewOptions,
-  "showIfLabels" | "showIp" | "showVlan" | "showGroups" | "groupKinds" | "showGuests"
+  | "showIfLabels"
+  | "showTransceiver"
+  | "showIp"
+  | "showVlan"
+  | "showGroups"
+  | "groupKinds"
+  | "showGuests"
 >;
 
 /** レイヤーで出し分ける枠の種類(種類なし・custom・cluster はどのレイヤーでも出す) */
@@ -20,15 +26,17 @@ export const LAYER_GROUP_KINDS: readonly GroupKind[] = ["site", "rack", "vlan", 
 export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {
   all: {
     showIfLabels: true,
+    showTransceiver: true,
     showIp: true,
     showVlan: true,
     showGroups: true,
     groupKinds: [...LAYER_GROUP_KINDS],
     showGuests: true,
   },
-  // 物理: IF 名と、拠点・ラックの枠。ゲスト(VM・コンテナ)は隠す(フェーズ4-1)
+  // 物理: IF 名とトランシーバ、拠点・ラックの枠。ゲスト(VM・コンテナ)は隠す(フェーズ4-1)
   l1: {
     showIfLabels: true,
+    showTransceiver: true,
     showIp: false,
     showVlan: false,
     showGroups: true,
@@ -38,6 +46,7 @@ export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {
   // データリンク: IF 名と VLAN、VLAN の枠
   l2: {
     showIfLabels: true,
+    showTransceiver: false,
     showIp: false,
     showVlan: true,
     showGroups: true,
@@ -47,6 +56,7 @@ export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {
   // ネットワーク: IF 名と IP、サブネット・AS の枠
   l3: {
     showIfLabels: true,
+    showTransceiver: false,
     showIp: true,
     showVlan: false,
     showGroups: true,
@@ -56,8 +66,11 @@ export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {
 };
 
 export const LAYER_LABELS: Record<ViewLayer, { short: string; title: string }> = {
-  all: { short: "すべて", title: "すべてのレイヤー: IF 名・IP・VLAN・ゲストと、すべての枠" },
-  l1: { short: "L1", title: "L1(物理): IF 名と、拠点・ラックの枠。ゲストは隠す" },
+  all: {
+    short: "すべて",
+    title: "すべてのレイヤー: IF 名・トランシーバ・IP・VLAN・ゲストと、すべての枠",
+  },
+  l1: { short: "L1", title: "L1(物理): IF 名とトランシーバ、拠点・ラックの枠。ゲストは隠す" },
   l2: { short: "L2", title: "L2(データリンク): IF 名と VLAN、VLAN の枠" },
   l3: { short: "L3", title: "L3(ネットワーク): IF 名と IP、サブネット・AS の枠" },
 };
@@ -68,6 +81,7 @@ export function currentLayer(view: ViewOptions): ViewLayer | undefined {
     const preset = LAYER_PRESETS[layer];
     return (
       view.showIfLabels === preset.showIfLabels &&
+      view.showTransceiver === preset.showTransceiver &&
       view.showIp === preset.showIp &&
       view.showVlan === preset.showVlan &&
       view.showGroups === preset.showGroups &&

@@ -19,6 +19,7 @@ export { buildCatalog, type ModelParseResult, parseModelDefinition } from "./mod
 export * from "./edit";
 export * from "./ports";
 export * from "./media";
+export * from "./transceivers";
 export { lineColumn, yamlErrorMessage } from "./text";
 export { adoptIdentity } from "./identity";
 export * from "./fragment";

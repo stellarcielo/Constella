@@ -4,7 +4,13 @@ import { parseTopology } from "./parse";
 import { testCatalog } from "./testFixtures";
 import type { InterfaceInfo } from "./types";
 
-const all: IfLabelOptions = { showIfName: true, longIfNames: false, showIp: true, showVlan: true };
+const all: IfLabelOptions = {
+  showIfName: true,
+  longIfNames: false,
+  showTransceiver: true,
+  showIp: true,
+  showVlan: true,
+};
 const info = (fields: Partial<InterfaceInfo>): InterfaceInfo => ({ extra: {}, ...fields });
 
 describe("vlanText(Q4)", () => {
@@ -83,7 +89,7 @@ describe("interfaceInfo", () => {
 });
 
 describe("ifLabel: bond(フェーズ4-3 Q2)", () => {
-  const options = { showIfName: true, longIfNames: false, showIp: true, showVlan: true };
+  const options = all;
 
   it("束ねている bond を、IF 名の下(IP より上)に添える。IF 名を出さないときは出さない", () => {
     const info = { ip: ["192.0.2.1/24"], extra: {} };
@@ -109,5 +115,27 @@ describe("ifLabel: クラスタのネットワーク(フェーズ4-5)", () => {
     expect(ifLabel("eno3", data, { ...all, showIp: false }, undefined, ips)?.details).toEqual([
       "VLAN 10",
     ]);
+  });
+});
+
+describe("ifLabel: トランシーバ(SPEC 5.4)", () => {
+  it("IF 名と bond の下、IP と VLAN の上に、書いたとおりに出す", () => {
+    const fields = info({ transceiver: "10gbase-sr", ip: ["192.0.2.1/24"], vlan: 10 });
+    expect(ifLabel("eno1", fields, all, "bond0")).toEqual({
+      name: "eno1",
+      details: ["bond0", "10gbase-sr", "192.0.2.1/24", "VLAN 10"],
+    });
+  });
+
+  it("「トランシーバ」を切ると出さない。IF 名を出さなくても、トランシーバだけは出せる", () => {
+    const fields = info({ transceiver: "10GBASE-SR" });
+    expect(ifLabel("Te1/1/1", fields, { ...all, showTransceiver: false })).toEqual({
+      name: "Te1/1/1",
+      details: [],
+    });
+    expect(ifLabel("Te1/1/1", fields, { ...all, showIfName: false })).toEqual({
+      name: undefined,
+      details: ["10GBASE-SR"],
+    });
   });
 });

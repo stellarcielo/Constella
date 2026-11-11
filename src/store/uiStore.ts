@@ -39,6 +39,8 @@ export interface ViewOptions {
   showYaml: boolean;
   /** グループの枠を表示する(フェーズ3-1 Q5) */
   showGroups: boolean;
+  /** IF 名ラベルの下にトランシーバを表示する(SPEC 5.4) */
+  showTransceiver: boolean;
   /** IF 名ラベルの下に IP を表示する(フェーズ3-2 Q2) */
   showIp: boolean;
   /** IF 名ラベルの下に VLAN を表示する(フェーズ3-2 Q2) */
@@ -54,6 +56,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   longIfNames: false,
   showYaml: true,
   showGroups: true,
+  showTransceiver: true,
   showIp: true,
   showVlan: true,
   groupKinds: [...LAYER_GROUP_KINDS],
@@ -212,6 +215,7 @@ function loadView(storage?: ViewStorage): ViewOptions {
       longIfNames,
       showYaml,
       showGroups,
+      showTransceiver,
       showIp,
       showVlan,
       groupKinds,
@@ -222,6 +226,8 @@ function loadView(storage?: ViewStorage): ViewOptions {
       longIfNames: typeof longIfNames === "boolean" ? longIfNames : DEFAULT_VIEW.longIfNames,
       showYaml: typeof showYaml === "boolean" ? showYaml : DEFAULT_VIEW.showYaml,
       showGroups: typeof showGroups === "boolean" ? showGroups : DEFAULT_VIEW.showGroups,
+      showTransceiver:
+        typeof showTransceiver === "boolean" ? showTransceiver : DEFAULT_VIEW.showTransceiver,
       showIp: typeof showIp === "boolean" ? showIp : DEFAULT_VIEW.showIp,
       showVlan: typeof showVlan === "boolean" ? showVlan : DEFAULT_VIEW.showVlan,
       groupKinds: Array.isArray(groupKinds)

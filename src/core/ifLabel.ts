@@ -1,5 +1,5 @@
 // リンクの端の IF 名ラベルに出す内容(SPEC 7.3・フェーズ3-2)。
-// IF 名の下に、その IF の IP(1 つずつ)と VLAN を足す。キャンバスと SVG の書き出しで共有する。
+// IF 名の下に、その IF のトランシーバ・IP(1 つずつ)・VLAN を足す。キャンバスと SVG の書き出しで共有する。
 
 import { expandIfName, ifNameKey } from "./ifname";
 import type { Device, InterfaceInfo } from "./types";
@@ -9,6 +9,8 @@ export interface IfLabelOptions {
   showIfName: boolean;
   /** IF 名を長い形で出すか(ツールバーの「長い名前」) */
   longIfNames: boolean;
+  /** トランシーバを出すか(ツールバーの「トランシーバ」) */
+  showTransceiver: boolean;
   /** IP を出すか(ツールバーの「IP」) */
   showIp: boolean;
   /** VLAN を出すか(ツールバーの「VLAN」) */
@@ -18,7 +20,7 @@ export interface IfLabelOptions {
 export interface IfLabel {
   /** 1 行目の IF 名(出さないときは undefined) */
   name?: string;
-  /** IF 名の下に小さく出す行(束ねている bond、IP、VLAN の順) */
+  /** IF 名の下に小さく出す行(束ねている bond、トランシーバ、IP、VLAN の順) */
   details: string[];
 }
 
@@ -67,6 +69,7 @@ export function ifLabel(
 ): IfLabel | undefined {
   const details: string[] = [];
   if (options.showIfName && bond !== undefined) details.push(bond);
+  if (options.showTransceiver && info?.transceiver !== undefined) details.push(info.transceiver);
   if (options.showIp) details.push(...(ips ?? info?.ip ?? []));
   const vlan = options.showVlan && info ? vlanText(info) : undefined;
   if (vlan) details.push(vlan);

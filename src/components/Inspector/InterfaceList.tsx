@@ -12,12 +12,15 @@ import {
   type InterfaceMode,
   isFlexibleDevice,
   listDevicePorts,
+  type PortType,
+  takesTransceiver,
   updateInterface,
 } from "../../core";
 import { topologyStore, useTopology } from "../../store";
 import { useIfNameFormatter } from "../ifNames";
 import { PORT_TYPE_LABELS } from "../portTypes";
 import { CommitInput, CommitTextarea, Field } from "./fields";
+import { TransceiverInput } from "./TransceiverInput";
 
 export function InterfaceList({ device }: { device: Device }) {
   const topology = useTopology((s) => s.topology);
@@ -46,7 +49,8 @@ export function InterfaceList({ device }: { device: Device }) {
       (q === "" ||
         e.name.toLowerCase().includes(q) ||
         expandIfName(e.name).toLowerCase().includes(q) ||
-        (infoOf(e.name)?.description ?? "").toLowerCase().includes(q)),
+        (infoOf(e.name)?.description ?? "").toLowerCase().includes(q) ||
+        (infoOf(e.name)?.transceiver ?? "").toLowerCase().includes(q)),
   );
   const used = entries.filter((e) => e.use).length;
   const total = flexible ? entries.length : entries.filter((e) => e.defined).length;
@@ -103,6 +107,7 @@ export function InterfaceList({ device }: { device: Device }) {
                   <span className="if-name mono">{show(entry.name)}</span>
                   {entry.type && <span className="if-meta">{PORT_TYPE_LABELS[entry.type]}</span>}
                   {entry.speed && <span className="if-meta">{entry.speed}</span>}
+                  {info?.transceiver && <span className="if-meta">{info.transceiver}</span>}
                   {unknown && <span className="if-unknown">モデルにない IF</span>}
                   {info?.description && <span className="if-desc">{info.description}</span>}
                 </button>
@@ -121,7 +126,9 @@ export function InterfaceList({ device }: { device: Device }) {
                   <span className="if-free">空き</span>
                 )}
               </div>
-              {isOpen && <InterfaceEditor device={device} name={entry.name} info={info} />}
+              {isOpen && (
+                <InterfaceEditor device={device} name={entry.name} type={entry.type} info={info} />
+              )}
             </li>
           );
         })}
@@ -150,16 +157,22 @@ const vlansError = (value: string): string | undefined =>
 function InterfaceEditor({
   device,
   name,
+  type,
   info,
 }: {
   device: Device;
   name: string;
+  /** ポートの種別(モデルに無い IF は undefined) */
+  type?: PortType;
   info?: InterfaceInfo;
 }) {
   const catalog = useTopology((s) => s.catalog);
   const update = (changes: InterfaceChanges) =>
     topologyStore.getState().edit((t) => updateInterface(t, device.id, name, changes, catalog));
   const mode = info?.mode;
+  // RJ45 などのポートには出さない。書いてあれば、消せるように出す
+  const transceiver =
+    type === undefined || takesTransceiver(type) || info?.transceiver !== undefined;
   return (
     <div className="if-editor">
       <Field label="説明">
@@ -169,6 +182,15 @@ function InterfaceEditor({
           onCommit={(v) => update({ description: v })}
         />
       </Field>
+      {transceiver && (
+        <Field label="トランシーバ">
+          <TransceiverInput
+            value={info?.transceiver ?? ""}
+            ports={[type]}
+            onCommit={(v) => update({ transceiver: v })}
+          />
+        </Field>
+      )}
       <Field label="モード">
         <select
           className="field-input"

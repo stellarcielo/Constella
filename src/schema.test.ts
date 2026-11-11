@@ -20,6 +20,7 @@ import {
   SCHEMA_URL,
   serializeTopology,
   type Topology,
+  TRANSCEIVERS,
   validateTopology,
   VMID_MAX,
   VMID_MIN,
@@ -93,6 +94,9 @@ describe("JSON Schema", () => {
     ]);
     expect(schema.definitions.interface.properties.type.enum).toEqual([...LOGICAL_IF_TYPES]);
     expect(schema.definitions.interface.properties["bond-mode"].enum).toEqual([...BOND_MODES]);
+    expect(schema.definitions.interface.properties.transceiver.anyOf[0].enum).toEqual(
+      TRANSCEIVERS.map((t) => t.name),
+    );
     expect(schema.definitions.endpoint.pattern).toBe(
       `${DEVICE_ID_PATTERN.source.replace(/\$$/, "")}:\\s*\\S`,
     );
@@ -151,6 +155,16 @@ links:
   - { a: vm1:net0, b: pve1:vmbr0 }
 layout:
   pve1:vmbr0: { x: 0, y: 100 }
+`,
+    ],
+    [
+      "トランシーバ(一覧に無い名前も)",
+      `constella: 1
+devices:
+  sw1:
+    interfaces:
+      Te0/25: { transceiver: 10GBASE-SR }
+      Te0/26: { transceiver: SFP-10G-LR }
 `,
     ],
     [
@@ -218,6 +232,14 @@ groups:
     ["数値でない座標", "constella: 1\nlayout:\n  r1: { x: 1, y: up }\n"],
     ["座標の未知のキー", "constella: 1\nlayout:\n  r1: { x: 1, y: 2, z: 3 }\n"],
     ["zoom の無い _viewport", "constella: 1\nlayout:\n  _viewport: { x: 0, y: 0 }\n"],
+    [
+      "文字列でないトランシーバ",
+      "constella: 1\ndevices:\n  sw1:\n    interfaces:\n      Te0/25: { transceiver: 10 }\n",
+    ],
+    [
+      "空のトランシーバ",
+      'constella: 1\ndevices:\n  sw1:\n    interfaces:\n      Te0/25: { transceiver: "" }\n',
+    ],
     ["side の無いラベルの位置", "constella: 1\nlayout:\n  _labels:\n    r1:Gi0/1: { along: 60 }\n"],
     [
       ": の無いラベルの位置のキー",

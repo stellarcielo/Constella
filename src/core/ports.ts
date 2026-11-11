@@ -7,6 +7,20 @@ import { findVnet, hostVnets } from "./sdn";
 import { findModel } from "./topology";
 import type { Device, Endpoint, ModelCatalog, PortType, Topology } from "./types";
 
+/** ポート種別の表示名(画面と、問題のメッセージで使う) */
+export const PORT_TYPE_LABELS: Record<PortType, string> = {
+  rj45: "RJ45",
+  sfp: "SFP",
+  "sfp+": "SFP+",
+  sfp28: "SFP28",
+  "qsfp+": "QSFP+",
+  qsfp28: "QSFP28",
+  console: "コンソール",
+  serial: "シリアル",
+  wireless: "無線",
+  virtual: "仮想",
+};
+
 /** 物理的に挿せる組み合わせを同じグループにする(SFP+ ポートに SFP を挿す等は不一致にしない) */
 const PORT_FAMILY: Record<PortType, string> = {
   rj45: "rj45",
@@ -23,6 +37,14 @@ const PORT_FAMILY: Record<PortType, string> = {
 
 export function portTypesCompatible(a: PortType, b: PortType): boolean {
   return PORT_FAMILY[a] === PORT_FAMILY[b];
+}
+
+/** エンドポイントのポート種別。フレキシブルデバイスでモデルに無い IF などは undefined */
+export function portTypeOf(t: Topology, ep: Endpoint, catalog: ModelCatalog): PortType | undefined {
+  const device = t.devices.get(ep.device);
+  if (!device) return undefined;
+  const key = ifNameKey(ep.iface);
+  return findModel(device, catalog)?.ports.find((p) => ifNameKey(p.name) === key)?.type;
 }
 
 export interface PortUse {

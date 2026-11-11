@@ -149,6 +149,33 @@ describe("serializeTopology: GUI での編集", () => {
     );
   });
 
+  it("トランシーバは description の次に書き、書き換えてもコメントは残す", () => {
+    const { topology, base } = load(`constella: 1
+devices:
+  sw1:
+    model: generic-l2switch-24
+    interfaces:
+      # コアへのアップリンク
+      Te0/25: { transceiver: 10GBASE-SR } # 予備あり
+`);
+    const ifs = topology.devices.get("sw1")?.interfaces;
+    const te25 = ifs?.get("Te0/25");
+    if (te25) te25.transceiver = "10GBASE-LR";
+    ifs?.set("Te0/26", {
+      description: "spare",
+      transceiver: "10G-DAC",
+      ip: ["192.0.2.1/30"],
+      extra: {},
+    });
+    const { text } = serializeTopology(topology, base);
+    expect(text).toContain(
+      "      # コアへのアップリンク\n      Te0/25: { transceiver: 10GBASE-LR } # 予備あり\n",
+    );
+    expect(text).toMatch(
+      /Te0\/26:\n {8}description: spare\n {8}transceiver: 10G-DAC\n {8}ip: \[ 192\.0\.2\.1\/30 \]\n/,
+    );
+  });
+
   it("書き出した結果の base を次回に使える", () => {
     const { topology, base } = load(specExample);
     topology.layout.set("rt1", { x: 1, y: 2 });

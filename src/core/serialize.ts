@@ -601,6 +601,7 @@ function infoFields(info: InterfaceInfo): Fields {
     ["vlan-aware", info.vlanAware],
     ["vlan-raw-device", info.vlanRawDevice],
     ["description", info.description],
+    ["transceiver", info.transceiver],
     ["ip", info.ip],
     ["mode", info.mode],
     ["vlan", info.vlan],
