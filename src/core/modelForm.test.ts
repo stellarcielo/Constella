@@ -6,6 +6,7 @@ import {
   type ModelForm,
   modelFormFromText,
   modelFormToText,
+  setModelIcon,
 } from "./modelForm";
 import { parseModelDefinition } from "./modelLibrary";
 
@@ -33,6 +34,7 @@ describe("modelFormFromText / modelFormToText", () => {
       vendor: "Cisco",
       name: "Catalyst 2960-24TT-L",
       role: "l2switch",
+      icon: "",
       flexible: false,
       guest: "",
       ports: [
@@ -44,15 +46,24 @@ describe("modelFormFromText / modelFormToText", () => {
     expect(f && modelFormToText(f)).toBe(c2960);
   });
 
-  it("フォームで扱わない項目(icon や未知のキー)は残す", () => {
-    const f = modelFormFromText(`${c2960}icon: switch-x\nnote: { a: 1 }\n`);
-    expect(f?.extra).toEqual({ icon: "switch-x", note: { a: 1 } });
+  it("icon はフォームの項目にして role の次に書き、フォームで扱わない項目(未知のキー)は残す", () => {
+    const f = modelFormFromText(`${c2960}icon: firewall\nnote: { a: 1 }\n`);
+    expect(f?.icon).toBe("firewall");
+    expect(f?.extra).toEqual({ note: { a: 1 } });
     const back = f && modelFormToText(f);
-    expect(back).toContain("icon: switch-x");
+    expect(back).toContain("role: l2switch\nicon: firewall\n");
     expect(back && parseModelDefinition(back)).toMatchObject({
       ok: true,
-      model: { icon: "switch-x" },
+      model: { icon: "firewall" },
     });
+  });
+
+  it("setModelIcon は icon だけを書き換え、コメントは残す。空なら消す", () => {
+    const text = "# 自分の機器\nid: x\nrole: pc\nflexible: true\n";
+    const set = setModelIcon(text, "My PC.svg");
+    expect(set).toBe("# 自分の機器\nid: x\nrole: pc\nflexible: true\nicon: My PC.svg\n");
+    expect(set && setModelIcon(set, "")).toBe(text);
+    expect(setModelIcon("id: [", "server")).toBeUndefined();
   });
 
   it("空の項目は書かず、数字だけの値や記号を含む値は引用符で囲む", () => {

@@ -10,12 +10,21 @@ import {
   exists,
   mkdir,
   readDir,
+  readFile,
   readTextFile,
   remove,
   writeFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import type { ImageFormat, MenuCommands, OpenFileKind, Platform, RecentFileItem } from "./types";
+import { isIconImageName } from "../core";
+import {
+  basename,
+  type ImageFormat,
+  type MenuCommands,
+  type OpenFileKind,
+  type Platform,
+  type RecentFileItem,
+} from "./types";
 
 const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "yml"] }];
 const OPEN_FILTERS: Record<OpenFileKind, { name: string; extensions: string[] }[]> = {
@@ -37,6 +46,11 @@ async function userModelsDir(): Promise<string> {
 }
 
 const isModelFile = (name: string) => /\.ya?ml$/i.test(name);
+
+/** アイコンの画像のフォルダ(SPEC 5.2)。ユーザーモデルのフォルダと並ぶ Constella/icons */
+async function iconsDir(): Promise<string> {
+  return join(await dataDir(), "Constella", "icons");
+}
 
 // メニューの「最近使った項目を開く」(setupMenu で作り、setRecentFiles で中身を入れ替える)
 let recentMenu: Submenu | undefined;
@@ -126,6 +140,36 @@ export const tauriPlatform: Platform = {
     await remove(await join(await userModelsDir(), file));
   },
 
+  async listIcons() {
+    const dir = await iconsDir();
+    if (!(await exists(dir))) return [];
+    const entries = await readDir(dir);
+    const files = entries.filter((e) => e.isFile && isIconImageName(e.name)).map((e) => e.name);
+    return Promise.all(
+      files.map(async (file) => ({ file, data: await readFile(await join(dir, file)) })),
+    );
+  },
+
+  async chooseIconFile() {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "アイコンの画像(SVG・PNG)", extensions: ["svg", "png"] }],
+    });
+    if (typeof path !== "string") return null;
+    return { name: basename(path), data: await readFile(path) };
+  },
+
+  async writeIcon(file, data) {
+    const dir = await iconsDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(await join(dir, file), data);
+  },
+
+  async removeIcon(file) {
+    await remove(await join(await iconsDir(), file));
+  },
+
   setTitle(title) {
     void getCurrentWindow().setTitle(title);
   },
@@ -189,6 +233,7 @@ export const tauriPlatform: Platform = {
         await command("開く…", "CmdOrCtrl+O", commands.open),
         recentMenu,
         await MenuItem.new({ text: "Proxmox VE から取り込む…", action: commands.importProxmox }),
+        await MenuItem.new({ text: "モデルの管理…", action: commands.openModelManager }),
         await separator(),
         await command("保存", "CmdOrCtrl+S", commands.save),
         await command("別名で保存…", "CmdOrCtrl+Shift+S", commands.saveAs),

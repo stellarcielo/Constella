@@ -453,6 +453,39 @@ layout:
     expect(corners[0].y).not.toBe(corners[1].y);
   });
 
+  it("モデルのアイコン: 組み込みのほかのアイコンは role の色で描き、画像は埋め込む(SPEC 7.3)", () => {
+    const catalog = new Map(testCatalog);
+    const router = testCatalog.get("generic-router-4");
+    if (!router) throw new Error("generic-router-4 がありません");
+    catalog.set("fw-look", { ...router, id: "fw-look", icon: "firewall" });
+    catalog.set("own", { ...router, id: "own", icon: "own.svg" });
+    catalog.set("gone", { ...router, id: "gone", icon: "gone.png" });
+    const result = parseTopology(
+      `constella: 1
+devices:
+  a: { model: fw-look }
+  b: { model: own }
+  c: { model: gone }
+layout:
+  a: { x: 0, y: 0 }
+  b: { x: 200, y: 0 }
+  c: { x: 400, y: 0 }
+`,
+      { catalog },
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    const url = "data:image/svg+xml;base64,PHN2Zy8+";
+    const { svg } = renderSvg(result.topology, catalog, {
+      iconImages: new Map([["own.svg", url]]),
+    });
+    // a はファイアウォールの形を、ルーターの色で描く
+    expect(svg).toContain('<path d="M6 19h36M6 29h36');
+    // b は画像を埋め込む
+    expect(svg).toContain(`<image href="${url}" x="231" y="9" width="34" height="34"`);
+    // c は画像が無いので、ルーターのアイコン(円の中に矢印)
+    expect(svg.match(/<circle cx="24" cy="24" r="17"\/>/g)).toHaveLength(1);
+  });
+
   it("空の図でも正しい SVG になる", () => {
     const { svg, width } = renderSvg(load("constella: 1\n"), testCatalog);
     expect(width).toBe(48);

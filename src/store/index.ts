@@ -5,6 +5,7 @@ import { askDialog } from "../components/Dialog/dialogs";
 import { buildCatalog } from "../core";
 import { loadBuiltinModels } from "../library";
 import { platform } from "../platform";
+import { createIconsStore, type IconsState } from "./icons";
 import { createRecentFilesStore } from "./recentFiles";
 import { createTopologyStore, type TopologyState } from "./topologyStore";
 import { createUiStore, type UiState } from "./uiStore";
@@ -38,6 +39,14 @@ userModelsStore.subscribe((state, prev) => {
   }
 });
 void userModelsStore.getState().reload();
+/** アイコンの画像(SPEC 5.1・5.2)。起動時に読み込む */
+export const iconsStore = createIconsStore({
+  list: () => platform.listIcons(),
+  choose: () => platform.chooseIconFile(),
+  write: (file, data) => platform.writeIcon(file, data),
+  remove: (file) => platform.removeIcon(file),
+});
+void iconsStore.getState().reload();
 export const recentFilesStore = createRecentFilesStore(localStorageIfAvailable());
 
 // 接続モードに入ったら選択を外す(接続モードでは選択できないため)
@@ -57,6 +66,10 @@ export function useUi<T>(selector: (state: UiState) => T): T {
 
 export function useUserModels<T>(selector: (state: UserModelsState) => T): T {
   return useStore(userModelsStore, selector);
+}
+
+export function useIcons<T>(selector: (state: IconsState) => T): T {
+  return useStore(iconsStore, selector);
 }
 
 export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";

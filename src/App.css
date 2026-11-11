@@ -177,6 +177,12 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* 画像のアイコン(SPEC 5.1)。色は付けず、縦横の比率を保って収める */
+.model-icon-image {
+  display: block;
+  object-fit: contain;
+}
+
 .role-icon.role-cloud {
   color: var(--role-cloud);
 }

@@ -3,7 +3,7 @@
 import { askDialog } from "../components/Dialog/dialogs";
 import { keyPlace } from "../components/editKeys";
 import { platform } from "../platform";
-import { recentFilesStore, topologyStore, uiStore } from "../store";
+import { iconsStore, recentFilesStore, topologyStore, uiStore } from "../store";
 import { createEditCommands } from "./edit";
 import { createExportCommands } from "./export";
 import { createFileCommands } from "./files";
@@ -73,6 +73,7 @@ export const exportCommands = createExportCommands({
   platform,
   store: topologyStore,
   view: () => uiStore.getState().view,
+  iconImages: () => iconsStore.getState().images,
   rasterize: rasterizeSvg,
   showError,
 });

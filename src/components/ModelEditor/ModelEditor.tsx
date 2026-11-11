@@ -21,6 +21,8 @@ import { loadBuiltinModels } from "../../library";
 import { userModelsStore, useTopology, useUserModels } from "../../store";
 import { modelFileName } from "../../store/userModels";
 import { askDialog } from "../Dialog/dialogs";
+import { removeModelFile, showError } from "../ModelManager/actions";
+import { IconPicker } from "../ModelManager/IconPicker";
 import { PORT_TYPE_LABELS } from "../portTypes";
 import { closeModelEditor, type ModelEditorRequest, modelEditorStore } from "./editorStore";
 import "../Dialog/ConfirmDialog.css";
@@ -31,16 +33,6 @@ const BUILTIN = new Map(loadBuiltinModels().models.map((m) => [m.id, m]));
 export function ModelEditorHost() {
   const request = useStore(modelEditorStore, (s) => s.request);
   return request ? <ModelEditor key={request.id} request={request} /> : null;
-}
-
-async function showError(title: string, message: string, details?: string[]): Promise<void> {
-  await askDialog({
-    title,
-    message,
-    details,
-    actions: [{ value: "ok", label: "OK", primary: true }],
-    cancelLabel: null,
-  });
 }
 
 /** パターンを展開した結果の短い説明(「Gi0/1 〜 Gi0/24(24 個)」)。誤りがあれば undefined */
@@ -113,24 +105,9 @@ function ModelEditor({ request }: { request: ModelEditorRequest }) {
 
   async function remove() {
     if (!request.file || !originalId) return;
-    const used = usage(originalId);
-    const choice = await askDialog({
-      title: `「${originalId}」を削除しますか?`,
-      message:
-        used > 0
-          ? `このモデルは、開いている図で ${used} 台が使っています。図はそのままで、モデルが見つからないエラーが問題パネルに出ます。`
-          : "ユーザーモデルのフォルダから、このモデルのファイルを削除します。",
-      actions: [{ value: "remove", label: "削除", primary: true, danger: true }],
-    });
-    if (choice !== "remove") return;
     setBusy(true);
     try {
-      await userModelsStore.getState().remove(request.file);
-      closeModelEditor();
-    } catch (e) {
-      await showError("削除できませんでした", `「${request.file}」を削除できませんでした。`, [
-        String(e),
-      ]);
+      if (await removeModelFile(request.file, originalId)) closeModelEditor();
     } finally {
       setBusy(false);
     }
@@ -219,6 +196,8 @@ function ModelEditor({ request }: { request: ModelEditorRequest }) {
               フレキシブル(定義していない IF 名も使える)
             </label>
           </div>
+          <span className="model-editor-label">アイコン</span>
+          <IconPicker value={form.icon} role={form.role} onChange={(icon) => update({ icon })} />
           <label className="model-editor-label" htmlFor={`${titleId}-guest`}>
             ゲスト
           </label>

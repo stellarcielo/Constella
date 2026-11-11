@@ -13,7 +13,7 @@ import { bendKey, orientBends } from "./bendKeys";
 import { clusterIpText } from "./clusters";
 import { groupFrames, groupKindFilter, groupTitle, hostFrameTitle } from "./groupFrames";
 import { resolveGuest } from "./hosts";
-import { ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
+import { resolveIcon, ROLE_ICON_SVG, ROLE_ICON_VIEWBOX } from "./icons";
 import { type IfLabel, ifLabel, ifLabelLines, interfaceInfo } from "./ifLabel";
 import { expandIfName } from "./ifname";
 import { labelKey } from "./labelLayout";
@@ -37,7 +37,7 @@ import {
 } from "./linkGeometry";
 import { linkMedia } from "./media";
 import { vnetTagText } from "./sdn";
-import { resolveLabel, resolveRole } from "./topology";
+import { findModel, resolveLabel, resolveRole } from "./topology";
 import type {
   Endpoint,
   GroupKind,
@@ -68,6 +68,8 @@ export interface RenderOptions {
   groupKinds?: readonly GroupKind[];
   /** ゲスト(VM・コンテナ)とホストの枠を描くか(ツールバーの「ゲスト」) */
   showGuests?: boolean;
+  /** モデルのアイコンの画像(アイコンのフォルダのファイル名 → data: URL。SPEC 5.1)。書き出しに埋め込む */
+  iconImages?: ReadonlyMap<string, string>;
   /** 図のまわりの余白 */
   padding?: number;
 }
@@ -533,6 +535,9 @@ export function renderSvg(
     const device = t.devices.get(id);
     if (!device) continue;
     const role = resolveRole(device, catalog);
+    // モデルのアイコン(SPEC 7.3)。組み込みのアイコンは role の色で、画像は色を付けずにそのまま埋め込む
+    const images = options.iconImages;
+    const icon = resolveIcon(role, findModel(device, catalog)?.icon, (file) => !!images?.has(file));
     const boxX = pos.x + (NODE_WIDTH - ICON_BOX) / 2;
     const iconX = pos.x + (NODE_WIDTH - ICON_SIZE) / 2;
     const iconY = pos.y + (ICON_BOX - ICON_SIZE) / 2;
@@ -544,9 +549,12 @@ export function renderSvg(
       `<g>` +
         `<rect x="${n(boxX)}" y="${n(pos.y)}" width="${ICON_BOX}" height="${ICON_BOX}" rx="12" ` +
         `fill="${THEME.panel}" stroke="${THEME.border}"/>` +
-        `<g transform="translate(${n(iconX)} ${n(iconY)}) scale(${iconScale.toFixed(4)})" ` +
-        `fill="none" stroke="${ROLE_COLORS[role]}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
-        `${ROLE_ICON_SVG[role]}</g>` +
+        (icon.kind === "image"
+          ? `<image href="${images?.get(icon.file) ?? ""}" x="${n(iconX)}" y="${n(iconY)}" ` +
+            `width="${ICON_SIZE}" height="${ICON_SIZE}" preserveAspectRatio="xMidYMid meet"/>`
+          : `<g transform="translate(${n(iconX)} ${n(iconY)}) scale(${iconScale.toFixed(4)})" ` +
+            `fill="none" stroke="${ROLE_COLORS[role]}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+            `${ROLE_ICON_SVG[icon.role]}</g>`) +
         (guest ? badge(boxX + ICON_BOX, pos.y, GUEST_BADGE_TEXT[guest], bounds) : "") +
         label(
           nameCenter,

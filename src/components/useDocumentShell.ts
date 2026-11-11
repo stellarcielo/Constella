@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { documentName, editCommands, exportCommands, fileCommands } from "../commands";
 import { platform } from "../platform";
+import { openModelManager } from "./ModelManager/managerStore";
 import { recentFilesStore, topologyStore, uiStore, useTopology, VIEW_LAYERS } from "../store";
 import { recentLabels } from "../store/recentFiles";
 
@@ -31,6 +32,7 @@ export function useDocumentShell(): void {
       openRecent: (path) => void fileCommands.openRecent(path),
       clearRecent: () => recentFilesStore.getState().clear(),
       showLayer: (layer) => uiStore.getState().setLayer(layer),
+      openModelManager,
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,

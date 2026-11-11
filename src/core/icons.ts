@@ -1,7 +1,8 @@
 // role ごとのオリジナルのシンプルな線画アイコン(SPEC 15章)。キャンバスと SVG の書き出しで共有する。
 // 48×48 の座標で描いた SVG の中身。線の色は呼ぶ側が stroke で指定する。
+// モデルの icon(SPEC 5.1)で、組み込みのほかのアイコンや、アイコンのフォルダの画像(SVG・PNG)に変えられる。
 
-import type { Role } from "./types";
+import { ROLES, type Role } from "./types";
 
 export const ROLE_ICON_VIEWBOX = 48;
 
@@ -49,3 +50,55 @@ export const ROLE_ICON_SVG: Record<Role, string> = {
     '<rect x="7" y="13" width="34" height="22" rx="4"/>' +
     '<path d="M14 29h2M20 29h2M26 29h2M32 29h2"/>',
 };
+
+/** モデルの icon(SPEC 5.1)。組み込みのアイコン(role と同じ名前)か、アイコンのフォルダの画像 */
+export type IconRef = { kind: "builtin"; role: Role } | { kind: "image"; file: string };
+
+/** 取り込める画像の大きさの上限(SPEC 5.2) */
+export const ICON_MAX_BYTES = 1024 * 1024;
+
+/** 画像のアイコンのファイル名か(.svg・.png) */
+export function isIconImageName(name: string): boolean {
+  return /\.(svg|png)$/i.test(name);
+}
+
+/** icon の値。組み込みのアイコンの名前でも、画像のファイル名(フォルダを含まない)でもなければ undefined */
+export function parseIconRef(icon: string): IconRef | undefined {
+  if ((ROLES as readonly string[]).includes(icon)) return { kind: "builtin", role: icon as Role };
+  if (isIconImageName(icon) && !/[\\/]/.test(icon)) return { kind: "image", file: icon };
+  return undefined;
+}
+
+/**
+ * 機器に描くアイコン(SPEC 7.3)。モデルの icon が無い・読めないとき、
+ * 画像が見つからないとき(hasImage が false)は role のアイコン
+ */
+export function resolveIcon(
+  role: Role,
+  icon: string | undefined,
+  hasImage: (file: string) => boolean,
+): IconRef {
+  const ref = icon === undefined ? undefined : parseIconRef(icon);
+  if (!ref || (ref.kind === "image" && !hasImage(ref.file))) return { kind: "builtin", role };
+  return ref;
+}
+
+/** 画像のアイコンの MIME タイプ */
+export function iconMimeType(file: string): string {
+  return /\.svg$/i.test(file) ? "image/svg+xml" : "image/png";
+}
+
+/**
+ * 取り込む画像の、アイコンのフォルダでのファイル名。フォルダの区切りを除き、空白を -、
+ * ファイル名に使いにくい文字を _ にして、拡張子は小文字にする。同じ名前があれば -2、-3 … を付ける
+ */
+export function uniqueIconName(name: string, used: (file: string) => boolean): string {
+  const base = (name.split(/[\\/]/).pop() ?? name).trim();
+  const match = /^(.*)\.(svg|png)$/i.exec(base);
+  const stem = (match ? match[1] : base).replace(/\s+/g, "-").replace(/[:*?"<>|#]/g, "_") || "icon";
+  const ext = match ? match[2].toLowerCase() : "png";
+  for (let n = 1; ; n++) {
+    const candidate = `${stem}${n === 1 ? "" : `-${n}`}.${ext}`;
+    if (!used(candidate)) return candidate;
+  }
+}

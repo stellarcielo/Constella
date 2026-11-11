@@ -45,6 +45,37 @@ function storeUserModels(files: Record<string, string>): void {
   window.localStorage.setItem(USER_MODELS_KEY, JSON.stringify(files));
 }
 
+/** アイコンの画像も localStorage に入れる(ファイル名 → base64) */
+const ICONS_KEY = "constella.icons";
+
+function loadIcons(): Record<string, string> {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(ICONS_KEY) ?? "{}");
+    return typeof saved === "object" && saved !== null ? (saved as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function storeIcons(files: Record<string, string>): void {
+  window.localStorage.setItem(ICONS_KEY, JSON.stringify(files));
+}
+
+function toBase64(data: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < data.length; i += 0x8000) {
+    binary += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function fromBase64(text: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(text);
+  const data = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+  return data;
+}
+
 export const browserPlatform: Platform = {
   hasNativeMenu: false,
 
@@ -88,6 +119,25 @@ export const browserPlatform: Platform = {
     storeUserModels(
       Object.fromEntries(Object.entries(loadUserModels()).filter(([name]) => name !== file)),
     );
+  },
+
+  async listIcons() {
+    return Object.entries(loadIcons())
+      .filter(([, data]) => typeof data === "string")
+      .map(([file, data]) => ({ file, data: fromBase64(data) }));
+  },
+
+  async chooseIconFile() {
+    const file = await pickFile(".svg,.png");
+    return file ? { name: file.name, data: new Uint8Array(await file.arrayBuffer()) } : null;
+  },
+
+  async writeIcon(file, data) {
+    storeIcons({ ...loadIcons(), [file]: toBase64(data) });
+  },
+
+  async removeIcon(file) {
+    storeIcons(Object.fromEntries(Object.entries(loadIcons()).filter(([name]) => name !== file)));
   },
 
   setTitle(title) {

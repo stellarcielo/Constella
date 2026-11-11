@@ -22,6 +22,8 @@ export interface ExportCommandDeps {
     groupKinds: GroupKind[];
     showGuests: boolean;
   };
+  /** アイコンの画像(ファイル名 → data: URL。SPEC 5.1)。書き出しに埋め込む */
+  iconImages(): ReadonlyMap<string, string>;
   /** SVG を PNG のバイト列にする(width × height を scale 倍した大きさ) */
   rasterize(
     svg: string,
@@ -65,6 +67,7 @@ export function createExportCommands(deps: ExportCommandDeps): ExportCommands {
       const { svg, width, height } = renderSvg(topology, catalog, {
         ...deps.view(),
         fallbackPositions,
+        iconImages: deps.iconImages(),
       });
       try {
         if (format === "svg") await platform.writeTextFile(path, svg);

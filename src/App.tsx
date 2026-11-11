@@ -1,6 +1,7 @@
 import { Canvas } from "./components/Canvas/Canvas";
 import { DialogHost } from "./components/Dialog/DialogHost";
 import { ModelEditorHost } from "./components/ModelEditor/ModelEditor";
+import { ModelManagerHost } from "./components/ModelManager/ModelManager";
 import { Inspector } from "./components/Inspector/Inspector";
 import { Palette } from "./components/Palette/Palette";
 import { ProblemsPanel } from "./components/ProblemsPanel/ProblemsPanel";
@@ -37,6 +38,8 @@ function App() {
       </div>
       {problemsOpen && <ProblemsPanel />}
       <StatusBar />
+      {/* 管理画面から開く追加・編集のダイアログが、管理画面より手前に出るように先に置く */}
+      <ModelManagerHost />
       <ModelEditorHost />
       <DialogHost />
     </div>

@@ -449,6 +449,7 @@ function buildNodes(
       data: {
         label: resolveLabel(device),
         role: resolveRole(device, catalog),
+        icon: model?.icon,
         modelName: model?.name ?? device.model,
         guest,
         host: device.host,

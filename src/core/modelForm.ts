@@ -28,19 +28,21 @@ export interface ModelForm {
   vendor: string;
   name: string;
   role: Role;
+  /** アイコン(SPEC 5.1。組み込みのアイコンの名前か、画像のファイル名)。空なら role のアイコン */
+  icon: string;
   /** 定義していない IF 名も使えるか */
   flexible: boolean;
   /** このモデルの機器をゲスト(VM・コンテナ)にするか。空ならゲストではない */
   guest: GuestKind | "";
   ports: PortRow[];
-  /** フォームでは扱わない項目(icon や未知のキー)。保存しても残す */
+  /** フォームでは扱わない項目(未知のキー)。保存しても残す */
   extra: Record<string, unknown>;
 }
 
 /** モデルの ID は、そのままファイル名(`<id>.yaml`)にするので、デバイスID と同じ規則にする */
 export const MODEL_ID_PATTERN = DEVICE_ID_PATTERN;
 
-const FORM_KEYS = ["id", "vendor", "name", "role", "flexible", "guest", "ports"];
+const FORM_KEYS = ["id", "vendor", "name", "role", "icon", "flexible", "guest", "ports"];
 
 export function emptyModelForm(): ModelForm {
   return {
@@ -48,6 +50,7 @@ export function emptyModelForm(): ModelForm {
     vendor: "",
     name: "",
     role: "generic",
+    icon: "",
     flexible: false,
     guest: "",
     ports: [{ name: "", type: "rj45", speed: "" }],
@@ -96,6 +99,7 @@ export function modelFormFromText(text: string): ModelForm | undefined {
     vendor: text_("vendor"),
     name: text_("name"),
     role: (ROLES as readonly string[]).includes(roleValue) ? (roleValue as Role) : "generic",
+    icon: text_("icon"),
     flexible: isScalar(flexibleNode) && (flexibleNode.value as unknown) === true,
     guest: (GUEST_KINDS as readonly string[]).includes(guestValue) ? (guestValue as GuestKind) : "",
     ports,
@@ -117,6 +121,7 @@ export function modelFormToText(form: ModelForm): string {
   if (form.vendor.trim()) lines.push(`vendor: ${scalar(form.vendor.trim())}`);
   if (form.name.trim()) lines.push(`name: ${scalar(form.name.trim())}`);
   lines.push(`role: ${form.role}`);
+  if (form.icon.trim()) lines.push(`icon: ${scalar(form.icon.trim())}`);
   if (form.flexible) lines.push("flexible: true");
   if (form.guest) lines.push(`guest: ${form.guest}`);
   const ports = form.ports.filter((p) => p.name.trim() !== "");
@@ -187,6 +192,18 @@ function previewPorts(form: ModelForm): PortDef[] {
     if (single.ok) ports.push(...single.model.ports);
   }
   return ports;
+}
+
+/**
+ * モデル定義の YAML の icon だけを書き換える(コメントや書き方はそのまま残す)。空なら icon を消す。
+ * 読めない YAML なら undefined
+ */
+export function setModelIcon(text: string, icon: string): string | undefined {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return undefined;
+  if (icon === "") doc.delete("icon");
+  else doc.set("icon", icon);
+  return doc.toString({ lineWidth: 0 });
 }
 
 /** 複製するときの ID(`<元の id>-copy`、使われていれば `-copy2` …) */

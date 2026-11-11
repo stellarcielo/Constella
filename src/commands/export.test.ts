@@ -30,6 +30,7 @@ function setup(choose: string | null = "/tmp/out.svg") {
     },
     store,
     view: () => view,
+    iconImages: () => new Map<string, string>(),
     rasterize: vi.fn(async () => new Uint8Array([1, 2, 3])),
     showError: vi.fn(async () => {}),
   };

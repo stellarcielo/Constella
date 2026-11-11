@@ -92,6 +92,13 @@
   cursor: pointer;
 }
 
+/* 「管理」ボタン(モデルの管理画面。SPEC 5.5)。文字が入るので幅は中身に合わせる */
+.palette-add.palette-manage {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .palette-add:hover {
   border-color: var(--accent);
   color: var(--accent);

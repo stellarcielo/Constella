@@ -53,9 +53,21 @@ ports:
   });
 
   it("icon と speed は省略できる", () => {
-    const m = model("id: x\nrole: pc\nicon: laptop\nports:\n  - name: eth0\n    type: rj45\n");
-    expect(m.icon).toBe("laptop");
+    const m = model("id: x\nrole: pc\nicon: server\nports:\n  - name: eth0\n    type: rj45\n");
+    expect(m.icon).toBe("server");
     expect(m.ports).toEqual([{ name: "eth0", type: "rj45" }]);
+  });
+
+  it("icon は組み込みのアイコンの名前か、画像のファイル名。ほかは警告して role のアイコンにする(SPEC 5.1)", () => {
+    expect(model("id: x\nrole: pc\nicon: My PC.svg\nflexible: true\n").icon).toBe("My PC.svg");
+    const result = parseModelDefinition("id: x\nrole: pc\nicon: laptop\nflexible: true\n");
+    expect(result.ok && result.model.icon).toBeUndefined();
+    expect(result.issues.map((i) => [i.severity, i.message])).toEqual([
+      [
+        "warning",
+        "icon「laptop」は、組み込みのアイコンの名前(router / l2switch / l3switch / firewall / server / hypervisor / pc / ap / cloud / generic)か、画像のファイル名(.svg・.png)で書いてください",
+      ],
+    ]);
   });
 
   it("id と role は必須(Q3)", () => {

@@ -22,6 +22,8 @@ export interface MenuCommands {
   clearRecent(): void;
   /** 表示レイヤーを選ぶ(「表示」メニュー。フェーズ3-3) */
   showLayer(layer: MenuLayer): void;
+  /** モデルの管理画面を開く(SPEC 5.5) */
+  openModelManager(): void;
 }
 
 /** 「表示」メニューで選べる表示レイヤー */
@@ -60,6 +62,15 @@ export interface Platform {
   listUserModels(): Promise<{ file: string; text: string }[]>;
   writeUserModel(file: string, text: string): Promise<void>;
   removeUserModel(file: string): Promise<void>;
+  /**
+   * アイコンの画像(SPEC 5.2)のフォルダの .svg・.png を読む。フォルダが無ければ空。
+   * file はフォルダの中のファイル名
+   */
+  listIcons(): Promise<{ file: string; data: Uint8Array<ArrayBuffer> }[]>;
+  /** 取り込む画像(SVG・PNG)を選んで読む。name は元のファイル名。キャンセルなら null */
+  chooseIconFile(): Promise<{ name: string; data: Uint8Array<ArrayBuffer> } | null>;
+  writeIcon(file: string, data: Uint8Array<ArrayBuffer>): Promise<void>;
+  removeIcon(file: string): Promise<void>;
   setTitle(title: string): void;
   /** システムのクリップボードの文字列 */
   readClipboardText(): Promise<string>;

@@ -2,13 +2,15 @@
 
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import type { GuestKind, Role, Severity } from "../../core";
-import { RoleIcon } from "../../icons/RoleIcon";
+import { ModelIcon } from "../../icons/ModelIcon";
 import { GUEST_LABELS } from "../../icons/roles";
 import { useUi } from "../../store";
 
 export type DeviceNodeData = {
   label: string;
   role: Role;
+  /** モデルのアイコン(SPEC 5.1。無ければ role のアイコン) */
+  icon?: string;
   /** ツールチップに出すモデル名 */
   modelName?: string;
   /** ゲストなら種類(アイコンに VM / CT の印を付ける) */
@@ -52,7 +54,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<DeviceNodeType>) {
   return (
     <div className={classes.filter(Boolean).join(" ")} title={tooltip(id, data)}>
       <div className={`device-node-icon role-icon role-${data.role}`}>
-        <RoleIcon role={data.role} size={34} />
+        <ModelIcon role={data.role} icon={data.icon} size={34} />
         {data.guest && <span className="device-guest-badge">{GUEST_BADGES[data.guest]}</span>}
       </div>
       <div className="device-node-label">{data.label}</div>

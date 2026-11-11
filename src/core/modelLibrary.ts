@@ -1,6 +1,7 @@
 // モデル(機種)定義ファイルの読み込みとカタログの組み立て(SPEC 5章)。
 
 import { isMap, isScalar, isSeq, type Node, parseDocument, type YAMLMap } from "yaml";
+import { parseIconRef } from "./icons";
 import { ifNameKey, normalizeIfName } from "./ifname";
 import { expandPortName } from "./portExpand";
 import { yamlErrorMessage } from "./text";
@@ -66,7 +67,16 @@ export function parseModelDefinition(text: string): ModelParseResult {
   const id = optionalText(root, "id", add, true);
   const vendor = optionalText(root, "vendor", add);
   const name = optionalText(root, "name", add);
-  const icon = optionalText(root, "icon", add);
+  const iconText = optionalText(root, "icon", add);
+  // 組み込みのアイコンの名前か、画像のファイル名(SPEC 5.1)。読めなければ role のアイコンにする
+  const icon = iconText !== undefined && parseIconRef(iconText) ? iconText : undefined;
+  if (iconText !== undefined && icon === undefined) {
+    add(
+      "warning",
+      `icon「${iconText}」は、組み込みのアイコンの名前(${ROLES.join(" / ")})か、画像のファイル名(.svg・.png)で書いてください`,
+      root.get("icon", true),
+    );
+  }
 
   let role: Role | undefined;
   const roleNode = root.get("role", true) as Node | undefined;

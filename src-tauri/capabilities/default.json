@@ -14,6 +14,7 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "fs:allow-read-text-file",
+    "fs:allow-read-file",
     "fs:allow-read-dir",
     "fs:allow-exists",
     "fs:allow-mkdir",
@@ -29,6 +30,12 @@
         },
         {
           "path": "$DATA/Constella/models/**"
+        },
+        {
+          "path": "$DATA/Constella/icons"
+        },
+        {
+          "path": "$DATA/Constella/icons/**"
         }
       ]
     }
