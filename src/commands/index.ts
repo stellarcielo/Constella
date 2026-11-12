@@ -2,6 +2,7 @@
 
 import { askDialog } from "../components/Dialog/dialogs";
 import { keyPlace } from "../components/editKeys";
+import { requestGroupLabelFocus } from "../components/Inspector/groupFocus";
 import { platform } from "../platform";
 import { iconsStore, recentFilesStore, topologyStore, uiStore } from "../store";
 import { createEditCommands } from "./edit";
@@ -66,6 +67,11 @@ export const editCommands = createEditCommands({
   textCommand(command) {
     // メニューの「取り消す」をアプリの操作に置き換えたので、入力欄の取り消しはここから行う
     document.execCommand(command);
+  },
+  onGroupCreated(uid) {
+    // 作った枠が見えるように「グループ」の表示を入れ、ラベルをすぐ打てるようにする(SPEC 7.5)
+    uiStore.getState().setView({ showGroups: true });
+    requestGroupLabelFocus(uid);
   },
 });
 

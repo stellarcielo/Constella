@@ -73,7 +73,7 @@ export function useIcons<T>(selector: (state: IconsState) => T): T {
 }
 
 export type { Selection, TopologyState, YamlOrigin } from "./topologyStore";
-export { autoPositionKey, nodePosition } from "./topologyStore";
+export { autoPositionKey, keepGroupSelection, nodePosition } from "./topologyStore";
 export type { BendDrag, ChosenPort, ConnectState, Mode, UiState, ViewOptions } from "./uiStore";
 export { currentLayer, LAYER_LABELS, VIEW_LAYERS, type ViewLayer } from "./viewLayers";
 

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { editCommands } from "../commands";
 import { topologyStore, uiStore } from "../store";
 import { type EditAction, editActionFor, keyPlace } from "./editKeys";
+import { searchInYaml } from "./YamlEditor/yamlSearch";
 
 /** 文字を入力している最中か(入力欄で C を打っても接続モードにしないため) */
 export function isTyping(target: EventTarget | null): boolean {
@@ -34,6 +35,21 @@ function runEditKey(e: KeyboardEvent, action: EditAction): void {
   if ((action === "copy" || action === "cut") && noDevices) return;
   e.preventDefault();
   void editCommands[action]();
+}
+
+/**
+ * ⌘G(グループにする)・⇧⌘G(グループを解除)。SPEC 7.5。
+ * YAML エディタでは今までどおり「次を検索」「前を検索」、入力欄と確認ダイアログの間は何もしない
+ */
+export function runGroupShortcut(ungroup: boolean, target: Element | null): void {
+  const place = keyPlace(target);
+  if (place === "yaml") {
+    searchInYaml(target, ungroup ? "previous" : "next");
+    return;
+  }
+  if (place === "input" || document.querySelector("[aria-modal]")) return;
+  if (ungroup) editCommands.ungroup();
+  else editCommands.group();
 }
 
 export function useShortcuts(): void {

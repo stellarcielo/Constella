@@ -121,3 +121,36 @@ describe("すべて選択・取り消し", () => {
     expect(env.s().topology.devices.has("rt2")).toBe(true);
   });
 });
+
+describe("グループにする・解除(SPEC 7.5)", () => {
+  it("選んでいる機器でグループを作って選び、知らせる", () => {
+    const store = createTopologyStore(testCatalog);
+    store.getState().openText(specExample);
+    const onGroupCreated = vi.fn();
+    const commands = createEditCommands({
+      store,
+      clipboard: { readClipboardText: async () => "", writeClipboardText: async () => {} },
+      isTextInputFocused: () => false,
+      textCommand: vi.fn(),
+      onGroupCreated,
+    });
+    expect(commands.group()).toBe(false);
+    store.getState().setSelection({ devices: ["rt1", "srv1"], links: [] });
+    expect(commands.group()).toBe(true);
+    const group = store.getState().topology.groups[0];
+    expect(group.members).toEqual(["rt1", "srv1"]);
+    expect(store.getState().selection.group).toBe(group.uid);
+    expect(onGroupCreated).toHaveBeenCalledWith(group.uid);
+  });
+
+  it("選んでいるグループを消し、機器の選択は残す", () => {
+    const env = setup();
+    expect(env.commands.ungroup()).toBe(false);
+    env.s().setSelection({ devices: ["rt1"], links: [] });
+    env.commands.group();
+    expect(env.commands.ungroup()).toBe(true);
+    expect(env.s().topology.groups).toEqual([]);
+    expect(env.s().topology.devices.has("rt1")).toBe(true);
+    expect(env.s().selection).toEqual({ devices: ["rt1"], links: [] });
+  });
+});

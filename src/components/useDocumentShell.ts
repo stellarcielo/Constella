@@ -7,6 +7,8 @@ import { platform } from "../platform";
 import { openModelManager } from "./ModelManager/managerStore";
 import { recentFilesStore, topologyStore, uiStore, useTopology, VIEW_LAYERS } from "../store";
 import { recentLabels } from "../store/recentFiles";
+import { keyPlace } from "./editKeys";
+import { runGroupShortcut } from "./shortcuts";
 
 export function useDocumentShell(): void {
   const filePath = useTopology((s) => s.filePath);
@@ -33,6 +35,8 @@ export function useDocumentShell(): void {
       clearRecent: () => recentFilesStore.getState().clear(),
       showLayer: (layer) => uiStore.getState().setLayer(layer),
       openModelManager,
+      group: () => runGroupShortcut(false, document.activeElement),
+      ungroup: () => runGroupShortcut(true, document.activeElement),
     });
     return platform.guardClose({
       isDirty: () => topologyStore.getState().dirty,
@@ -66,6 +70,10 @@ export function useDocumentShell(): void {
       } else if (key === "e") {
         e.preventDefault();
         void exportCommands.exportImage(e.shiftKey ? "png" : "svg");
+      } else if (key === "g" && keyPlace(e.target) === "other") {
+        // ⌘G・⇧⌘G(SPEC 7.5)。YAML エディタと入力欄では、エディタ・ブラウザの動作に任せる
+        e.preventDefault();
+        runGroupShortcut(e.shiftKey, e.target instanceof Element ? e.target : null);
       } else if (/^[0-3]$/.test(key) && !e.shiftKey) {
         // 表示レイヤー: ⌘0 = すべて、⌘1〜⌘3 = L1〜L3
         e.preventDefault();

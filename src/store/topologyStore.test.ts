@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { specExample, testCatalog } from "../core/testFixtures";
-import { createTopologyStore, EMPTY_YAML, nodePosition } from "./topologyStore";
+import { createTopologyStore, EMPTY_YAML, keepGroupSelection, nodePosition } from "./topologyStore";
 
 function setup() {
   return createTopologyStore(testCatalog);
@@ -731,5 +731,96 @@ layout:
     expect(s.topology.devices.get("pve1")?.interfaces.has("vmbr0")).toBe(false);
     expect(s.topology.links).toEqual([]);
     expect(s.selection).toEqual({ devices: [], links: [] });
+  });
+});
+
+describe("グループ(SPEC 7.5)", () => {
+  function opened() {
+    const store = setup();
+    store.getState().openText(specExample);
+    return store;
+  }
+
+  it("機器でグループを作って選ぶ。ブリッジの箱などデバイスでない ID は入れない", () => {
+    const store = opened();
+    const uid = store.getState().addGroup(["rt1", "core-sw1", "pve1:vmbr0"]);
+    const s = store.getState();
+    expect(s.topology.groups.map((g) => [g.id, g.members])).toEqual([
+      ["group1", ["rt1", "core-sw1"]],
+    ]);
+    expect(s.selection).toEqual({ devices: ["rt1", "core-sw1"], links: [], group: uid });
+    expect(s.yamlText).toContain("groups:\n  - id: group1\n    members: [ rt1, core-sw1 ]\n");
+  });
+
+  it("デバイスが無ければ作らない", () => {
+    const store = opened();
+    expect(store.getState().addGroup(["pve1:vmbr0"])).toBeUndefined();
+    expect(store.getState().topology.groups).toEqual([]);
+  });
+
+  it("作るのは 1 回で取り消せ、取り消すとグループの選択も外れる", () => {
+    const store = opened();
+    store.getState().addGroup(["rt1"]);
+    store.getState().undo();
+    const s = store.getState();
+    expect(s.topology.groups).toEqual([]);
+    expect(s.selection.group).toBeUndefined();
+  });
+
+  it("グループを選ぶと、図にあるメンバーも選ぶ", () => {
+    const store = setup();
+    store
+      .getState()
+      .openText(`${specExample}groups:\n  - { id: g, members: [ srv1, ghost, srv1, rt1 ] }\n`);
+    const uid = store.getState().topology.groups[0].uid;
+    store.getState().selectGroup(uid);
+    expect(store.getState().selection).toEqual({ devices: ["srv1", "rt1"], links: [], group: uid });
+  });
+
+  it("消したグループは選択から外し、メンバーの選択は残す", () => {
+    const store = opened();
+    const uid = store.getState().addGroup(["rt1"]);
+    if (uid === undefined) throw new Error();
+    store.getState().edit((t) => {
+      t.groups = t.groups.filter((g) => g.uid !== uid);
+    });
+    expect(store.getState().selection).toEqual({ devices: ["rt1"], links: [] });
+  });
+
+  it("YAML で書き換えても、ID が同じなら選んだまま", () => {
+    const store = opened();
+    const uid = store.getState().addGroup(["rt1"]);
+    const text = store
+      .getState()
+      .yamlText.replace("- id: group1\n", "- id: group1\n    label: G\n");
+    store.getState().setYamlDraft(text);
+    store.getState().commitYamlDraft();
+    const s = store.getState();
+    expect(s.topology.groups[0].label).toBe("G");
+    expect(s.selection.group).toBe(uid);
+  });
+});
+
+describe("keepGroupSelection", () => {
+  const current = { devices: ["a", "b", "hidden"], links: [], group: "g" };
+  const shown = (id: string) => id !== "hidden";
+
+  it("キャンバスから同じ機器の選択が届いたら、グループを引き継ぐ(キャンバスに無い機器は比べない)", () => {
+    expect(keepGroupSelection(current, { devices: ["b", "a"], links: [] }, shown)).toEqual({
+      devices: ["b", "a"],
+      links: [],
+      group: "g",
+    });
+  });
+
+  it("選択が変わったら、グループを外す", () => {
+    expect(keepGroupSelection(current, { devices: ["a"], links: [] }, shown)).toEqual({
+      devices: ["a"],
+      links: [],
+    });
+    expect(keepGroupSelection(current, { devices: ["a", "b"], links: ["l1"] }, shown)).toEqual({
+      devices: ["a", "b"],
+      links: ["l1"],
+    });
   });
 });

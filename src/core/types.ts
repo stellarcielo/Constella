@@ -192,6 +192,8 @@ export interface LabelOffset {
 
 export interface Group {
   id: string;
+  /** メモリ上だけで使う識別子(YAML には書き出さない)。ID は空や重複のこともあるので、GUI ではこれで指す */
+  uid: string;
   kind?: GroupKind;
   label?: string;
   members: string[];

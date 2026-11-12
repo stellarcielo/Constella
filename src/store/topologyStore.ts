@@ -11,6 +11,7 @@ import { createStore } from "zustand/vanilla";
 import {
   addBridge,
   addDevice,
+  addGroup,
   addLink,
   adoptIdentity,
   allBridges,
@@ -21,6 +22,7 @@ import {
   dropRemovedBends,
   dropRemovedLabels,
   type Endpoint,
+  findGroup,
   ifNameKey,
   type Issue,
   type LabelOffset,
@@ -57,6 +59,24 @@ export interface Selection {
   /** デバイスID と、ブリッジの箱の ID(`ホストのデバイスID:ブリッジ名`。SPEC 4.6) */
   devices: string[];
   links: string[];
+  /** 選んでいるグループの内部の識別子(uid。SPEC 7.5)。選ぶと、メンバーの機器も devices に入れる */
+  group?: string;
+}
+
+/**
+ * キャンバスから届いた選択に、今選んでいるグループを引き継ぐ。選んでいる機器・リンクが変わらなければ
+ * グループもそのまま(グループを選ぶとキャンバスが選択の印を合わせ、同じ選択が届くため)。
+ * shown はキャンバスにある機器(隠したゲストなど、キャンバスに無い機器は比べない)
+ */
+export function keepGroupSelection(
+  current: Selection,
+  next: Selection,
+  shown: (id: string) => boolean,
+): Selection {
+  if (current.group === undefined || next.group !== undefined) return next;
+  const same =
+    sameItems(current.devices.filter(shown), next.devices) && sameItems(current.links, next.links);
+  return same ? { ...next, group: current.group } : next;
 }
 
 /**
@@ -160,6 +180,10 @@ export interface TopologyState {
   deleteElements(elements: Partial<Selection>): void;
   deleteSelection(): void;
   setSelection(selection: Selection): void;
+  /** 機器でグループを作り(SPEC 7.5)、そのグループを選ぶ。作ったグループの uid を返す(機器が無ければ作らない) */
+  addGroup(members: string[]): string | undefined;
+  /** グループを選ぶ。メンバー(図にあるデバイス)も選ぶ */
+  selectGroup(uid: string): void;
   /** モデルの一覧を差し替え、検証をやり直す(ユーザーモデルの読み込み・変更。フェーズ3-4) */
   setCatalog(catalog: ModelCatalog): void;
   /**
@@ -562,6 +586,25 @@ export function createTopologyStore(
         if (!sameSelection(get().selection, selection)) set({ selection });
       },
 
+      addGroup(members) {
+        const { topology } = get();
+        if (!members.some((id) => topology.devices.has(id))) return undefined;
+        let uid: string | undefined;
+        get().edit((t) => {
+          uid = addGroup(t, members);
+        });
+        if (uid !== undefined) get().selectGroup(uid);
+        return uid;
+      },
+
+      selectGroup(uid) {
+        const { topology } = get();
+        const group = findGroup(topology, uid);
+        if (!group) return;
+        const devices = [...new Set(group.members)].filter((id) => topology.devices.has(id));
+        get().setSelection({ devices, links: [], group: uid });
+      },
+
       setCatalog(next) {
         catalog = next;
         const { topology, base, yamlIssues, yamlErrors } = get();
@@ -699,11 +742,14 @@ function keepExisting(selection: Selection, t: Topology): Selection {
     (id) => t.devices.has(id) || resolveBridgeKey(t, id) === id,
   );
   const links = selection.links.filter((id) => t.links.some((l) => l.id === id));
-  return sameSelection(selection, { devices, links }) ? selection : { devices, links };
+  const group =
+    selection.group !== undefined && findGroup(t, selection.group) ? selection.group : undefined;
+  const next: Selection = group === undefined ? { devices, links } : { devices, links, group };
+  return sameSelection(selection, next) ? selection : next;
 }
 
 function sameSelection(a: Selection, b: Selection): boolean {
-  return sameItems(a.devices, b.devices) && sameItems(a.links, b.links);
+  return sameItems(a.devices, b.devices) && sameItems(a.links, b.links) && a.group === b.group;
 }
 
 function sameItems(a: string[], b: string[]): boolean {

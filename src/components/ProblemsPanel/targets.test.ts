@@ -66,15 +66,18 @@ describe("issueFocus", () => {
     expect(issueFocus({ kind: "document" }, t)).toBeUndefined();
   });
 
-  it("グループでは、存在するメンバーを選ぶ(無ければ何も選ばない)", () => {
+  it("グループでは、グループと存在するメンバーを選ぶ(メンバーがいなくてもグループは選ぶ)", () => {
     const grouped = load(
       "constella: 1\ndevices:\n  a: {}\n  b: {}\ngroups:\n  - { id: g, members: [ a, ghost, b, a ] }\n  - { id: e, members: [ ghost ] }\n",
     );
     expect(issueFocus({ kind: "group", index: 0 }, grouped)).toEqual({
-      selection: { devices: ["a", "b"], links: [] },
+      selection: { devices: ["a", "b"], links: [], group: grouped.groups[0].uid },
       devices: ["a", "b"],
     });
-    expect(issueFocus({ kind: "group", index: 1 }, grouped)).toBeUndefined();
+    expect(issueFocus({ kind: "group", index: 1 }, grouped)).toEqual({
+      selection: { devices: [], links: [], group: grouped.groups[1].uid },
+      devices: [],
+    });
     expect(issueFocus({ kind: "group", index: 5 }, grouped)).toBeUndefined();
   });
 });

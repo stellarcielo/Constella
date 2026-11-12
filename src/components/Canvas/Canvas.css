@@ -383,6 +383,12 @@
   fill: var(--group-host-fill);
 }
 
+/* 選んだグループの枠(SPEC 7.5)。種類の線の形はそのままに、色と太さで目立たせる */
+.group-frame.selected {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
 /* 枠のラベル。線より手前に背景付きで描き、クリックでメンバーを選択する */
 .group-label {
   position: absolute;
@@ -432,4 +438,8 @@
 
 .group-label.kind-host {
   color: var(--group-host);
+}
+
+.group-label.selected {
+  outline: 2px solid var(--accent);
 }

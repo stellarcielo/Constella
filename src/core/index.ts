@@ -17,6 +17,7 @@ export { locateTarget, validateTopology } from "./validate";
 export { expandPortName, type ExpandResult } from "./portExpand";
 export { buildCatalog, type ModelParseResult, parseModelDefinition } from "./modelLibrary";
 export * from "./edit";
+export * from "./groups";
 export * from "./ports";
 export * from "./media";
 export * from "./transceivers";

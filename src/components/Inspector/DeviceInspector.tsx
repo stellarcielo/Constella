@@ -40,6 +40,7 @@ import { ConfirmDialog } from "../Dialog/ConfirmDialog";
 import { useIfNameFormatter } from "../ifNames";
 import { modelSections } from "../modelSections";
 import { CommitInput, Field } from "./fields";
+import { DeviceGroupList } from "./GroupList";
 import { InterfaceList } from "./InterfaceList";
 import { LogicalIfList } from "./LogicalIfList";
 import { IssueList } from "./IssueList";
@@ -223,6 +224,8 @@ export function DeviceInspector({ device }: { device: Device }) {
       )}
 
       <InterfaceList device={device} />
+
+      <DeviceGroupList device={device} />
 
       <section className="inspector-actions">
         <button

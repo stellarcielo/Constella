@@ -42,6 +42,22 @@ describe("adoptIdentity", () => {
     expect(next.topology.links.map((l) => l.id)).toEqual(prev.links.map((l) => l.id));
   });
 
+  it("グループは ID で対応させる(同じ ID が複数あれば先頭から順に。ID の無いグループは引き継がない)", () => {
+    const text =
+      "constella: 1\ngroups:\n  - { id: a, members: [] }\n  - { id: b, members: [] }\n" +
+      "  - { id: b, members: [] }\n  - { kind: rack, members: [] }\n";
+    const prev = parse(text).topology;
+    // 先頭のグループを消し、ラベルを足したもの
+    const edited = text
+      .replace("  - { id: a, members: [] }\n", "")
+      .replace("{ id: b,", "{ id: b, label: B,");
+    const next = adoptIdentity(prev, parse(edited));
+    const uids = next.topology.groups.map((g) => g.uid);
+    expect(uids.slice(0, 2)).toEqual([prev.groups[1].uid, prev.groups[2].uid]);
+    expect(uids[2]).not.toBe(prev.groups[3].uid);
+    expect(next.base.topology.groups.map((g) => g.uid)).toEqual(uids);
+  });
+
   it("リンクの問題も引き継いだ ID に付け替える", () => {
     const text = "constella: 1\nlinks:\n  - a: x:1\n    b: y:1\n    color: red\n";
     const prev = parse(text).topology;

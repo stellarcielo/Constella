@@ -9,6 +9,7 @@ import type { Issue, Link, Topology } from "./types";
  * 読み直した結果(parsed)に、前の図(prev)の識別子を引き継ぐ。parsed の図を書き換えて返す。
  * - デバイス: ID が同じなら同じもの
  * - リンク: 両端が同じなら同じもの(同じ両端のリンクが複数あれば、先頭から順に対応させる)
+ * - グループ: ID が同じなら同じもの(同じ ID のグループが複数あれば、先頭から順に対応させる)
  */
 export function adoptIdentity(
   prev: Topology,
@@ -33,6 +34,17 @@ export function adoptIdentity(
       ids.set(link.id, carried);
       link.id = carried;
     }
+  }
+
+  const groupPool = new Map<string, string[]>();
+  for (const group of prev.groups) {
+    const uids = groupPool.get(group.id);
+    if (uids) uids.push(group.uid);
+    else groupPool.set(group.id, [group.uid]);
+  }
+  for (const group of topology.groups) {
+    const carried = group.id === "" ? undefined : groupPool.get(group.id)?.shift();
+    if (carried !== undefined) group.uid = carried;
   }
 
   const linkNodes = new Map(

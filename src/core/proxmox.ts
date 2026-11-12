@@ -341,6 +341,7 @@ function importCluster(
 
   t.groups.push({
     id: name,
+    uid: createUid(),
     kind: "cluster",
     members: [...nodeIds.values()],
     ...(networks.size > 0 ? { networks } : {}),

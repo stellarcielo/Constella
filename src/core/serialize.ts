@@ -493,15 +493,27 @@ class Writer {
     if (isSeq(found)) seq = found;
     else if (groups.length === 0) return;
     else seq = this.setSection(root, "groups", new YAMLSeq());
-    const items = seq.items;
-    // グループには ID 以外の識別子が無いので、マップの項目を順番で対応させる
-    const maps = items.filter((i) => isMap(i));
-    maps.forEach((node, i) => {
-      const group = groups[i];
-      if (group) this.syncFields(node, groupFields(group), group.extra);
-      else items.splice(items.indexOf(node), 1);
-    });
-    for (const group of groups.slice(maps.length)) items.push(this.groupNode(group));
+    // 書き出し前の図の i 番目のグループが、i 番目のマップの項目(マップの項目ごとにグループを読むため)。
+    // 内部の識別子(uid)で今のグループと対応させ、消したグループの項目だけを取り除く
+    // (途中のグループを消しても、ほかのグループの書き方やコメントがずれないように)
+    const maps = seq.items.filter((i) => isMap(i));
+    const nodeOf = new Map(
+      this.before.groups.flatMap((g, i) => (maps[i] ? [[g.uid, maps[i]] as const] : [])),
+    );
+    const kept = new Set<unknown>();
+    const added: YAMLMap[] = [];
+    for (const group of groups) {
+      const node = nodeOf.get(group.uid);
+      if (node && !kept.has(node)) {
+        kept.add(node);
+        this.syncFields(node, groupFields(group), group.extra);
+      } else {
+        added.push(this.groupNode(group));
+      }
+    }
+    seq.items = [...seq.items.filter((i) => !isMap(i) || kept.has(i)), ...added];
+    // GUI でグループをすべて消したら、groups ごと消す
+    if (seq.items.length === 0 && this.before.groups.length > 0) root.delete("groups");
   }
 
   /**

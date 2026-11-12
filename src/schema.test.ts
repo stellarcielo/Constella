@@ -65,7 +65,8 @@ function semantic(t: Topology) {
     labelLayout: [...t.labelLayout],
     bends: [...t.bends],
     viewport: t.viewport,
-    groups: t.groups,
+    // uid は読むたびに作るので比べない
+    groups: t.groups.map((group) => ({ ...group, uid: undefined })),
     sdn: t.sdn,
     extra: t.extra,
   };

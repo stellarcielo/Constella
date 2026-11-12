@@ -3,6 +3,7 @@
 // キャンバスと SVG の書き出しで共有する。枠の位置は YAML に書かない(機器を動かせば枠も動く)。
 
 import { bridgeKey, hostBridges, resolveBridgeKey } from "./bridges";
+import { GROUP_KIND_LABELS } from "./groups";
 import { guestsBelow, hostTree, resolveGuest } from "./hosts";
 import type { Group, GroupKind, ModelCatalog, Position, Topology } from "./types";
 
@@ -48,15 +49,8 @@ export const GROUP_LABEL_BAND = 24;
 /** 入れ子 1 段ごとに、外側の枠へ足す余白 */
 export const GROUP_NEST_GAP = 14;
 
-const KIND_NAMES: Record<GroupKind, string> = {
-  site: "拠点",
-  rack: "ラック",
-  vlan: "VLAN",
-  subnet: "サブネット",
-  as: "AS",
-  cluster: "クラスタ",
-  custom: "",
-};
+/** 枠のラベルに添える種類の名前(custom は名前だけにする) */
+const KIND_NAMES: Record<GroupKind, string> = { ...GROUP_KIND_LABELS, custom: "" };
 
 /** 枠のラベル。「種類: 名前」(名前が無ければ id。custom や種類なしは名前だけ) */
 export function groupTitle(group: Group): string {

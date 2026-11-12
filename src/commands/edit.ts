@@ -1,8 +1,15 @@
-// 取り消し・やり直し・コピー・切り取り・貼り付け・すべて選択(SPEC 7.4)。
+// 取り消し・やり直し・コピー・切り取り・貼り付け・すべて選択(SPEC 7.4)と、グループにする・解除(SPEC 7.5)。
 // クリップボードには選択部分を YAML の断片として入れる(フェーズ2-2 Q2)。
 // 取り消し・やり直しは、入力欄(YAML エディタ以外)にフォーカスがあれば、その入力欄の文字の取り消しに回す。
 
-import { allBridges, extractFragment, fragmentToText, parseFragment, pasteFragment } from "../core";
+import {
+  allBridges,
+  extractFragment,
+  fragmentToText,
+  parseFragment,
+  pasteFragment,
+  removeGroup,
+} from "../core";
 import type { Platform } from "../platform/types";
 import type { TopologyStore } from "../store/topologyStore";
 
@@ -16,6 +23,8 @@ export interface EditCommandDeps {
   isTextInputFocused(): boolean;
   /** 入力欄の文字の取り消し・やり直し */
   textCommand(command: "undo" | "redo"): void;
+  /** グループを作った(「グループ」の表示を入れ、ラベル欄にカーソルを置く) */
+  onGroupCreated?(uid: string): void;
 }
 
 export interface EditCommands {
@@ -27,6 +36,10 @@ export interface EditCommands {
   /** クリップボードの断片を貼り付ける。貼れるものが無ければ false */
   paste(): Promise<boolean>;
   selectAll(): void;
+  /** 選んでいる機器でグループを作る(SPEC 7.5)。機器を選んでいなければ false */
+  group(): boolean;
+  /** 選んでいるグループを消す(機器は残す)。グループを選んでいなければ false */
+  ungroup(): boolean;
 }
 
 export function createEditCommands(deps: EditCommandDeps): EditCommands {
@@ -90,6 +103,20 @@ export function createEditCommands(deps: EditCommandDeps): EditCommands {
         devices: [...topology.devices.keys(), ...allBridges(topology).map((b) => b.key)],
         links: topology.links.map((l) => l.id),
       });
+    },
+
+    group() {
+      const uid = store.getState().addGroup(store.getState().selection.devices);
+      if (uid === undefined) return false;
+      deps.onGroupCreated?.(uid);
+      return true;
+    },
+
+    ungroup() {
+      const uid = store.getState().selection.group;
+      if (uid === undefined) return false;
+      store.getState().edit((t) => removeGroup(t, uid));
+      return true;
     },
   };
 }

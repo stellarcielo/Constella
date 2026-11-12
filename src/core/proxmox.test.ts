@@ -381,6 +381,7 @@ describe("importProxmox: クラスタと SDN(SPEC 4.7・フェーズ5-2)", () =>
     expect(t.groups).toEqual([
       {
         id: "lab",
+        uid: expect.any(String),
         kind: "cluster",
         members: ["pve1", "pve2"],
         networks: new Map([

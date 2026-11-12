@@ -134,7 +134,7 @@ describe("removeDevices", () => {
 
   it("グループのメンバーからも取り除く", () => {
     const t = withDevices("a", "b");
-    t.groups.push({ id: "g", members: ["a", "b"], extra: {} });
+    t.groups.push({ id: "g", uid: "g-uid", members: ["a", "b"], extra: {} });
     removeDevices(t, ["a"]);
     expect(t.groups[0].members).toEqual(["b"]);
   });
@@ -199,7 +199,7 @@ describe("checkDeviceId", () => {
 describe("renameDevice", () => {
   it("リンク・layout・グループの参照も書き換え、順序と uid は保つ", () => {
     const t = example();
-    t.groups.push({ id: "g", members: ["rt1", "core-sw1"], extra: {} });
+    t.groups.push({ id: "g", uid: "g-uid", members: ["rt1", "core-sw1"], extra: {} });
     const uid = t.devices.get("core-sw1")?.uid;
     renameDevice(t, "core-sw1", "dist-sw1");
     expect([...t.devices.keys()]).toEqual(["rt1", "dist-sw1", "srv1", "isp"]);

@@ -337,6 +337,42 @@ textarea.field-input {
   font-size: 12px;
 }
 
+/* 行の右端の「外す」ボタン(グループのメンバー・ネットワーク。SPEC 7.5) */
+.if-row-remove {
+  flex: none;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.if-row-remove:hover {
+  background: var(--hover);
+  color: var(--error);
+}
+
+/* クラスタのネットワークの行(名前・サブネット・ボタン) */
+.network-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto;
+  gap: 4px;
+  align-items: start;
+}
+
+.inspector-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.if-row-toggle:disabled {
+  cursor: default;
+}
+
 .if-editor {
   display: flex;
   flex-direction: column;

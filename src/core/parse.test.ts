@@ -114,7 +114,14 @@ describe("parseTopology: 最小構成と既定値", () => {
     );
     expect(issues).toEqual([]);
     expect(topology.groups).toEqual([
-      { id: "rack1", kind: "rack", label: "Rack 1", members: ["rt1", "sw1"], extra: {} },
+      {
+        id: "rack1",
+        uid: expect.any(String),
+        kind: "rack",
+        label: "Rack 1",
+        members: ["rt1", "sw1"],
+        extra: {},
+      },
     ]);
   });
 

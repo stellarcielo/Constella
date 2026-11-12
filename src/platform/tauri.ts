@@ -257,6 +257,9 @@ export const tauriPlatform: Platform = {
         await PredefinedMenuItem.new({ item: "Copy", text: "コピー" }),
         await PredefinedMenuItem.new({ item: "Paste", text: "ペースト" }),
         await PredefinedMenuItem.new({ item: "SelectAll", text: "すべてを選択" }),
+        await separator(),
+        await command("グループにする", "CmdOrCtrl+G", commands.group),
+        await command("グループを解除", "CmdOrCtrl+Shift+G", commands.ungroup),
       ],
     });
     const view = await Submenu.new({

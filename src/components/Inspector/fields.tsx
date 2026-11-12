@@ -71,9 +71,12 @@ export function CommitInput({
   placeholder,
   monospace,
   list,
+  autoFocus,
 }: CommitProps & {
   /** 候補の一覧(datalist)の id。候補に無い値も入れられる */
   list?: string;
+  /** 表示したときにカーソルを置く(作ったグループのラベルなど) */
+  autoFocus?: boolean;
 }) {
   const [draft, setDraft] = useDraft(value);
   const keys = useCommitKeys(() => setDraft(value));
@@ -94,6 +97,7 @@ export function CommitInput({
         value={draft}
         placeholder={placeholder}
         list={list}
+        autoFocus={autoFocus}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"

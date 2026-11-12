@@ -650,7 +650,7 @@ class Parser {
         );
         return;
       }
-      const group: Group = { id: "", members: [], extra: {} };
+      const group: Group = { id: "", uid: createUid(), members: [], extra: {} };
       for (const [key, value, keyNode] of this.entries(item, ctx)) {
         switch (key) {
           case "id":

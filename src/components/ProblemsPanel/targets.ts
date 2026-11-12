@@ -54,7 +54,7 @@ function describeLink(link: Link, show: (iface: string) => string): string {
 /**
  * 問題をクリックしたときに選ぶものと、表示を合わせるデバイス。
  * 図に描けないリンク(端が不正など)も選ぶ(インスペクタで内容を見たり削除したりできる)。
- * グループの問題では、そのグループのメンバー(存在するもの)を選ぶ(枠のラベルのクリックと同じ)。
+ * グループの問題では、そのグループとメンバー(存在するもの)を選ぶ(枠のラベルのクリックと同じ。SPEC 7.5)。
  * ブリッジの IF と、layout のブリッジのキーの問題では、ブリッジの箱を選ぶ(SPEC 4.6)。
  * VNet の問題では、その VNet の箱(描いているもの)を選ぶ(フェーズ4-6)。
  * ファイル全体の問題では何も選ばない。
@@ -97,12 +97,10 @@ export function issueFocus(
       return { selection: { devices: [], links: [link.id] }, devices: [...new Set(nodes)] };
     }
     case "group": {
-      const members = [...new Set(t.groups[target.index]?.members ?? [])].filter((id) =>
-        t.devices.has(id),
-      );
-      return members.length > 0
-        ? { selection: { devices: members, links: [] }, devices: members }
-        : undefined;
+      if (target.index >= t.groups.length) return undefined;
+      const group = t.groups[target.index];
+      const members = [...new Set(group.members)].filter((id) => t.devices.has(id));
+      return { selection: { devices: members, links: [], group: group.uid }, devices: members };
     }
     case "sdn": {
       if (target.section !== "vnets") return undefined;

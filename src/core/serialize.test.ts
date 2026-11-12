@@ -5,6 +5,7 @@ import { rebaseOnText, serializeTopology, STRINGIFY_OPTIONS } from "./serialize"
 import { specExample, testCatalog } from "./testFixtures";
 import { resetBends, setBends } from "./bends";
 import { addDevice, addLink, removeDevices, renameDevice, setDeviceRole } from "./edit";
+import { addGroup, removeGroup, updateGroup } from "./groups";
 import { resetLabels, setLabelOffset } from "./labelLayout";
 import { createEmptyTopology, createLinkId } from "./topology";
 import type { SourceRange, Topology } from "./types";
@@ -765,6 +766,7 @@ groups:
     const { topology, base } = load(text);
     topology.groups.push({
       id: "lab2",
+      uid: "lab2-uid",
       kind: "cluster",
       members: ["pve2"],
       networks: new Map([["corosync", "10.11.0.0/24"]]),
@@ -785,6 +787,71 @@ groups:
     const { topology, base } = load(bad);
     renameDevice(topology, "pve2", "pve-b");
     expect(serializeTopology(topology, base).text).toContain("      corosync: 10 # ring0\n");
+  });
+});
+
+describe("serializeTopology: グループの追加・削除(SPEC 7.5)", () => {
+  const text = `constella: 1
+devices:
+  rt1: { model: generic-router-4 }
+  sw1: { model: generic-switch-24 }
+groups:
+  # 1 つ目
+  - id: site1
+    kind: site
+    members: [ rt1, sw1 ] # 拠点
+  # 2 つ目
+  - id: rack1
+    kind: rack
+    members: [ rt1 ]
+  # 3 つ目
+  - id: rack2 # 予備
+    kind: rack
+    members: [ sw1 ]
+`;
+
+  it("途中のグループを消しても、ほかのグループの書き方とコメントは変えない", () => {
+    const { topology, base } = load(text);
+    removeGroup(topology, topology.groups[1].uid);
+    expect(serializeTopology(topology, base).text).toBe(
+      text.replace("  # 2 つ目\n  - id: rack1\n    kind: rack\n    members: [ rt1 ]\n", ""),
+    );
+  });
+
+  it("消したあとに書き換えても、対応はずれない(読み直した base でも)", () => {
+    const { topology, base } = load(text);
+    removeGroup(topology, topology.groups[0].uid);
+    const first = serializeTopology(topology, base);
+    const rebased = rebaseOnText(first.text, topology, testCatalog);
+    if (!rebased) throw new Error();
+    updateGroup(topology, topology.groups[1].uid, { label: "予備のラック" });
+    const out = serializeTopology(topology, rebased.base).text;
+    expect(out).toContain("  # 2 つ目\n  - id: rack1\n    kind: rack\n    members: [ rt1 ]\n");
+    expect(out).toContain(
+      "  # 3 つ目\n  - id: rack2 # 予備\n    kind: rack\n    members: [ sw1 ]\n    label: 予備のラック\n",
+    );
+  });
+
+  it("新しいグループは最後に足す", () => {
+    const { topology, base } = load(text);
+    addGroup(topology, ["sw1"]);
+    expect(serializeTopology(topology, base).text).toBe(
+      `${text}  - id: group1\n    members: [ sw1 ]\n`,
+    );
+  });
+
+  it("すべて消したら groups ごと消す", () => {
+    const { topology, base } = load(text);
+    for (const group of [...topology.groups]) removeGroup(topology, group.uid);
+    expect(serializeTopology(topology, base).text).not.toContain("groups");
+  });
+
+  it("グループでない項目(読めない値)は残す", () => {
+    const { topology, base } = load(`${text}  - 42\n`);
+    removeGroup(topology, topology.groups[2].uid);
+    const out = serializeTopology(topology, base).text;
+    expect(out).not.toContain("rack2");
+    expect(out).toContain("  - 42\n");
   });
 });
 

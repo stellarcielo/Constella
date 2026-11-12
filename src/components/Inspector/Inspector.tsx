@@ -1,8 +1,11 @@
 // 右側のインスペクタ(SPEC 6章)。選んでいるものに合わせて表示を切り替える。
-// 何も選んでいないときは、トポロジ全体のタイトルと説明(meta)を編集できる。
+// グループを選んでいれば、メンバーも選んでいるが、グループのインスペクタを出す(SPEC 7.5)。
+// 何も選んでいないときは、トポロジ全体のタイトルと説明(meta)を編集でき、グループの一覧を出す。
 
+import { editCommands } from "../../commands";
 import {
   type Device,
+  findGroup,
   type Link,
   parseBridgeKey,
   parseVnetKey,
@@ -13,6 +16,8 @@ import { topologyStore, useTopology } from "../../store";
 import { BridgeInspector } from "./BridgeInspector";
 import { DeviceInspector } from "./DeviceInspector";
 import { CommitInput, CommitTextarea, Field } from "./fields";
+import { GroupInspector } from "./GroupInspector";
+import { TopologyGroupList } from "./GroupList";
 import { LinkInspector } from "./LinkInspector";
 import { VnetInspector } from "./VnetInspector";
 import "./Inspector.css";
@@ -34,8 +39,12 @@ export function Inspector() {
     return parsed && host ? [{ host, bridge: parsed.bridge, vnet }] : [];
   });
 
+  const group = selection.group === undefined ? undefined : findGroup(topology, selection.group);
+
   let body;
-  if (bridges.length === 1 && devices.length === 0 && links.length === 0) {
+  if (group) {
+    body = <GroupInspector key={group.uid} group={group} />;
+  } else if (bridges.length === 1 && devices.length === 0 && links.length === 0) {
     const { host, bridge, vnet } = bridges[0];
     body = vnet ? (
       <VnetInspector key={`${host.uid}:${bridge}`} host={host} vnet={bridge} />
@@ -78,6 +87,16 @@ function SelectionSummary({
         </div>
       </header>
       <section className="inspector-actions">
+        {devices > 0 && (
+          <button
+            type="button"
+            className="inspector-button"
+            title="選んだデバイスでグループを作る(⌘G)"
+            onClick={() => editCommands.group()}
+          >
+            グループにする
+          </button>
+        )}
         <button
           type="button"
           className="inspector-button danger"
@@ -131,6 +150,7 @@ function TopologyInspector() {
           <dd>{issues.length - errors} 件</dd>
         </dl>
       </section>
+      <TopologyGroupList />
     </>
   );
 }

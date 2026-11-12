@@ -24,6 +24,9 @@ export interface MenuCommands {
   showLayer(layer: MenuLayer): void;
   /** モデルの管理画面を開く(SPEC 5.5) */
   openModelManager(): void;
+  /** 選んでいる機器でグループを作る・選んでいるグループを解除する(「編集」メニュー。SPEC 7.5) */
+  group(): void;
+  ungroup(): void;
 }
 
 /** 「表示」メニューで選べる表示レイヤー */

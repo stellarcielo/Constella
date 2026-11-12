@@ -53,6 +53,7 @@ import {
   vnetUplinkTarget,
 } from "../../core";
 import {
+  keepGroupSelection,
   nodePosition,
   type Selection,
   topologyStore,
@@ -108,7 +109,14 @@ const ARROWS: Record<string, Position> = {
   ArrowUp: { x: 0, y: -1 },
   ArrowDown: { x: 0, y: 1 },
 };
-const onPaneClick = () => uiStore.getState().clickPane();
+const onPaneClick = () => {
+  uiStore.getState().clickPane();
+  // メンバーのいないグループを選んでいると、キャンバスの選択は変わらないので、ここで外す(SPEC 7.5)
+  const { selection, setSelection } = topologyStore.getState();
+  if (selection.group !== undefined && selection.devices.length === 0) {
+    setSelection({ devices: [], links: selection.links });
+  }
+};
 
 export function Canvas() {
   return (
@@ -192,7 +200,7 @@ function CanvasInner() {
       return !isGuest(link?.a?.device) && !isGuest(link?.b?.device);
     });
     if (devices.length !== selection.devices.length || links.length !== selection.links.length) {
-      topologyStore.getState().setSelection({ devices, links });
+      topologyStore.getState().setSelection({ ...selection, devices, links });
     }
   }, [showGuests]);
 
@@ -213,11 +221,20 @@ function CanvasInner() {
   // キャンバスで選んだ選択(React Flow の印が先に付いている)は、キャンバスに書き戻さない。
   // 範囲選択の最中はノードとリンクの選択が別々に届くので、書き戻すと選択が行き来し続ける
   const [canvasSelection, setCanvasSelection] = useState<Selection>();
-  const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => {
-    const next = { devices: nodes.map((n) => n.id), links: edges.map((e) => e.id) };
-    setCanvasSelection(next);
-    topologyStore.getState().setSelection(next);
-  }, []);
+  const onSelectionChange = useCallback(
+    ({ nodes, edges }: OnSelectionChangeParams) => {
+      // 選んでいる機器が変わらなければ、選んでいるグループもそのまま(SPEC 7.5)
+      const shown = new Set(getNodes().map((n) => n.id));
+      const next = keepGroupSelection(
+        topologyStore.getState().selection,
+        { devices: nodes.map((n) => n.id), links: edges.map((e) => e.id) },
+        (id) => shown.has(id),
+      );
+      setCanvasSelection(next);
+      topologyStore.getState().setSelection(next);
+    },
+    [getNodes],
+  );
   const [prevSelection, setPrevSelection] = useState(selection);
   if (derived !== prevDerived || rejectedEdits !== prevRejected) {
     setPrevDerived(derived);
