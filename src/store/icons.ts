@@ -25,6 +25,8 @@ export interface IconsState {
    * キャンセルなら undefined。大きすぎる画像は取り込まずに例外にする
    */
   importImage(): Promise<string | undefined>;
+  /** 名前を決めた画像をまとめて書き込み、最後に 1 回だけ読み直す(まとめたファイルからの取り込み。SPEC 5.5) */
+  addImages(images: readonly { file: string; data: Uint8Array<ArrayBuffer> }[]): Promise<void>;
   remove(file: string): Promise<void>;
 }
 
@@ -66,6 +68,14 @@ export function createIconsStore(io: IconsIo) {
       await io.write(file, chosen.data);
       await get().reload();
       return file;
+    },
+
+    async addImages(images) {
+      try {
+        for (const { file, data } of images) await io.write(file, data);
+      } finally {
+        await get().reload();
+      }
     },
 
     async remove(file) {

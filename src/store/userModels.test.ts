@@ -38,6 +38,19 @@ describe("ユーザーモデル(フェーズ3-4)", () => {
     expect(env.s().files).toEqual([]);
   });
 
+  it("まとめて保存すると、最後に読み直す(SPEC 5.5)", async () => {
+    const env = setup({ "a.yaml": model("a") });
+    await env.s().reload();
+    await env.s().saveAll([
+      { file: "a.yaml", text: model("a", "router") },
+      { file: "b.yaml", text: model("b") },
+    ]);
+    expect(env.s().files.map((f) => [f.file, f.model?.role])).toEqual([
+      ["a.yaml", "router"],
+      ["b.yaml", "l2switch"],
+    ]);
+  });
+
   it("フォルダが読めなければ理由を残す", async () => {
     const store = createUserModelsStore({
       list: async () => {

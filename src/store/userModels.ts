@@ -36,6 +36,8 @@ export interface UserModelsState {
   reload(): Promise<void>;
   /** 保存する。編集前のファイル名(previousFile)と違えば、古いファイルを消す(ID を変えたとき) */
   save(file: string, text: string, previousFile?: string): Promise<void>;
+  /** まとめて保存し、最後に 1 回だけ読み直す(まとめたファイルからの取り込み。SPEC 5.5) */
+  saveAll(files: readonly { file: string; text: string }[]): Promise<void>;
   remove(file: string): Promise<void>;
 }
 
@@ -83,6 +85,14 @@ export function createUserModelsStore(io: UserModelIo) {
       await io.write(file, text);
       if (previousFile !== undefined && previousFile !== file) await io.remove(previousFile);
       await get().reload();
+    },
+
+    async saveAll(files) {
+      try {
+        for (const { file, text } of files) await io.write(file, text);
+      } finally {
+        await get().reload();
+      }
     },
 
     async remove(file) {

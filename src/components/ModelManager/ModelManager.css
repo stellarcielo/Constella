@@ -161,3 +161,37 @@
 .model-manager-spacer {
   flex: 1;
 }
+
+/* 書き出すモデルを選ぶ画面 */
+.model-export {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.model-export-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.model-export-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.model-export-item:hover {
+  background: var(--hover);
+}
+
+.model-export-item.all {
+  font-weight: 600;
+}

@@ -37,4 +37,5 @@ export * from "./guestDrop";
 export * from "./placement";
 export * from "./ifLabel";
 export * from "./modelForm";
+export * from "./modelBundle";
 export * from "./proxmox";

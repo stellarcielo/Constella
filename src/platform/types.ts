@@ -42,8 +42,11 @@ export interface RecentFileItem {
 /** 書き出す画像の形式 */
 export type ImageFormat = "svg" | "png";
 
-/** 選んで読み込むファイルの種類。トポロジの YAML か、Proxmox VE の書き出し(JSON。SPEC 4.7) */
-export type OpenFileKind = "topology" | "proxmox";
+/**
+ * 選んで読み込む・保存するファイルの種類。トポロジの YAML、Proxmox VE の書き出し(JSON。SPEC 4.7)、
+ * モデルとアイコンをまとめたファイル(YAML。SPEC 5.5)
+ */
+export type OpenFileKind = "topology" | "proxmox" | "models";
 
 export interface Platform {
   /** メニューバー(OS のもの)でショートカットを扱うか。扱わないならアプリ側のキー操作で受ける */
@@ -52,8 +55,8 @@ export interface Platform {
   openTextFile(kind?: OpenFileKind): Promise<{ path: string; text: string } | null>;
   /** パスを指定して読み込む(最近使った項目を開くとき) */
   readTextFile(path: string): Promise<string>;
-  /** 保存先を選ぶ。キャンセルなら null */
-  chooseSavePath(defaultName: string): Promise<string | null>;
+  /** 保存先を選ぶ(省略時はトポロジの YAML)。キャンセルなら null */
+  chooseSavePath(defaultName: string, kind?: OpenFileKind): Promise<string | null>;
   writeTextFile(path: string, text: string): Promise<void>;
   /** 画像の書き出し先を選ぶ。キャンセルなら null */
   chooseExportPath(defaultName: string, format: ImageFormat): Promise<string | null>;

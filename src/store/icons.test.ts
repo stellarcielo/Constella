@@ -53,6 +53,18 @@ describe("アイコンの画像(SPEC 5.1・5.2)", () => {
     expect(big.io.write).not.toHaveBeenCalled();
   });
 
+  it("名前を決めた画像をまとめて書き込み、読み直す(SPEC 5.5)", async () => {
+    const { io, files } = memoryIo({ "a.svg": "<svg/>" });
+    const store = createIconsStore(io);
+    await store.getState().reload();
+    await store.getState().addImages([
+      { file: "b.png", data: bytes("PNG") },
+      { file: "a-2.svg", data: bytes("<svg>2</svg>") },
+    ]);
+    expect([...files.keys()]).toEqual(["a.svg", "b.png", "a-2.svg"]);
+    expect([...store.getState().images.keys()]).toEqual(["a-2.svg", "a.svg", "b.png"]);
+  });
+
   it("消すとフォルダから消して読み直す。フォルダが読めなければ理由を持つ", async () => {
     const { io } = memoryIo({ "a.svg": "<svg/>" });
     const store = createIconsStore(io);

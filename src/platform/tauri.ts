@@ -30,6 +30,7 @@ const FILTERS = [{ name: "Constella トポロジ(YAML)", extensions: ["yaml", "y
 const OPEN_FILTERS: Record<OpenFileKind, { name: string; extensions: string[] }[]> = {
   topology: FILTERS,
   proxmox: [{ name: "Proxmox VE の書き出し(JSON)", extensions: ["json"] }],
+  models: [{ name: "Constella のモデルとアイコン(YAML)", extensions: ["yaml", "yml"] }],
 };
 const IMAGE_FILTERS: Record<ImageFormat, { name: string; extensions: string[] }[]> = {
   svg: [{ name: "SVG 画像", extensions: ["svg"] }],
@@ -104,8 +105,8 @@ export const tauriPlatform: Platform = {
     return readTextFile(path);
   },
 
-  async chooseSavePath(defaultName) {
-    return save({ defaultPath: defaultName, filters: FILTERS });
+  async chooseSavePath(defaultName, kind = "topology") {
+    return save({ defaultPath: defaultName, filters: OPEN_FILTERS[kind] });
   },
 
   async writeTextFile(path, text) {

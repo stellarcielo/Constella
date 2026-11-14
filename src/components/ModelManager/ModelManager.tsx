@@ -1,5 +1,7 @@
 // モデルの管理画面(SPEC 5.5)。左にモデルの一覧(読めないユーザーモデルのファイルも)、右に選んだモデルの
 // 中身と操作(追加・複製・編集・削除・アイコンの設定)。追加・編集は、今のダイアログ(ModelEditor)を開く。
+// 下のボタンで、ユーザーモデルとアイコンを 1 つのファイルに書き出す・そこから読み込む(書き出すモデルは、
+// 画面を切り替えてチェックで選ぶ)。
 
 import { useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -16,7 +18,9 @@ import { PORT_TYPE_LABELS } from "../portTypes";
 import {
   duplicateModel,
   editModel,
+  exportModelBundle,
   iconDescription,
+  importModelBundle,
   modelUsage,
   removeModelFile,
   setUserModelIcon,
@@ -59,6 +63,8 @@ function ModelManager() {
   const images = useIcons((s) => s.images);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selected>();
+  /** 書き出すモデルを選んでいる間の、選んだファイル名 */
+  const [exporting, setExporting] = useState<ReadonlySet<string> | null>(null);
 
   /** ユーザーモデルの ID → ファイル */
   const userFiles = useMemo(
@@ -66,6 +72,8 @@ function ModelManager() {
     [files],
   );
   const broken = files.filter((f) => !f.model);
+  const readable = files.filter((f) => f.model);
+  const toExport = readable.filter((f) => exporting?.has(f.file));
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matches = (m: DeviceModel) =>
@@ -87,96 +95,188 @@ function ModelManager() {
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.stopPropagation();
-            closeModelManager();
+            // 書き出すモデルを選んでいる間は、選ぶのをやめるだけ
+            if (exporting) setExporting(null);
+            else closeModelManager();
           }
         }}
       >
         <h2 id={titleId} className="dialog-title">
-          モデルの管理
+          {exporting ? "モデルを書き出す" : "モデルの管理"}
         </h2>
-        <div className="model-manager-body">
-          <div className="model-manager-side">
-            <input
-              className="field-input"
-              type="search"
-              placeholder="モデルを検索"
-              aria-label="モデルを検索"
-              value={query}
-              autoFocus
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <div className="model-manager-list">
-              {groups.map(({ key, label, models }) => (
-                <section key={key}>
-                  <h3 className="model-manager-group">{label}</h3>
-                  {models.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`model-manager-item${model?.id === m.id ? " selected" : ""}`}
-                      onClick={() => setSelected({ kind: "model", id: m.id })}
-                    >
-                      <span className={`role-icon role-${m.role}`}>
-                        <ModelIcon role={m.role} icon={m.icon} size={22} />
-                      </span>
-                      <span className="model-manager-item-text">
-                        <span>{m.name ?? m.id}</span>
-                        <span className="model-manager-item-sub">
-                          {userFiles.has(m.id) && <span className="palette-badge">ユーザー</span>}
-                          {m.vendor}
+        {exporting ? (
+          <ExportPicker files={readable} selected={exporting} onChange={setExporting} />
+        ) : (
+          <div className="model-manager-body">
+            <div className="model-manager-side">
+              <input
+                className="field-input"
+                type="search"
+                placeholder="モデルを検索"
+                aria-label="モデルを検索"
+                value={query}
+                autoFocus
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="model-manager-list">
+                {groups.map(({ key, label, models }) => (
+                  <section key={key}>
+                    <h3 className="model-manager-group">{label}</h3>
+                    {models.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`model-manager-item${model?.id === m.id ? " selected" : ""}`}
+                        onClick={() => setSelected({ kind: "model", id: m.id })}
+                      >
+                        <span className={`role-icon role-${m.role}`}>
+                          <ModelIcon role={m.role} icon={m.icon} size={22} />
                         </span>
-                      </span>
-                    </button>
-                  ))}
-                </section>
-              ))}
-              {groups.length === 0 && <p className="muted">一致するモデルがありません</p>}
-              {(broken.length > 0 || loadError) && (
-                <section>
-                  <h3 className="model-manager-group">読めないファイル</h3>
-                  {loadError && (
-                    <p className="model-manager-error">フォルダを読めませんでした: {loadError}</p>
-                  )}
-                  {broken.map((f) => (
-                    <button
-                      key={f.file}
-                      type="button"
-                      className={`model-manager-item${brokenFile?.file === f.file ? " selected" : ""}`}
-                      onClick={() => setSelected({ kind: "broken", file: f.file })}
-                    >
-                      <span className="model-manager-item-text mono">{f.file}</span>
-                    </button>
-                  ))}
-                </section>
+                        <span className="model-manager-item-text">
+                          <span>{m.name ?? m.id}</span>
+                          <span className="model-manager-item-sub">
+                            {userFiles.has(m.id) && <span className="palette-badge">ユーザー</span>}
+                            {m.vendor}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </section>
+                ))}
+                {groups.length === 0 && <p className="muted">一致するモデルがありません</p>}
+                {(broken.length > 0 || loadError) && (
+                  <section>
+                    <h3 className="model-manager-group">読めないファイル</h3>
+                    {loadError && (
+                      <p className="model-manager-error">フォルダを読めませんでした: {loadError}</p>
+                    )}
+                    {broken.map((f) => (
+                      <button
+                        key={f.file}
+                        type="button"
+                        className={`model-manager-item${brokenFile?.file === f.file ? " selected" : ""}`}
+                        onClick={() => setSelected({ kind: "broken", file: f.file })}
+                      >
+                        <span className="model-manager-item-text mono">{f.file}</span>
+                      </button>
+                    ))}
+                  </section>
+                )}
+              </div>
+            </div>
+            <div className="model-manager-detail">
+              {model ? (
+                <ModelDetail model={model} file={userFiles.get(model.id)} images={images} />
+              ) : brokenFile ? (
+                <BrokenDetail file={brokenFile} onRemoved={() => setSelected(undefined)} />
+              ) : (
+                <p className="muted">左の一覧からモデルを選んでください</p>
               )}
             </div>
           </div>
-          <div className="model-manager-detail">
-            {model ? (
-              <ModelDetail model={model} file={userFiles.get(model.id)} images={images} />
-            ) : brokenFile ? (
-              <BrokenDetail file={brokenFile} onRemoved={() => setSelected(undefined)} />
-            ) : (
-              <p className="muted">左の一覧からモデルを選んでください</p>
-            )}
+        )}
+        {exporting ? (
+          <div className="dialog-actions">
+            <span className="model-manager-spacer" />
+            <button type="button" className="dialog-button" onClick={() => setExporting(null)}>
+              キャンセル
+            </button>
+            <button
+              type="button"
+              className="dialog-button primary"
+              disabled={toExport.length === 0}
+              onClick={() =>
+                void exportModelBundle(toExport).then((done) => {
+                  if (done) setExporting(null);
+                })
+              }
+            >
+              書き出す…
+            </button>
           </div>
-        </div>
-        <div className="dialog-actions">
-          <button
-            type="button"
-            className="dialog-button"
-            onClick={() => openModelEditor(emptyModelForm())}
-          >
-            ＋ モデルを追加
-          </button>
-          <span className="model-manager-spacer" />
-          <button type="button" className="dialog-button primary" onClick={closeModelManager}>
-            閉じる
-          </button>
-        </div>
+        ) : (
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="dialog-button"
+              onClick={() => openModelEditor(emptyModelForm())}
+            >
+              ＋ モデルを追加
+            </button>
+            <button
+              type="button"
+              className="dialog-button"
+              title="ユーザーモデルと、それが使うアイコンの画像を 1 つのファイルに書き出す"
+              disabled={readable.length === 0}
+              onClick={() => setExporting(new Set(readable.map((f) => f.file)))}
+            >
+              書き出す…
+            </button>
+            <button
+              type="button"
+              className="dialog-button"
+              title="書き出したファイルから、モデルとアイコンの画像を取り込む"
+              onClick={() => void importModelBundle()}
+            >
+              読み込む…
+            </button>
+            <span className="model-manager-spacer" />
+            <button type="button" className="dialog-button primary" onClick={closeModelManager}>
+              閉じる
+            </button>
+          </div>
+        )}
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** 書き出すユーザーモデルを選ぶ(チェックを付けたものを書き出す) */
+function ExportPicker({
+  files,
+  selected,
+  onChange,
+}: {
+  files: readonly UserModelFile[];
+  selected: ReadonlySet<string>;
+  onChange(selected: ReadonlySet<string>): void;
+}) {
+  const all = files.every((f) => selected.has(f.file));
+  const toggle = (file: string) => {
+    const next = new Set(selected);
+    if (next.has(file)) next.delete(file);
+    else next.add(file);
+    onChange(next);
+  };
+  return (
+    <div className="model-export">
+      <p className="model-detail-note">
+        書き出すユーザーモデルを選んでください。選んだモデルが使うアイコンの画像も、一緒に入れます。
+      </p>
+      <label className="model-export-item all">
+        <input
+          type="checkbox"
+          checked={all}
+          onChange={() => onChange(new Set(all ? [] : files.map((f) => f.file)))}
+        />
+        すべて({selected.size} / {files.length} 個)
+      </label>
+      <div className="model-export-list">
+        {files.map((f) => (
+          <label key={f.file} className="model-export-item">
+            <input type="checkbox" checked={selected.has(f.file)} onChange={() => toggle(f.file)} />
+            {f.model && (
+              <span className={`role-icon role-${f.model.role}`}>
+                <ModelIcon role={f.model.role} icon={f.model.icon} size={20} />
+              </span>
+            )}
+            <span>{f.model?.name ?? f.model?.id}</span>
+            <span className="mono muted">{f.model?.id}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 
