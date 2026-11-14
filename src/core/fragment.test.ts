@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractFragment, fragmentToText, parseFragment, pasteFragment } from "./fragment";
+import {
+  extractFragment,
+  fragmentCenter,
+  fragmentToText,
+  parseFragment,
+  pasteFragment,
+} from "./fragment";
 import { parseTopology } from "./parse";
 import { specExample, testCatalog } from "./testFixtures";
 import type { Topology } from "./types";
@@ -24,6 +30,23 @@ describe("extractFragment", () => {
     const t = load();
     const fragment = extractFragment(t, ["rt1"]);
     expect(fragment.devices.get("rt1")).not.toBe(t.devices.get("rt1"));
+  });
+});
+
+describe("fragmentCenter", () => {
+  it("デバイスの座標を囲む四角の真ん中(座標の無いデバイスとブリッジの位置は数えない)", () => {
+    const fragment = load(`constella: 1
+devices:
+  a: { role: pc }
+  b: { role: pc }
+  c: { role: pc }
+layout:
+  a: { x: 0, y: 0 }
+  b: { x: 200, y: 100 }
+  a:vmbr0: { x: 900, y: 900 }
+`);
+    expect(fragmentCenter(fragment)).toEqual({ x: 100, y: 50 });
+    expect(fragmentCenter(load("constella: 1\ndevices:\n  a: { role: pc }\n"))).toBeUndefined();
   });
 });
 

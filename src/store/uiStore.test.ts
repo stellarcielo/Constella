@@ -77,6 +77,23 @@ describe("uiStore: 接続モード", () => {
   });
 });
 
+describe("uiStore: 右クリックのメニュー(SPEC 7.6)", () => {
+  it("開く・閉じる", () => {
+    const store = createUiStore();
+    store.getState().openContextMenu({ x: 10, y: 20, target: { kind: "nodes" } });
+    expect(store.getState().contextMenu).toEqual({ x: 10, y: 20, target: { kind: "nodes" } });
+    store.getState().closeContextMenu();
+    expect(store.getState().contextMenu).toBeUndefined();
+  });
+
+  it("「接続を始める」は、接続モードにしてそのデバイスのポートを選ぶところから", () => {
+    const store = createUiStore();
+    store.getState().startConnect("rt1");
+    expect(store.getState().mode).toBe("connect");
+    expect(store.getState().connect).toEqual({ stage: "pickA", device: "rt1" });
+  });
+});
+
 describe("uiStore: 表示オプション", () => {
   function memoryStorage(initial?: string): ViewStorage & { data: Map<string, string> } {
     const data = new Map<string, string>(initial ? [["constella.view", initial]] : []);

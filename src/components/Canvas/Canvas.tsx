@@ -1,6 +1,7 @@
 // React Flow のキャンバス。表示はストアのトポロジから作り、
 // ドラッグ中の位置だけは画面側で持って、ドロップしたときに 1 回ストアへ書き込む(SPEC 8.2)。
 // ドラッグ中は、ほかの機器(グリッドを使うときは方眼にも)そろうように吸い付かせる(SPEC 7.4)。
+// 右クリックでは、右クリックのメニューを出す(SPEC 7.6)。
 
 import {
   applyEdgeChanges,
@@ -9,6 +10,7 @@ import {
   BackgroundVariant,
   Controls,
   type EdgeChange,
+  type EdgeMouseHandler,
   type EdgeTypes,
   type Node,
   type NodeChange,
@@ -21,7 +23,15 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   allBridges,
   bendKey,
@@ -61,6 +71,8 @@ import {
   useTopology,
   useUi,
 } from "../../store";
+import { ContextMenu } from "../ContextMenu/ContextMenu";
+import { openContextMenu } from "../ContextMenu/open";
 import { MODEL_DRAG_TYPE } from "../dnd";
 import { isTyping, releaseInputFocus } from "../shortcuts";
 import { BendHandles } from "./BendHandles";
@@ -82,6 +94,9 @@ const edgeTypes: EdgeTypes = { link: LinkEdge, uplink: UplinkEdge };
 const DELETE_KEYS = ["Backspace", "Delete"];
 const MULTI_SELECT_KEYS = ["Shift", "Meta"];
 const PAN_BUTTONS = [1, 2];
+/** 右クリックのメニューを、それぞれの右クリックで出す物(何も無い所の control + クリックと分けるため) */
+const MENU_OWNERS =
+  ".react-flow__node, .react-flow__edge, .react-flow__nodesselection, .react-flow__controls, .group-label, .link-if-label";
 /** 背景の点の間隔。グリッドを使うときは、アイコンの中心をこの方眼に合わせる(SPEC 7.4) */
 const GRID = 20;
 /** ほかの機器とそろえる距離(画面の px) */
@@ -99,6 +114,33 @@ const onNodeClick: NodeMouseHandler<CanvasNode> = (_e, node) => {
   }
   const link = uiStore.getState().clickBridge({ device: node.data.host, iface: node.data.name });
   if (link) topologyStore.getState().addLink(link.a, link.b);
+};
+
+/** 機器・ブリッジの箱の右クリック(SPEC 7.6)。選んでいなければ、それだけを選ぶ */
+const onNodeContextMenu: NodeMouseHandler<CanvasNode> = (e, node) => {
+  e.preventDefault();
+  const { devices } = topologyStore.getState().selection;
+  openContextMenu(
+    e,
+    { kind: "nodes" },
+    devices.includes(node.id) ? undefined : { devices: [node.id], links: [] },
+  );
+};
+/** 線の右クリック。ブリッジとホストの間などの点線(uplink)はリンクではないので、メニューを出さない */
+const onEdgeContextMenu: EdgeMouseHandler<CanvasEdge> = (e, edge) => {
+  e.preventDefault();
+  if (edge.type !== "link") return;
+  const { links } = topologyStore.getState().selection;
+  openContextMenu(
+    e,
+    { kind: "links" },
+    links.includes(edge.id) ? undefined : { devices: [], links: [edge.id] },
+  );
+};
+/** 範囲選択した機器を囲む枠の右クリック */
+const onSelectionContextMenu = (e: ReactMouseEvent) => {
+  e.preventDefault();
+  openContextMenu(e, { kind: "nodes" });
 };
 
 /** 矢印キーで選択中の機器を動かす量(⇧キーを押していれば 4 倍) */
@@ -373,12 +415,40 @@ function CanvasInner() {
     [screenToFlowPosition, getNodes],
   );
 
+  // 何も無い所の右クリック。右ボタンは図を動かすドラッグにも使うので、React Flow が
+  // 動かさずに離したときだけ知らせる(SPEC 7.6)。貼り付けた機器の真ん中のアイコンの中心が、
+  // 右クリックした位置に来るようにする(パレットから置くときと同じ)
+  const onPaneContextMenu = useCallback(
+    (e: MouseEvent | ReactMouseEvent) => {
+      e.preventDefault();
+      const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      openContextMenu(e, {
+        kind: "pane",
+        at: { x: p.x - DEVICE_NODE_WIDTH / 2, y: p.y - DEVICE_ICON_BOX / 2 },
+      });
+    },
+    [screenToFlowPosition],
+  );
+
   const selecting = mode === "select";
   return (
     <div
       className={`canvas mode-${mode}`}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onContextMenu={(e) => {
+        // キャンバスでは、WebView の標準のメニューを出さない
+        e.preventDefault();
+        // 何も無い所の control + クリック(左ボタン)は React Flow が知らせないので、ここで開く
+        const target = e.target instanceof Element ? e.target : null;
+        if (
+          e.button === 0 &&
+          target?.closest(".react-flow__pane") &&
+          !target.closest(MENU_OWNERS)
+        ) {
+          onPaneContextMenu(e);
+        }
+      }}
       // キャンバスを触ったら、インスペクタなどの入力欄からフォーカスを外す(キー操作をキャンバスに効かせる)。
       // body に出すポート選択ポップアップの中の操作もここを通るが、その検索欄からは外さない
       onPointerDownCapture={(e) => {
@@ -399,6 +469,10 @@ function CanvasInner() {
         onDelete={onDelete}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
+        onSelectionContextMenu={onSelectionContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         deleteKeyCode={DELETE_KEYS}
         disableKeyboardA11y
         multiSelectionKeyCode={MULTI_SELECT_KEYS}
@@ -423,6 +497,7 @@ function CanvasInner() {
         <GroupFrames />
         <ConnectOverlay />
       </ReactFlow>
+      <ContextMenu />
     </div>
   );
 }

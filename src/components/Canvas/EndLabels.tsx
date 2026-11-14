@@ -4,6 +4,7 @@
 // フェーズ4-2 Q3・4-3 Q2)と、自分自身へのリンクの輪のラベルもここで描く。線は LinkEdge・UplinkEdge が描く。
 // 選択モードでは、ラベルをドラッグで動かせる(位置は layout._labels に、ドロップしたときに 1 回書く)。
 // ダブルクリックで自動の位置に戻し、クリックでそのリンクを選ぶ。自分自身へのリンクの輪のラベルは動かせない。
+// 右クリックでは、そのリンクの右クリックのメニューを出す(SPEC 7.6)。
 // ReactFlow の子として置く(フローの座標変換と、ドラッグ中の位置を使うため)。
 
 import {
@@ -13,7 +14,7 @@ import {
   useNodes,
   useReactFlow,
 } from "@xyflow/react";
-import { type PointerEvent, useRef, useState } from "react";
+import { type MouseEvent, type PointerEvent, useRef, useState } from "react";
 import {
   endLabelOffset,
   estimateNameWidth,
@@ -33,6 +34,7 @@ import {
   uplinkLabelLines,
 } from "../../core";
 import { topologyStore, useTopology, useUi } from "../../store";
+import { openContextMenu } from "../ContextMenu/open";
 import { DEVICE_NODE_WIDTH } from "./DeviceNode";
 import { iconCenter, liveBends } from "./geometry";
 import { Label } from "./LinkEdge";
@@ -266,6 +268,17 @@ export function EndLabels() {
                 onPointerUp,
                 onPointerCancel,
                 onDoubleClick: () => topologyStore.getState().resetLabels([move.key]),
+                onContextMenu: (e: MouseEvent<HTMLDivElement>) => {
+                  e.preventDefault();
+                  const link = move.link;
+                  if (link === undefined) return;
+                  const { links } = topologyStore.getState().selection;
+                  openContextMenu(
+                    e,
+                    { kind: "links" },
+                    links.includes(link) ? undefined : { devices: [], links: [link] },
+                  );
+                },
               }
             : {};
         return (

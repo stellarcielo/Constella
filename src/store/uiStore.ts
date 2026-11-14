@@ -31,6 +31,23 @@ export type ConnectState =
   /** B 側のポートを選んでいる */
   | { stage: "pickB"; a: ChosenPort; device: string };
 
+/**
+ * 右クリックのメニューを出した物(SPEC 7.6)。機器・ブリッジの箱と線は、選んでいる物にまとめて効く。
+ * pane の at は、貼り付ける位置(フローの座標。パレットから置くときと同じく、アイコンの左上の基準)
+ */
+export type MenuTarget =
+  | { kind: "nodes" }
+  | { kind: "links" }
+  | { kind: "group"; uid: string }
+  | { kind: "pane"; at: Position };
+
+/** 開いている右クリックのメニュー。x・y は出す位置(ウィンドウの座標) */
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  target: MenuTarget;
+}
+
 /** 表示オプション(SPEC 7.3)。YAML には書かず、アプリに覚えておく */
 export interface ViewOptions {
   /** リンク両端の IF 名ラベルを表示する */
@@ -93,11 +110,15 @@ export interface UiState {
   problemsOpen: boolean;
   /** YAML エディタで、この範囲までスクロールして選択する要求(id が変わるたび) */
   editorJump: { id: number; range?: SourceRange };
+  /** 開いている右クリックのメニュー(SPEC 7.6) */
+  contextMenu?: ContextMenuState;
 
   setMode(mode: Mode): void;
   toggleConnectMode(): void;
   /** 接続モードでデバイスをクリックした */
   clickDevice(id: string): void;
+  /** 接続モードにして、そのデバイスのポートを選ぶところから始める(右クリックのメニュー。SPEC 7.6) */
+  startConnect(device: string): void;
   /** ポートを選んだ。B 側まで選び終えたら、作るリンクの両端を返す */
   choosePort(port: ChosenPort): { a: Endpoint; b: Endpoint } | undefined;
   /**
@@ -117,6 +138,8 @@ export interface UiState {
   requestView(request?: { viewport?: Viewport; focus?: string[] }): void;
   setProblemsOpen(open: boolean): void;
   jumpToYaml(range: SourceRange): void;
+  openContextMenu(menu: ContextMenuState): void;
+  closeContextMenu(): void;
 }
 
 /** 表示オプションを覚えておく場所。テストでは渡さない */
@@ -155,6 +178,10 @@ export function createUiStore(storage?: ViewStorage) {
           set({ connect: { stage: "pickB", a: connect.a, device: id } });
           break;
       }
+    },
+
+    startConnect(device) {
+      set({ mode: "connect", connect: { stage: "pickA", device } });
     },
 
     choosePort(port) {
@@ -219,6 +246,14 @@ export function createUiStore(storage?: ViewStorage) {
 
     jumpToYaml(range) {
       set({ editorJump: { id: get().editorJump.id + 1, range } });
+    },
+
+    openContextMenu(contextMenu) {
+      set({ contextMenu });
+    },
+
+    closeContextMenu() {
+      if (get().contextMenu) set({ contextMenu: undefined });
     },
   }));
   if (storage) {

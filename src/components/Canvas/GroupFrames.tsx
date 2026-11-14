@@ -2,6 +2,7 @@
 // メンバーの機器を囲む四角を、機器の今の位置から描く(ドラッグ中も追従する)。
 // 枠は線や機器より後ろ、ラベルは線より手前・機器より後ろに描き、ラベルのクリックでメンバーをまとめて選択する
 // (グループの枠なら、そのグループも選んでインスペクタに出す。選んだグループの枠は強調する。SPEC 7.5)。
+// ラベルの右クリックでは、メンバーを選んで右クリックのメニューを出す(SPEC 7.6)。
 // ReactFlow の子として置く(フローの座標変換を使うため)。
 
 import { EdgeLabelRenderer, useNodes, ViewportPortal } from "@xyflow/react";
@@ -13,21 +14,21 @@ import {
   hostFrameTitle,
   type Position,
 } from "../../core";
-import { topologyStore, uiStore, useTopology, useUi } from "../../store";
+import { type Selection, topologyStore, uiStore, useTopology, useUi } from "../../store";
+import { openContextMenu } from "../ContextMenu/open";
 import type { CanvasNode } from "./nodes";
+
+/** 枠のメンバーの選択(グループの枠なら、そのグループも選ぶ) */
+function frameSelection(frame: Frame): Selection {
+  return frame.type === "group"
+    ? { devices: frame.members, links: [], group: frame.group.uid }
+    : { devices: frame.members, links: [] };
+}
 
 /** 枠のラベルをクリックしたら、メンバーをまとめて選択する(そのままドラッグで一緒に動かせる) */
 function selectMembers(frame: Frame): void {
   if (uiStore.getState().mode !== "select") return;
-  if (frame.type === "group") {
-    topologyStore.getState().setSelection({
-      devices: frame.members,
-      links: [],
-      group: frame.group.uid,
-    });
-  } else {
-    topologyStore.getState().setSelection({ devices: frame.members, links: [] });
-  }
+  topologyStore.getState().setSelection(frameSelection(frame));
 }
 
 const keyOf = (frame: Frame) => (frame.type === "host" ? `host:${frame.host}` : frame.index);
@@ -87,6 +88,15 @@ export function GroupFrames() {
                 : "クリックでグループとメンバーを選択"
             }
             onClick={() => selectMembers(frame)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              // ホストの枠は、ホストとゲストを選んだときと同じメニューにする
+              const target =
+                frame.type === "group"
+                  ? ({ kind: "group", uid: frame.group.uid } as const)
+                  : ({ kind: "nodes" } as const);
+              openContextMenu(e, target, frameSelection(frame));
+            }}
           >
             {titleOf(frame)}
           </div>

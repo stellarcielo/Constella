@@ -63,6 +63,18 @@ export function extractFragment(t: Topology, deviceIds: Iterable<string>): Topol
   return fragment;
 }
 
+/** 断片のデバイスの座標を囲む四角の真ん中。座標のあるデバイスが無ければ undefined */
+export function fragmentCenter(fragment: Topology): Position | undefined {
+  const points = [...fragment.devices.keys()].flatMap((id) => fragment.layout.get(id) ?? []);
+  if (points.length === 0) return undefined;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+  };
+}
+
 /** 断片をクリップボードに入れる YAML の文字列にする */
 export function fragmentToText(fragment: Topology): string {
   return serializeTopology(fragment).text;

@@ -5,9 +5,11 @@
 import {
   allBridges,
   extractFragment,
+  fragmentCenter,
   fragmentToText,
   parseFragment,
   pasteFragment,
+  type Position,
   removeGroup,
 } from "../core";
 import type { Platform } from "../platform/types";
@@ -33,8 +35,11 @@ export interface EditCommands {
   /** 選択したデバイスをコピーする。何も選んでいなければ false */
   copy(): Promise<boolean>;
   cut(): Promise<boolean>;
-  /** クリップボードの断片を貼り付ける。貼れるものが無ければ false */
-  paste(): Promise<boolean>;
+  /**
+   * クリップボードの断片を貼り付ける。貼れるものが無ければ false。
+   * at を渡すと、断片の真ん中をその位置に合わせる(右クリックの「ここにペースト」。SPEC 7.6)
+   */
+  paste(at?: Position): Promise<boolean>;
   selectAll(): void;
   /** 選んでいる機器でグループを作る(SPEC 7.5)。機器を選んでいなければ false */
   group(): boolean;
@@ -76,7 +81,7 @@ export function createEditCommands(deps: EditCommandDeps): EditCommands {
       return true;
     },
 
-    async paste() {
+    async paste(at) {
       let text: string;
       try {
         text = await clipboard.readClipboardText();
@@ -86,9 +91,15 @@ export function createEditCommands(deps: EditCommandDeps): EditCommands {
       const { catalog } = store.getState();
       const fragment = parseFragment(text, catalog);
       if (!fragment) return false;
-      const count = lastPaste?.text === text ? lastPaste.count + 1 : 1;
-      lastPaste = { text, count };
-      const offset = { x: PASTE_OFFSET * count, y: PASTE_OFFSET * count };
+      let offset: Position;
+      if (at) {
+        const center = fragmentCenter(fragment);
+        offset = center ? { x: at.x - center.x, y: at.y - center.y } : { x: 0, y: 0 };
+      } else {
+        const count = lastPaste?.text === text ? lastPaste.count + 1 : 1;
+        lastPaste = { text, count };
+        offset = { x: PASTE_OFFSET * count, y: PASTE_OFFSET * count };
+      }
       let pasted: { devices: string[]; links: string[] } | undefined;
       store.getState().edit((t) => {
         pasted = pasteFragment(t, fragment, catalog, offset);

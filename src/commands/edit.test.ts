@@ -56,6 +56,19 @@ describe("コピー・貼り付け", () => {
     expect(env.s().topology.layout.get("rt4")).toEqual({ x: 340, y: 120 });
   });
 
+  it("位置を渡すと、断片の真ん中をその位置に合わせる(SPEC 7.6)", async () => {
+    const env = setup();
+    env.s().setSelection({ devices: ["rt1", "core-sw1"], links: [] });
+    await env.commands.copy();
+    expect(await env.commands.paste({ x: 1000, y: 500 })).toBe(true);
+    const [a, b] = env.s().selection.devices.map((id) => env.s().topology.layout.get(id));
+    if (!a || !b) throw new Error();
+    expect({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }).toEqual({ x: 1000, y: 500 });
+    // 位置を渡した貼り付けは、続けて貼るときのずらす量に数えない
+    await env.commands.paste();
+    expect(env.s().topology.layout.get("rt3")).toEqual({ x: 340, y: 120 });
+  });
+
   it("貼り付けは 1 回で取り消せる", async () => {
     const env = setup();
     env.s().setSelection({ devices: ["rt1", "core-sw1"], links: [] });
