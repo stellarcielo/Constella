@@ -2,6 +2,7 @@ id: generic-ap
 vendor: Generic
 name: Access Point
 role: ap
+flexible: true
 ports:
   - name: eth0
     type: rj45

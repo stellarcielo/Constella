@@ -39,6 +39,11 @@ export function portTypesCompatible(a: PortType, b: PortType): boolean {
   return PORT_FAMILY[a] === PORT_FAMILY[b];
 }
 
+/** 何本でもリンクをつなげるポート種別か。無線は AP に複数の端末をつなぐため(SPEC 4.3) */
+export function allowsManyLinks(type: PortType | undefined): boolean {
+  return type === "wireless";
+}
+
 /** エンドポイントのポート種別。フレキシブルデバイスでモデルに無い IF などは undefined */
 export function portTypeOf(t: Topology, ep: Endpoint, catalog: ModelCatalog): PortType | undefined {
   const device = t.devices.get(ep.device);
@@ -48,13 +53,13 @@ export function portTypeOf(t: Topology, ep: Endpoint, catalog: ModelCatalog): Po
 }
 
 export interface PortUse {
-  /** 使っているリンク。undefined なら作りかけの接続で押さえているポート */
-  linkId?: string;
-  /** 接続先 */
+  /** 使っているリンクの ID(YAML の順)。空なら作りかけの接続で押さえているポート */
+  links: string[];
+  /** 接続先(最初のリンクの) */
   peer?: Endpoint;
 }
 
-/** デバイスID → (ifNameKey → 使用状況)。同じポートを複数のリンクが使っていたら最初のもの */
+/** デバイスID → (ifNameKey → 使用状況) */
 export type PortUsage = Map<string, Map<string, PortUse>>;
 
 export function buildPortUsage(t: Topology): PortUsage {
@@ -71,7 +76,9 @@ export function buildPortUsage(t: Topology): PortUsage {
         usage.set(ep.device, ports);
       }
       const key = ifNameKey(ep.iface);
-      if (!ports.has(key)) ports.set(key, peer ? { linkId: link.id, peer } : { linkId: link.id });
+      const use = ports.get(key);
+      if (use) use.links.push(link.id);
+      else ports.set(key, peer ? { links: [link.id], peer } : { links: [link.id] });
     }
   }
   return usage;
@@ -83,7 +90,10 @@ export interface PortEntry {
   speed?: string;
   /** モデルに定義されたポートか(フレキシブルデバイスで使われているだけの IF は false) */
   defined: boolean;
-  /** 使用中なら使用状況(ブリッジは何本でもつなげるので、使用中にしない) */
+  /**
+   * 使用中なら使用状況(ブリッジは何本でもつなげるので、使用中にしない。
+   * 無線のポートは使用中にするが、allowsManyLinks なのでポート選択では選べる)
+   */
   use?: PortUse;
   /** ブリッジ(SPEC 4.6)なら、つながっているリンクの本数。vnet は SDN の VNet か(フェーズ4-6) */
   bridge?: { links: number; vnet?: boolean };
@@ -108,7 +118,7 @@ export function listDevicePorts(
   const used = usage.get(device.id);
   const reservedKey = reserved?.device === device.id ? ifNameKey(reserved.iface) : undefined;
   const usageOf = (key: string): PortUse | undefined =>
-    used?.get(key) ?? (key === reservedKey ? {} : undefined);
+    used?.get(key) ?? (key === reservedKey ? { links: [] } : undefined);
 
   const entries: PortEntry[] = [];
   const seen = new Set<string>();

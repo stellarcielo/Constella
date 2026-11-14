@@ -2,6 +2,7 @@ id: generic-l3switch-48
 vendor: Generic
 name: L3 Switch (48 ports)
 role: l3switch
+flexible: true
 ports:
   - name: "GigabitEthernet1/0/{1-48}"
     type: rj45

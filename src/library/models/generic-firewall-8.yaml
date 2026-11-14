@@ -2,6 +2,7 @@ id: generic-firewall-8
 vendor: Generic
 name: Firewall (8 ports)
 role: firewall
+flexible: true
 ports:
   - name: "port{1-8}"
     type: rj45

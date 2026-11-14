@@ -91,6 +91,26 @@ links:
     expect(issues[0].message).toContain("sw1:Gi0/1");
   });
 
+  it("無線のポートには何本でもつなげる(SPEC 4.3)", () => {
+    const { issues } = check(`constella: 1
+devices:
+  ap1: { model: generic-ap }
+  pc1: { role: pc }
+  pc2: { role: pc }
+links:
+  - a: ap1:wlan0
+    b: pc1:wlan0
+  - a: pc2:wlan0
+    b: ap1:wlan0
+  - a: ap1:eth0
+    b: pc1:eth0
+  - a: ap1:eth0
+    b: pc2:eth0
+`);
+    expect(summary(issues)).toEqual([["error", "port-in-use"]]);
+    expect(issues[0].message).toContain("ap1:eth0");
+  });
+
   it("自分自身への接続は警告", () => {
     const { issues } = check(`${devices}  - a: rt1:Gi0/0\n    b: rt1:Gi0/1\n`);
     expect(summary(issues)).toEqual([["warning", "self-loop"]]);

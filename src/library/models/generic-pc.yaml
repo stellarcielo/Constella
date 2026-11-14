@@ -2,7 +2,10 @@ id: generic-pc
 vendor: Generic
 name: PC
 role: pc
+flexible: true
 ports:
   - name: eth0
     type: rj45
     speed: 1G
+  - name: wlan0
+    type: wireless

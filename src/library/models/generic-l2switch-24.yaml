@@ -2,6 +2,7 @@ id: generic-l2switch-24
 vendor: Generic
 name: L2 Switch (24 ports)
 role: l2switch
+flexible: true
 ports:
   - name: "GigabitEthernet0/{1-24}"
     type: rj45

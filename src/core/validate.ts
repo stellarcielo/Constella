@@ -10,7 +10,7 @@ import { labelKeyNorm, movableLabelKeys } from "./labelLayout";
 import { findLogicalIf, vlanInterface } from "./logicalIfs";
 import { ifNameKey } from "./ifname";
 import type { YamlBase } from "./parse";
-import { PORT_TYPE_LABELS, portTypesCompatible } from "./ports";
+import { allowsManyLinks, PORT_TYPE_LABELS, portTypesCompatible } from "./ports";
 import { findVnet, VNET_ID_MAX_LENGTH, zoneHosts, zoneOfVnet } from "./sdn";
 import { endpointToString, findModel, isFlexibleDevice } from "./topology";
 import {
@@ -355,6 +355,8 @@ export function validateTopology(t: Topology, catalog: ModelCatalog, base?: Yaml
         continue;
       }
 
+      // 無線のポートには何本でもつなげる(SPEC 4.3)
+      if (allowsManyLinks(port?.type)) continue;
       const key = `${ep.device}\u0000${ifNameKey(ep.iface)}`;
       if (used.has(key)) {
         const peer = used.get(key);

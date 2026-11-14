@@ -89,7 +89,7 @@ export function InterfaceList({ device }: { device: Device }) {
           const unknown = !entry.defined && !flexible;
           const isOpen = open !== null && ifNameKey(open) === ifNameKey(entry.name);
           const peer = entry.use?.peer;
-          const linkId = entry.use?.linkId;
+          const links = entry.use?.links ?? [];
           return (
             <li
               key={entry.name}
@@ -111,16 +111,20 @@ export function InterfaceList({ device }: { device: Device }) {
                   {unknown && <span className="if-unknown">モデルにない IF</span>}
                   {info?.description && <span className="if-desc">{info.description}</span>}
                 </button>
-                {linkId ? (
+                {links.length > 0 ? (
+                  // 2 本以上(無線のポートなど)は本数を出し、すべて選ぶ(SPEC 7.1)
                   <button
                     type="button"
                     className="if-peer mono"
-                    title="このリンクを選択"
-                    onClick={() =>
-                      topologyStore.getState().setSelection({ devices: [], links: [linkId] })
-                    }
+                    title={links.length > 1 ? "これらのリンクを選択" : "このリンクを選択"}
+                    onClick={() => topologyStore.getState().setSelection({ devices: [], links })}
                   >
-                    → {peer ? `${peer.device}:${show(peer.iface)}` : "使用中"}
+                    →{" "}
+                    {links.length > 1
+                      ? `${links.length} 本`
+                      : peer
+                        ? `${peer.device}:${show(peer.iface)}`
+                        : "使用中"}
                   </button>
                 ) : (
                   <span className="if-free">空き</span>

@@ -3,6 +3,7 @@ id: generic-hypervisor-4
 vendor: Generic
 name: Hypervisor (4 ports)
 role: hypervisor
+flexible: true
 ports:
   - name: "eno{1-4}"
     type: rj45

@@ -27,6 +27,15 @@ const models: DeviceModel[] = [
   { id: "generic-server-2", role: "server", flexible: false, ports: range("eth", 0, 1, "rj45") },
   { id: "generic-cloud", role: "cloud", flexible: true, ports: [] },
   {
+    id: "generic-ap",
+    role: "ap",
+    flexible: false,
+    ports: [
+      { name: "eth0", type: "rj45" },
+      { name: "wlan0", type: "wireless" },
+    ],
+  },
+  {
     id: "generic-hypervisor-4",
     role: "hypervisor",
     flexible: false,

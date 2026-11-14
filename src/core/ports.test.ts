@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTopology } from "./parse";
 import {
+  allowsManyLinks,
   bondMemberCandidates,
   bridgeMemberCandidates,
   buildPortUsage,
@@ -18,6 +19,22 @@ function load(text: string): Topology {
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
   return result.topology;
 }
+
+/** AP の無線に 2 台つないだ図 */
+const wireless = `constella: 1
+devices:
+  ap1: { model: generic-ap }
+  sw1: { model: generic-l2switch-24 }
+  pc1: { role: pc }
+  pc2: { role: pc }
+links:
+  - a: ap1:eth0
+    b: sw1:Gi0/1
+  - a: ap1:wlan0
+    b: pc1:wlan0
+  - a: pc2:wlan0
+    b: ap1:wlan0
+`;
 
 function device(t: Topology, id: string) {
   const d = t.devices.get(id);
@@ -40,6 +57,22 @@ describe("buildPortUsage", () => {
     expect(usage.get("rt1")?.get("gi0/1")?.peer).toEqual({ device: "core-sw1", iface: "Gi0/1" });
     expect(usage.get("isp")?.get("wan")?.peer).toEqual({ device: "rt1", iface: "Gi0/0" });
     expect(usage.get("srv1")?.has("eth1")).toBe(false);
+  });
+
+  it("同じポートを使うリンクをすべて記録し、接続先は最初のリンクのもの", () => {
+    const t = load(wireless);
+    const use = buildPortUsage(t).get("ap1")?.get("wlan0");
+    expect(use?.links).toEqual(t.links.slice(1).map((l) => l.id));
+    expect(use?.peer).toEqual({ device: "pc1", iface: "wlan0" });
+  });
+});
+
+describe("allowsManyLinks", () => {
+  it("無線のポートだけ何本でもつなげる", () => {
+    expect(allowsManyLinks("wireless")).toBe(true);
+    expect(allowsManyLinks("rj45")).toBe(false);
+    expect(allowsManyLinks("virtual")).toBe(false);
+    expect(allowsManyLinks(undefined)).toBe(false);
   });
 });
 
@@ -91,11 +124,25 @@ links:
       device: "rt1",
       iface: "Gi0/2",
     });
-    expect(ports[2].use).toEqual({});
+    expect(ports[2].use).toEqual({ links: [] });
+  });
+
+  it("無線のポートは、つながっているリンクをすべて持つ", () => {
+    const t = load(wireless);
+    const ports = listDevicePorts(device(t, "ap1"), t, testCatalog);
+    expect(ports.map((p) => [p.name, p.type, p.use?.links.length])).toEqual([
+      ["eth0", "rj45", 1],
+      ["wlan0", "wireless", 2],
+    ]);
   });
 });
 
 describe("firstFreePort", () => {
+  it("無線のポートも、1 本もつながっていないときだけ選ぶ", () => {
+    const t = load(wireless);
+    expect(firstFreePort(listDevicePorts(device(t, "ap1"), t, testCatalog))).toBeUndefined();
+  });
+
   it("先頭の空いている定義済みポート", () => {
     const t = load(specExample);
     expect(firstFreePort(listDevicePorts(device(t, "rt1"), t, testCatalog))?.name).toBe("Gi0/2");

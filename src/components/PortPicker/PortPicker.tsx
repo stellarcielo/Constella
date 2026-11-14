@@ -1,11 +1,13 @@
 // ポート選択ポップアップ(SPEC 7.2)。
 // 種別ごとのグループ、使用中ポートのグレーアウトと接続先、検索欄、次の空きポート、
 // フレキシブルデバイスでの IF 名の自由入力、A 側と種別が合わないポートの警告。
+// 無線のポートは何本でもつなげるので、使用中でも選べる(SPEC 7.2)。
 // キャンバス(React Flow)の重なりの層の中だと、あとに並ぶ YAML エディタなどに隠れるので、body に出す。
 
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  allowsManyLinks,
   endpointToString,
   expandIfName,
   firstFreePort,
@@ -34,6 +36,9 @@ export interface PortPickerProps {
 
 /** 選べる項目。既存のポートか、フレキシブルデバイスで新しく入力した IF 名 */
 type Option = { kind: "port"; entry: PortEntry } | { kind: "new"; name: string };
+
+/** 選べるポートか(空いているか、無線のように何本でもつなげるか) */
+const available = (entry: PortEntry) => !entry.use || allowsManyLinks(entry.type);
 
 export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPickerProps) {
   const topology = useTopology((s) => s.topology);
@@ -67,7 +72,7 @@ export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPic
   const exact = q === "" ? undefined : entries.find((e) => ifNameKey(e.name) === ifNameKey(q));
   const options: Option[] = [
     ...(flexible && q !== "" && !exact ? [{ kind: "new", name: q } as const] : []),
-    ...filtered.filter((e) => !e.use).map((entry) => ({ kind: "port", entry }) as const),
+    ...filtered.filter(available).map((entry) => ({ kind: "port", entry }) as const),
   ];
   const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
   const activeOption = options[activeIndex];
@@ -149,7 +154,9 @@ export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPic
             新しい IF「{options[0].name}」を使う
           </button>
         )}
-        {exact?.use && <p className="port-picker-error">「{exact.name}」は使用中です</p>}
+        {exact && !available(exact) && (
+          <p className="port-picker-error">「{exact.name}」は使用中です</p>
+        )}
         {groups.map(({ key, label, entries: group }) => (
           <section key={key}>
             <h4 className="port-picker-group">{label}</h4>
@@ -165,7 +172,7 @@ export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPic
                   type="button"
                   key={entry.name}
                   className={`port-picker-item${option && option === activeOption ? " active" : ""}`}
-                  disabled={!!entry.use}
+                  disabled={!available(entry)}
                   onClick={() => option && choose(option)}
                   onMouseEnter={() => option && setActive(options.indexOf(option))}
                 >
@@ -182,7 +189,11 @@ export function PortPicker({ deviceId, side, peer, position, onChoose }: PortPic
                   )}
                   {entry.use && (
                     <span className="port-picker-use">
-                      {entry.use.peer ? `→ ${endpointToString(entry.use.peer)}` : "接続中"}
+                      {allowsManyLinks(entry.type) && entry.use.links.length > 0
+                        ? `${entry.use.links.length} 本`
+                        : entry.use.peer
+                          ? `→ ${endpointToString(entry.use.peer)}`
+                          : "接続中"}
                     </span>
                   )}
                   {entry.bridge && entry.bridge.links > 0 && (

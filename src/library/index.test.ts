@@ -21,7 +21,7 @@ describe("組み込みモデル", () => {
       "generic-hypervisor-4": 4,
       "generic-l2switch-24": 28,
       "generic-l3switch-48": 52,
-      "generic-pc": 1,
+      "generic-pc": 2,
       "generic-router-4": 4,
       "generic-server-2": 2,
       "generic-vm": 4,
@@ -89,6 +89,16 @@ describe("組み込みモデル", () => {
       speed: "10G",
     });
     expect(catalog.get("generic-cloud")?.flexible).toBe(true);
+    expect(catalog.get("generic-pc")?.ports).toEqual([
+      { name: "eth0", type: "rj45", speed: "1G" },
+      { name: "wlan0", type: "wireless" },
+    ]);
+  });
+
+  it("汎用モデルはすべてフレキシブル、実機モデルはそうでない(SPEC 5.3)", () => {
+    for (const model of models) {
+      expect([model.id, model.flexible]).toEqual([model.id, model.id.startsWith("generic-")]);
+    }
   });
 
   it("SPEC 4.2 の例を組み込みモデルで検証すると問題が無い", () => {
