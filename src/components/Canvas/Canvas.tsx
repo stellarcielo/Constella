@@ -1,6 +1,7 @@
 // React Flow のキャンバス。表示はストアのトポロジから作り、
 // ドラッグ中の位置だけは画面側で持って、ドロップしたときに 1 回ストアへ書き込む(SPEC 8.2)。
-// ドラッグ中は、ほかの機器(グリッドを使うときは方眼にも)そろうように吸い付かせる(SPEC 7.4)。
+// ドラッグ中は、ほかの機器(グリッドを使うときは方眼にも)そろうように、また同じ行・列の機器と等間隔になるように
+// 吸い付かせる(SPEC 7.4)。
 // 右クリックでは、右クリックのメニューを出す(SPEC 7.6)。
 
 import {
@@ -101,6 +102,11 @@ const MENU_OWNERS =
 const GRID = 20;
 /** ほかの機器とそろえる距離(画面の px) */
 const SNAP = 8;
+/**
+ * 等間隔に吸い付かせる設定。アイコンが横から見て重なれば同じ行とする。ガイドはアイコンのすき間に、
+ * 枠(2px)の少し外から引く(動かしている機器は手前に描くので、枠に重なると両端の短い線が隠れる)
+ */
+const SPACING = { band: DEVICE_ICON_BOX, inset: DEVICE_ICON_BOX / 2 + 6 };
 const onDelete = ({ nodes, edges }: OnSelectionChangeParams) =>
   topologyStore.getState().deleteElements({
     devices: nodes.map((n) => n.id),
@@ -345,7 +351,7 @@ function CanvasInner() {
           return other ? [iconCenter(other)] : [];
         });
         const grid = uiStore.getState().view.snapToGrid ? GRID : undefined;
-        const snapped = snapPoint(at, targets, SNAP / getZoom(), grid);
+        const snapped = snapPoint(at, targets, SNAP / getZoom(), grid, SPACING);
         offset = { x: snapped.point.x - at.x, y: snapped.point.y - at.y };
         guides = snapped.guides;
       }

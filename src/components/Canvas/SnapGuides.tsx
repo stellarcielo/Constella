@@ -1,4 +1,5 @@
-// ドラッグ中のガイドの線(SPEC 7.4)。機器や曲げる点が、ほかの機器や点とそろったところに点線を引く。
+// ドラッグ中のガイドの線(SPEC 7.4)。機器や曲げる点が、ほかの機器や点とそろったところに点線を引き、
+// 機器が等間隔になったところには、間隔ごとに実線を引く。
 // 線の太さと点線の間隔は、拡大しても画面の上で同じになるようにする。ReactFlow の子として置く。
 
 import { useStore, ViewportPortal } from "@xyflow/react";
@@ -19,7 +20,7 @@ export function SnapGuides() {
             x2={g.to.x}
             y2={g.to.y}
             strokeWidth={1 / zoom}
-            strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+            strokeDasharray={g.spacing ? undefined : `${4 / zoom} ${3 / zoom}`}
           />
         ))}
       </svg>
