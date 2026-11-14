@@ -31,6 +31,22 @@ export function nextGroupId(t: Topology): string {
   return `${GROUP_ID_PREFIX}${max + 1}`;
 }
 
+/**
+ * 複製したグループの ID(SPEC 7.4)。空いていればそのまま、使われていれば末尾の数字を
+ * 今ある最大の番号 + 1 にする(rack1 → rack2、数字が無ければ dc → dc2)
+ */
+export function copiedGroupId(t: Topology, id: string): string {
+  if (!t.groups.some((g) => g.id === id)) return id;
+  const prefix = id.replace(/\d+$/, "");
+  // 数字の無い ID は 1 番とみなす
+  let max = prefix === id ? 1 : 0;
+  for (const group of t.groups) {
+    const rest = group.id.slice(prefix.length);
+    if (group.id.startsWith(prefix) && /^\d+$/.test(rest)) max = Math.max(max, Number(rest));
+  }
+  return `${prefix}${max + 1}`;
+}
+
 /** グループの ID として使えるか。使えなければ理由を返す(currentId は今の自分の ID) */
 export function checkGroupId(t: Topology, id: string, currentId?: string): string | undefined {
   if (id === "") return "ID を入力してください";

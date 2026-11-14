@@ -148,3 +148,118 @@ layout:
     ]);
   });
 });
+
+describe("曲げた点とラベルの位置のコピー&ペースト(SPEC 7.4)", () => {
+  const text = `constella: 1
+devices:
+  a: { model: generic-server-2 }
+  z: { model: generic-router-4 }
+  x: { model: generic-router-4 }
+links:
+  - { a: a:eth0, b: z:Gi0/0 }
+  - { a: z:Gi0/1, b: x:Gi0/0 }
+layout:
+  a: { x: 0, y: 0 }
+  z: { x: 200, y: 0 }
+  x: { x: 400, y: 0 }
+  _bends:
+    a z: [ { x: 50, y: 10 }, { x: 150, y: 20 } ]
+    x z: [ { x: 300, y: 50 } ]
+  _labels:
+    a:eth0: { along: 30, side: 5 }
+    z:Gi0/1: { along: 40, side: -6 }
+`;
+
+  it("両端とも選んだ線の点と、その線のラベルの位置だけを取り出す", () => {
+    const fragment = extractFragment(load(text), ["a", "z"]);
+    expect([...fragment.bends.keys()]).toEqual(["a z"]);
+    expect([...fragment.labelLayout.keys()]).toEqual(["a:eth0"]);
+  });
+
+  it("点はずらして新しい ID に付け替え、名前の順が変われば並びを逆にする", () => {
+    const t = load(text);
+    const fragment = parseFragment(fragmentToText(extractFragment(t, ["a", "z"])), testCatalog);
+    if (!fragment) throw new Error();
+    expect(pasteFragment(t, fragment, testCatalog, { x: 0, y: 100 }).devices).toEqual([
+      "srv1",
+      "rt1",
+    ]);
+    // a → srv1・z → rt1 で、キーの 1 つ目が z の側(rt1)になる
+    expect(t.bends.get("rt1 srv1")).toEqual([
+      { x: 150, y: 120 },
+      { x: 50, y: 110 },
+    ]);
+    expect(t.labelLayout.get("srv1:eth0")).toEqual({ along: 30, side: 5 });
+    expect(t.bends.get("a z")).toHaveLength(2);
+  });
+
+  it("外で書いた断片の、貼り付けた線に対応しない点とラベルの位置は捨てる", () => {
+    const t = load(text);
+    const fragment = load(`constella: 1
+devices:
+  p: { model: generic-router-4 }
+  q: { model: generic-router-4 }
+layout:
+  _bends:
+    p q: [ { x: 1, y: 1 } ]
+  _labels:
+    p:Gi0/0: { along: 10, side: 0 }
+`);
+    pasteFragment(t, fragment, testCatalog, { x: 0, y: 0 });
+    expect([...t.bends.keys()]).toEqual(["a z", "x z"]);
+    expect([...t.labelLayout.keys()]).toEqual(["a:eth0", "z:Gi0/1"]);
+  });
+});
+
+describe("グループのコピー&ペースト(SPEC 7.4)", () => {
+  const text = `constella: 1
+devices:
+  srv1: { model: generic-server-2 }
+  srv2: { model: generic-server-2 }
+  rt1: { model: generic-router-4 }
+groups:
+  - id: rack1
+    kind: rack
+    label: Rack 1
+    members: [srv1, srv2, ghost]
+  - id: site
+    kind: site
+    members: [srv1, srv2, rt1]
+`;
+
+  it("選んだデバイスの入っているグループを、図にあるメンバーをすべて書いて取り出す", () => {
+    const fragment = extractFragment(load(text), ["srv1", "srv2"]);
+    expect(fragment.groups.map((g) => [g.id, g.members])).toEqual([
+      ["rack1", ["srv1", "srv2"]],
+      ["site", ["srv1", "srv2", "rt1"]],
+    ]);
+    expect(extractFragment(load(text), ["rt1"]).groups.map((g) => g.id)).toEqual(["site"]);
+  });
+
+  it("メンバーの一部なら同じグループに入れ、全部なら新しいグループとして複製する", () => {
+    const t = load(text);
+    const fragment = parseFragment(
+      fragmentToText(extractFragment(t, ["srv1", "srv2"])),
+      testCatalog,
+    );
+    if (!fragment) throw new Error();
+    const { devices } = pasteFragment(t, fragment, testCatalog, { x: 0, y: 0 });
+    expect(devices).toEqual(["srv3", "srv4"]);
+    expect(t.groups.map((g) => [g.id, g.kind, g.label, g.members])).toEqual([
+      ["rack1", "rack", "Rack 1", ["srv1", "srv2", "ghost"]],
+      ["site", "site", undefined, ["srv1", "srv2", "rt1", "srv3", "srv4"]],
+      ["rack2", "rack", "Rack 1", ["srv3", "srv4"]],
+    ]);
+    expect(new Set(t.groups.map((g) => g.uid)).size).toBe(3);
+  });
+
+  it("貼り付け先に同じ ID のグループが無ければ、その ID で作る", () => {
+    const t = load(`constella: 1\ndevices:\n  pc1: { role: pc }\n`);
+    const fragment = extractFragment(load(text), ["srv1"]);
+    pasteFragment(t, fragment, testCatalog, { x: 0, y: 0 });
+    expect(t.groups.map((g) => [g.id, g.members])).toEqual([
+      ["rack1", ["srv1"]],
+      ["site", ["srv1"]],
+    ]);
+  });
+});

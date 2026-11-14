@@ -4,6 +4,7 @@ import {
   addGroupMembers,
   checkGroupId,
   checkNetworkName,
+  copiedGroupId,
   findGroup,
   groupsOfDevice,
   nextGroupId,
@@ -172,5 +173,21 @@ describe("クラスタのネットワーク", () => {
     expect(checkNetworkName(g, "corosync")).toBe("「corosync」は既にあります");
     expect(checkNetworkName(g, "corosync", "corosync")).toBeUndefined();
     expect(checkNetworkName(g, "migration")).toBeUndefined();
+  });
+});
+
+describe("copiedGroupId", () => {
+  it("空いていればそのまま、使われていれば末尾の数字を最大 + 1 にする", () => {
+    const t = createEmptyTopology();
+    expect(copiedGroupId(t, "rack1")).toBe("rack1");
+    t.groups.push(
+      { id: "rack1", uid: "a", members: [], extra: {} },
+      { id: "rack3", uid: "b", members: [], extra: {} },
+      { id: "dc", uid: "c", members: [], extra: {} },
+      { id: "dc.a", uid: "d", members: [], extra: {} },
+    );
+    expect(copiedGroupId(t, "rack1")).toBe("rack4");
+    expect(copiedGroupId(t, "dc")).toBe("dc2");
+    expect(copiedGroupId(t, "dc.a")).toBe("dc.a2");
   });
 });
