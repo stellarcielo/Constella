@@ -44,6 +44,7 @@ import {
   type ModelCatalog,
   type Position,
   ROLES,
+  ROUTINGS,
   SDN_ZONE_TYPES,
   type Sdn,
   type SdnVnet,
@@ -184,6 +185,7 @@ class Parser {
       layout: new Map(),
       labelLayout: new Map(),
       bends: new Map(),
+      routing: "straight",
       groups: [],
       sdn: { zones: new Map(), vnets: new Map(), extra: {} },
       extra,
@@ -518,6 +520,21 @@ class Parser {
       }
       if (key === "_bends") {
         this.bendLayout(value, t);
+        continue;
+      }
+      if (key === "_routing") {
+        // 線の形(SPEC 4.3)。読めない値はまっすぐの線にして、値は YAML に残す
+        const routing = enumValue(value, ROUTINGS);
+        if (routing) t.routing = routing;
+        else {
+          this.add(
+            "error",
+            "invalid-value",
+            `layout._routing の値が不正です(${ROUTINGS.join(" / ")})`,
+            ctx.target,
+            value,
+          );
+        }
         continue;
       }
       const pos = this.numbers(value, ["x", "y"], {

@@ -33,6 +33,7 @@ export function Toolbar() {
   const current = useUi((s) => s.mode);
   const view = useUi((s) => s.view);
   const labelsMoved = useTopology((s) => s.topology.labelLayout.size > 0);
+  const orthogonal = useTopology((s) => s.topology.routing === "orthogonal");
   return (
     <header className="toolbar">
       <span className="toolbar-title">Constella</span>
@@ -88,6 +89,17 @@ export function Toolbar() {
           onClick={() => uiStore.getState().setView({ snapToGrid: !view.snapToGrid })}
         >
           グリッド
+        </button>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-pressed={orthogonal}
+          title="線を直角に折って引く。機器を動かすと引き直す(図ごとに YAML の layout._routing に書きます。⌘Z で戻せます)"
+          onClick={() =>
+            topologyStore.getState().setRouting(orthogonal ? "straight" : "orthogonal")
+          }
+        >
+          直角の線
         </button>
       </div>
       <span className="toolbar-spacer" />

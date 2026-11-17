@@ -26,6 +26,7 @@ export { adoptIdentity } from "./identity";
 export * from "./fragment";
 export * from "./layout";
 export * from "./linkGeometry";
+export * from "./orthogonal";
 export * from "./labelLayout";
 export * from "./bendKeys";
 export * from "./bends";

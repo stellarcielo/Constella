@@ -36,6 +36,15 @@ import {
   slotOffset,
 } from "./linkGeometry";
 import { linkMedia } from "./media";
+import {
+  attachEnds,
+  bridgeRouteNode,
+  deviceRouteNode,
+  type OrthogonalRoute,
+  orthogonalRoutes,
+  type RouteLine,
+  type RouteNode,
+} from "./orthogonal";
 import { vnetTagText } from "./sdn";
 import { findModel, resolveLabel, resolveRole } from "./topology";
 import type {
@@ -301,6 +310,17 @@ function ifLabelSvg(at: Point, ifLabelValue: IfLabel, bounds: Bounds): string {
   );
 }
 
+/** ブリッジとホストの間の線(SPEC 7.3) */
+interface Uplink {
+  id: string;
+  /** ブリッジの箱の ID */
+  key: string;
+  host: string;
+  bridge: string;
+  target: string;
+  vnet: boolean;
+}
+
 /**
  * 図全体を SVG にする。座標の無い(fallbackPositions にも無い)デバイスと、そこにつながるリンクは描かない
  */
@@ -392,6 +412,60 @@ export function renderSvg(
     return labelOptions.showIp && device ? hostIpLines(device, ipText(id)) : [];
   };
   const detailsOf = (id: string): NameDetails | undefined => nameDetails(ipLinesOf(id));
+  // ブリッジの箱の下の行(ブリッジは IP、VNet は tag と subnets)
+  const bridgeLinesOf = (id: string): string[] => {
+    const vnet = parseVnetKey(t, id);
+    if (vnet) {
+      const tag = labelOptions.showVlan ? vnetTagText(t, vnet.vnet) : undefined;
+      const subnets = labelOptions.showIp ? (t.sdn.vnets.get(vnet.vnet)?.subnets ?? []) : [];
+      return [...(tag ? [tag] : []), ...subnets];
+    }
+    const bridge = parseBridgeKey(id);
+    const host = bridge && t.devices.get(bridge.host);
+    return labelOptions.showIp && bridge && host
+      ? bridgeIpLines(host, bridge.bridge, ipText(bridge.host))
+      : [];
+  };
+  // 直角の線(SPEC 7.3)の道筋は、全部の線をまとめて決める(キャンバスと同じ線を同じ順に渡す)
+  const routeNodes = new Map<string, RouteNode>();
+  for (const [id, pos] of positions) {
+    routeNodes.set(
+      id,
+      parseBridgeKey(id)
+        ? bridgeRouteNode(bridgeCenter(pos), bridgeLinesOf(id).length)
+        : deviceRouteNode(iconCenter(pos), detailsOf(id)),
+    );
+  }
+  const orthogonal = t.routing === "orthogonal";
+  const bentKey = (na: string, nb: string) => {
+    const key = bendKey(na, nb);
+    return key !== undefined && t.bends.has(key);
+  };
+  // ブリッジとホストの間の線(target はホスト。VNet の箱からは、ゾーンのブリッジの箱かホスト)
+  const uplinks = allBridges(t).flatMap(({ key, host, bridge, vnet }): Uplink[] => {
+    if (!positions.has(key)) return [];
+    if (vnet) {
+      const target = vnetUplinkTarget(t, host, bridge);
+      return target !== undefined && positions.has(target)
+        ? [{ id: `uplink:${key}`, key, host, bridge, target, vnet }]
+        : [];
+    }
+    const members = t.devices.get(host)?.interfaces.get(bridge)?.members ?? [];
+    return members.length > 0 && positions.has(host)
+      ? [{ id: `uplink:${key}`, key, host, bridge, target: host, vnet }]
+      : [];
+  });
+  const routes: ReadonlyMap<string, OrthogonalRoute> = orthogonal
+    ? orthogonalRoutes(
+        [
+          ...drawable.flatMap(({ link, na, nb }): RouteLine[] =>
+            na === nb || bentKey(na, nb) ? [] : [{ id: link.id, a: na, b: nb }],
+          ),
+          ...uplinks.map(({ id, key, target }) => ({ id, a: key, b: target })),
+        ],
+        routeNodes,
+      )
+    : new Map();
   // 両端の IF 名ラベルは、線を全部集めてから置く(同じデバイスに付くラベルを重ねない。SPEC 7.3)。
   // 手で動かしたラベルは、その位置に置く(key はラベルの位置のキー。ブリッジ側の端には無い)
   const labeled: { line: LabeledLine; a?: IfLabel; b?: IfLabel }[] = [];
@@ -445,10 +519,17 @@ export function renderSvg(
       bounds.add(ca.x, ca.y - height, ca.x + 26 + width, ca.y + height);
     } else {
       const reversed = na > nb;
-      // 曲げた線は、曲げる点を順に通る折れ線(SPEC 7.3)。同じ 2 台の間の線は同じ点を通り、平行にずらす
+      // 曲げた線は、曲げる点を順に通る折れ線(SPEC 7.3)。同じ 2 台の間の線は同じ点を通り、平行にずらす。
+      // 直角の線の図では、曲げていない線は自動の道筋にし、曲げた線の端はアイコンからまっすぐ出す
       const key = bendKey(na, nb);
       const via = key === undefined ? [] : orientBends(t.bends.get(key) ?? [], na, nb);
-      const points = linkPoints(ca, cb, via, slotOffset(slot), reversed);
+      const route = routes.get(link.id);
+      const bent = linkPoints(ca, cb, via, slotOffset(slot), reversed);
+      const points =
+        route?.points ??
+        (orthogonal
+          ? attachEnds(bent, routeNodes.get(na) as RouteNode, routeNodes.get(nb) as RouteNode)
+          : bent);
       path = polylinePath(points, n);
       center = polylineMidpoint(points);
       for (const p of points) bounds.add(p.x, p.y, p.x, p.y);
@@ -459,6 +540,8 @@ export function renderSvg(
           slot,
           reversed,
           via,
+          ...(orthogonal ? { points } : {}),
+          ...(route ? { ends: route.ends } : {}),
         },
         a: aLabel,
         b: bLabel,
@@ -476,31 +559,26 @@ export function renderSvg(
   // ブリッジとホストの間の線(点線)。ホスト側に、ブリッジの members(bond なら束ねた IF とモードも)を出す
   // (SPEC 7.3・フェーズ4-3 Q2)
   const show = (name: string) => (labelOptions.longIfNames ? expandIfName(name) : name);
-  for (const { key, host, bridge, vnet } of allBridges(t)) {
+  for (const { id, key, host, bridge, target, vnet } of uplinks) {
+    const from = centerOf(key);
+    const to = centerOf(target);
+    const route = routes.get(id);
+    const points = route?.points ?? [from, to];
+    for (const p of points) bounds.add(p.x, p.y, p.x, p.y);
+    lines.push(
+      `<path d="${polylinePath(points, n)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
+    );
     // VNet の箱からは、ゾーンのブリッジの箱かホストへ、ラベル無しで引く(フェーズ4-6 Q2)
-    if (vnet) {
-      const target = vnetUplinkTarget(t, host, bridge);
-      const at = target === undefined ? undefined : positions.get(target);
-      const pos = positions.get(key);
-      if (!at || !pos || target === undefined) continue;
-      const from = bridgeCenter(pos);
-      const to = target === host ? iconCenter(at) : bridgeCenter(at);
-      lines.push(
-        `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
-      );
-      continue;
-    }
+    if (vnet) continue;
     const device = t.devices.get(host);
     const text = device ? uplinkLabelLines(device, bridge, show) : [];
-    if (!positions.has(key) || !positions.has(host) || text.length === 0) continue;
-    const from = bridgeCenter(positions.get(key) as Position);
-    const to = iconCenter(positions.get(host) as Position);
-    lines.push(
-      `<path d="M ${n(from.x)},${n(from.y)} L ${n(to.x)},${n(to.y)}" fill="none" stroke-width="2" ${MEDIA_STYLES.virtual}/>`,
-    );
-    if (labelOptions.showIfName) {
+    if (labelOptions.showIfName && text.length > 0) {
       labeled.push({
-        line: { a: labelEnd(key, from, []), b: labelEnd(host, to, text, labelKey(host, bridge)) },
+        line: {
+          a: labelEnd(key, from, []),
+          b: labelEnd(host, to, text, labelKey(host, bridge)),
+          ...(route ? { points, ends: route.ends } : {}),
+        },
         b: { name: text[0], details: text.slice(1) },
       });
     }
@@ -519,17 +597,13 @@ export function renderSvg(
     // VNet の箱(フェーズ4-6 Q2): 下に tag(「VLAN」の表示)と subnets(「IP」の表示)
     const vnet = bridge && parseVnetKey(t, id);
     if (vnet) {
-      const tag = labelOptions.showVlan ? vnetTagText(t, vnet.vnet) : undefined;
-      const subnets = labelOptions.showIp ? (t.sdn.vnets.get(vnet.vnet)?.subnets ?? []) : [];
-      nodes.push(bridgeSvg(vnet.vnet, "VNet", pos, [...(tag ? [tag] : []), ...subnets], bounds));
+      nodes.push(bridgeSvg(vnet.vnet, "VNet", pos, bridgeLinesOf(id), bounds));
       continue;
     }
     if (bridge) {
-      const host = t.devices.get(bridge.host);
-      const info = host?.interfaces.get(bridge.bridge);
-      const ips =
-        labelOptions.showIp && host ? bridgeIpLines(host, bridge.bridge, ipText(bridge.host)) : [];
-      nodes.push(bridgeSvg(bridge.bridge, info?.vlanAware ? "VLAN" : undefined, pos, ips, bounds));
+      const info = t.devices.get(bridge.host)?.interfaces.get(bridge.bridge);
+      const badgeText = info?.vlanAware ? "VLAN" : undefined;
+      nodes.push(bridgeSvg(bridge.bridge, badgeText, pos, bridgeLinesOf(id), bounds));
       continue;
     }
     const device = t.devices.get(id);

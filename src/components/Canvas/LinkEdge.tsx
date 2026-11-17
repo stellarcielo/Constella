@@ -1,5 +1,6 @@
 // リンクの線(SPEC 7.3)。デバイスのアイコンの中心同士を直線で結ぶ(フローティングエッジ)。
 // 曲げる点があれば、その点を順に通る折れ線にする(点のつまみは BendHandles が出す)。
+// 直角の線の図では、曲げていない線は自動の道筋(routes.ts)にする。
 // 中央にリンクのラベルを出し、同じ 2 台の間の複数リンクは平行にずらす。線の色と種類は media で決まる(Canvas.css)。
 // ブリッジへのリンクはブリッジの箱につなぐ。両端の IF 名(その下に IP・VLAN。フェーズ3-2)は、
 // 同じデバイスに付くほかの線のラベルと重ならないよう、EndLabels がまとめて置いて描く。
@@ -14,18 +15,16 @@ import {
 import type { HTMLAttributes, ReactNode } from "react";
 import {
   type InterfaceInfo,
-  linkPoints,
   type Media,
-  orientBends,
   type Point,
   polylineMidpoint,
   polylinePath,
   selfLoop,
-  slotOffset,
 } from "../../core";
 import { useUi } from "../../store";
 import { type EdgeBends, iconCenter, liveBends } from "./geometry";
 import type { CanvasNode } from "./nodes";
+import { linkLine, useRoutes } from "./routes";
 
 export type LinkEdgeData = {
   media: Media;
@@ -58,6 +57,7 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
   const t = useInternalNode<CanvasNode>(target);
   // この線の点をドラッグしている間だけ、描き直す
   const drag = useUi((u) => (u.bendDrag?.key === data?.bendKey ? u.bendDrag : undefined));
+  const routes = useRoutes();
   if (!s || !t || !data) return null;
 
   let path: string;
@@ -67,10 +67,8 @@ export function LinkEdge({ id, source, target, data, selected }: EdgeProps<LinkE
     path = loop.path;
     center = loop.label;
   } else {
-    const slot = { index: data.slotIndex, count: data.slotCount };
-    // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(IF 名ラベルを分ける向きも同じ)
-    const via = orientBends(liveBends(data, s, t, drag), source, target);
-    const points = linkPoints(iconCenter(s), iconCenter(t), via, slotOffset(slot), source > target);
+    const bends = liveBends(data, s, t, drag);
+    const { points } = linkLine({ id, source, target, data }, s, t, bends, routes);
     path = polylinePath(points);
     center = polylineMidpoint(points);
   }

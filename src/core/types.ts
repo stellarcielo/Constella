@@ -60,6 +60,10 @@ export type SdnZoneType = (typeof SDN_ZONE_TYPES)[number];
 /** VNet の tag の最大(vxlan・evpn の VNI は 24 ビット。vlan・qinq では 4094 まで) */
 export const VNI_MAX = 16777215;
 
+/** 線の形(layout._routing。SPEC 4.3)。straight はまっすぐ(既定)、orthogonal は直角に折れる線 */
+export const ROUTINGS = ["straight", "orthogonal"] as const;
+export type Routing = (typeof ROUTINGS)[number];
+
 export const GROUP_KINDS = ["site", "rack", "vlan", "subnet", "as", "cluster", "custom"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
@@ -104,6 +108,8 @@ export interface Topology {
    * 点はキーの 1 つ目のノードの側から順
    */
   bends: Map<string, Position[]>;
+  /** 線の形(layout._routing。SPEC 4.3・7.3) */
+  routing: Routing;
   viewport?: Viewport;
   groups: Group[];
   /** SDN のゾーンと VNet(SPEC 4.6) */

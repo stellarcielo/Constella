@@ -94,7 +94,8 @@ export function contextMenuItems(
       return [
         {
           action: "straighten",
-          label: "まっすぐに戻す",
+          // 直角の線の図では、曲げる点を消すと自動の直角の線に戻る(SPEC 7.6)
+          label: t.routing === "orthogonal" ? "直角の線に戻す" : "まっすぐに戻す",
           enabled: selectedBendKeys(t, selection.links).length > 0,
         },
         {

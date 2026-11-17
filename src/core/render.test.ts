@@ -453,6 +453,41 @@ layout:
     expect(corners[0].y).not.toBe(corners[1].y);
   });
 
+  it("直角の線: 曲げていない線は自動の道筋、曲げた線は端をアイコンからまっすぐ出す(SPEC 7.3)", () => {
+    const t = load(`constella: 1
+devices:
+  r1: { model: generic-router-4 }
+  r2: { model: generic-router-4 }
+  r3: { model: generic-router-4 }
+  pve1:
+    model: generic-hypervisor-4
+    interfaces:
+      vmbr0: { type: bridge, members: [ eno1 ] }
+links:
+  - { a: r1:Gi0/0, b: r2:Gi0/0 }
+  - { a: r1:Gi0/1, b: r3:Gi0/1 }
+layout:
+  _routing: orthogonal
+  r1: { x: 0, y: 0 }
+  r2: { x: 200, y: 200 }
+  r3: { x: 400, y: 0 }
+  pve1: { x: 1000, y: 0 }
+  pve1:vmbr0: { x: 1100, y: 160 }
+  _bends:
+    r1 r3: [ { x: 60, y: -100 }, { x: 440, y: -100 } ]
+`);
+    const { svg } = renderSvg(t, testCatalog);
+    // r1 の名前の下(76)から r2 のアイコンの上(196)までの真ん中で横に折れる
+    expect(svg).toContain('<path d="M 48,26 L 48,136 L 248,136 L 248,226" fill="none"');
+    // 曲げた線の端は、最初の点の真下(上)からまっすぐ出す
+    expect(svg).toContain('<path d="M 60,26 L 60,-100 L 440,-100 L 440,26" fill="none"');
+    // ブリッジとホストの間の点線も直角に引く(箱の中心 (1148, 173) からホストのアイコンの中心へ)
+    expect(svg).toContain('<path d="M 1148,173 L 1148,116 L 1048,116 L 1048,26" fill="none"');
+    // まっすぐの線の図では、今までどおり
+    t.routing = "straight";
+    expect(renderSvg(t, testCatalog).svg).toContain('<path d="M 48,26 L 248,226" fill="none"');
+  });
+
   it("モデルのアイコン: 組み込みのほかのアイコンは role の色で描き、画像は埋め込む(SPEC 7.3)", () => {
     const catalog = new Map(testCatalog);
     const router = testCatalog.get("generic-router-4");

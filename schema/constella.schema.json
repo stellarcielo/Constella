@@ -42,6 +42,10 @@
       "type": ["object", "null"],
       "properties": {
         "_viewport": { "$ref": "#/definitions/viewport" },
+        "_routing": {
+          "description": "線の形。straight はまっすぐの線(書かなければこれ)、orthogonal は直角に折れる線(機器を動かすと自動で引き直す)。ツールバーの「直角の線」で切り替えると自動で書き込まれる",
+          "enum": ["straight", "orthogonal"]
+        },
         "_labels": {
           "description": "手で動かした IF 名ラベルの位置(キー = ラベルの付く端の「デバイスID:IF名」。ブリッジとホストの間の線のホスト側のラベルは「ホスト:ブリッジ名」)。GUI でラベルを動かすと自動で書き込まれる",
           "type": ["object", "null"],

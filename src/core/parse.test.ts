@@ -446,6 +446,23 @@ layout:
   });
 });
 
+describe("parseTopology: 線の形(layout._routing。SPEC 4.3)", () => {
+  it("orthogonal なら直角の線。書かなければまっすぐ", () => {
+    expect(parseOk("constella: 1\nlayout:\n  _routing: orthogonal\n").topology.routing).toBe(
+      "orthogonal",
+    );
+    expect(parseOk("constella: 1\n").topology.routing).toBe("straight");
+  });
+
+  it("読めない値はエラーにして、まっすぐの線にする", () => {
+    const { topology, issues } = parseOk("constella: 1\nlayout:\n  _routing: curved\n");
+    expect(codes(issues)).toEqual(["invalid-value"]);
+    expect(issues[0].message).toContain("straight / orthogonal");
+    expect(topology.routing).toBe("straight");
+    expect(topology.layout.size).toBe(0);
+  });
+});
+
 describe("parseTopology: トランシーバ(SPEC 4.3・5.4)", () => {
   it("書いたとおりの名前で読む(一覧に無い名前も)", () => {
     const { topology, issues } = parseOk(`constella: 1

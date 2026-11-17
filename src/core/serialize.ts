@@ -313,12 +313,19 @@ class Writer {
   }
 
   layout(root: YAMLMap): void {
-    const { layout, viewport, labelLayout, bends } = this.after;
+    const { layout, viewport, labelLayout, bends, routing } = this.after;
     const found = root.get("layout", true) as Node | undefined;
     let map: YAMLMap;
     if (isMap(found)) map = found;
-    else if (layout.size === 0 && !viewport && labelLayout.size === 0 && bends.size === 0) return;
-    else map = this.setSection(root, "layout", new YAMLMap());
+    else if (
+      layout.size === 0 &&
+      !viewport &&
+      labelLayout.size === 0 &&
+      bends.size === 0 &&
+      routing === "straight"
+    ) {
+      return;
+    } else map = this.setSection(root, "layout", new YAMLMap());
 
     // 削除の判定は書き換える前のキーで行う(削除したデバイスの ID に別のデバイスを改名した場合のため)。
     // ブリッジのキー(pve1:vmbr0)は、IF 名の書き方の違いを同じとみなす
@@ -364,6 +371,24 @@ class Writer {
     for (const [key, fields] of entries) this.setFlowEntry(map, key, fields);
     this.labelLayout(map);
     this.bendLayout(map);
+    this.routing(map);
+  }
+
+  /**
+   * layout._routing(線の形。SPEC 4.3)。切り替えたときだけ書き換え、まっすぐに戻したら消す。
+   * 足すときは layout の先頭に置く(読めない値は、切り替えるまでそのまま残す)
+   */
+  private routing(layout: YAMLMap): void {
+    const { routing } = this.after;
+    if (routing === this.before.routing) return;
+    const pair = layout.items.find((p) => keyText(p.key) === "_routing");
+    if (routing === "straight") {
+      if (pair) layout.items = layout.items.filter((p) => p !== pair);
+    } else if (pair) {
+      pair.value = this.doc.createNode(routing);
+    } else {
+      layout.items.unshift(new Pair(this.doc.createNode("_routing"), this.doc.createNode(routing)));
+    }
   }
 
   /** layout._labels(手で動かしたラベルの位置。SPEC 4.3)。項目が無くなれば _labels ごと消す */

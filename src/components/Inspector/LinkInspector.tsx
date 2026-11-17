@@ -42,6 +42,8 @@ export function LinkInspector({ link }: { link: Link }) {
   // 曲げた線(同じ 2 台の間の線すべて。SPEC 7.3)
   const bendKey = linkBendKey(topology, link);
   const bent = bendKey !== undefined && topology.bends.has(bendKey);
+  // 直角の線の図では、曲げる点を消すと自動の直角の線に戻る(SPEC 7.3)
+  const orthogonal = topology.routing === "orthogonal";
 
   return (
     <>
@@ -104,10 +106,10 @@ export function LinkInspector({ link }: { link: Link }) {
           <button
             type="button"
             className="inspector-button"
-            title="曲げる点を消して、まっすぐな線に戻す(同じ 2 台の間の線すべて)"
+            title={`曲げる点を消して、${orthogonal ? "自動の直角の線" : "まっすぐな線"}に戻す(同じ 2 台の間の線すべて)`}
             onClick={() => topologyStore.getState().resetBends([bendKey])}
           >
-            まっすぐに戻す
+            {orthogonal ? "直角の線に戻す" : "まっすぐに戻す"}
           </button>
         )}
         <button

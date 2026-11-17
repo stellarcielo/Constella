@@ -39,6 +39,7 @@ import { DEVICE_NODE_WIDTH } from "./DeviceNode";
 import { iconCenter, liveBends } from "./geometry";
 import { Label } from "./LinkEdge";
 import type { CanvasEdge, CanvasNode } from "./nodes";
+import { linkLine, useRoutes } from "./routes";
 
 /** 端のラベルと、その位置のキー(labelKey) */
 interface EndText {
@@ -97,6 +98,8 @@ export function EndLabels() {
   const mode = useUi((s) => s.mode);
   // 曲げる点をドラッグしている間も、端の区間に沿って置き直す(SPEC 7.3)
   const bendDrag = useUi((s) => s.bendDrag);
+  // 直角の線の図では、線の道筋の端の区間に沿って置く
+  const routes = useRoutes();
   const devices = useTopology((s) => s.topology.devices);
   const labelLayout = useTopology((s) => s.topology.labelLayout);
   const dragging = useRef<Dragging | undefined>(undefined);
@@ -154,6 +157,7 @@ export function EndLabels() {
       }
       const a = aLabel && { label: aLabel, key: labelKey(edge.source, data.aName) };
       const b = bLabel && { label: bLabel, key: labelKey(edge.target, data.bName) };
+      const bends = liveBends(data, s, t, bendDrag);
       labeled.push({
         id: edge.id,
         link: true,
@@ -164,7 +168,9 @@ export function EndLabels() {
           slot: { index: data.slotIndex, count: data.slotCount },
           // ずらす向きは ID の小さいデバイス → 大きいデバイスを基準にする(LinkEdge と同じ)
           reversed: edge.source > edge.target,
-          via: orientBends(liveBends(data, s, t, bendDrag), edge.source, edge.target),
+          via: orientBends(bends, edge.source, edge.target),
+          // 描く線と同じ点(LinkEdge と同じ)
+          ...linkLine({ ...edge, data }, s, t, bends, routes),
         },
         a,
         b,
@@ -182,11 +188,16 @@ export function EndLabels() {
         label: { name: lines[0], details: lines.slice(1) },
         key: labelKey(edge.target, edge.data.bridge),
       };
+      const route = routes?.get(edge.id);
       labeled.push({
         id: edge.id,
         link: false,
         selected,
-        line: { a: labelEnd(s, undefined), b: labelEnd(t, b) },
+        line: {
+          a: labelEnd(s, undefined),
+          b: labelEnd(t, b),
+          ...(route ? { points: route.points, ends: route.ends } : {}),
+        },
         b,
       });
     }

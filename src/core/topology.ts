@@ -12,6 +12,7 @@ export function createEmptyTopology(): Topology {
     layout: new Map(),
     labelLayout: new Map(),
     bends: new Map(),
+    routing: "straight",
     groups: [],
     sdn: { zones: new Map(), vnets: new Map(), extra: {} },
     extra: {},

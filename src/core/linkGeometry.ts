@@ -35,7 +35,7 @@ interface Size {
 const ICON_BOX: Box = { left: -30, top: -30, right: 30, bottom: 30 };
 /** アイコンの下のデバイス名の上端と下端。左右は名前の幅で決まる */
 const NAME_TOP = 26;
-const NAME_BOTTOM = 50;
+export const NAME_BOTTOM = 50;
 /** デバイス名の幅が分からないときは、アイコンと同じ幅とみなす */
 const DEFAULT_NAME_WIDTH = 60;
 const LABEL_GAP = 4;
@@ -83,6 +83,8 @@ export interface Slot {
   /** 同じ 2 台の間のリンクのうち何本目か(0 始まり) */
   index: number;
   count: number;
+  /** ずらす幅(省けば PARALLEL_GAP。直角の線で、辺から出る位置をずらす幅) */
+  gap?: number;
 }
 
 /**
@@ -108,7 +110,7 @@ export function parallelSlots(
 
 /** 並行リンクのずらし幅。2 本なら ±9、3 本なら -18, 0, +18 */
 export function slotOffset(slot: Slot): number {
-  return (slot.index - (slot.count - 1) / 2) * PARALLEL_GAP;
+  return (slot.index - (slot.count - 1) / 2) * (slot.gap ?? PARALLEL_GAP);
 }
 
 /**
@@ -259,6 +261,9 @@ function clearDistance(origin: Point, ux: number, uy: number, size: Size, boxes:
  * 真ん中の線(本数が奇数のとき)のラベルは段違いにする。
  * a・b は offsetLine でずらした線の端。reversed は offsetLine に渡したものと同じにする。
  * 機器同士が近くてラベルがぶつかるときは、線の長さに合わせて内側に寄せる。
+ * options.corner なら、b は曲げた線の角(機器ではない)。b のアイコンは避けず、a のラベルは角の手前まで置ける。
+ * options.split なら、ラベルが隣の線のラベルと重なるときは、段違いにせず線の両側に分ける
+ * (直角の線で、同じ辺から別々の機器へ出る線。どのラベルがどの線のものか分かるように)。
  */
 export function endLabelPositions(
   a: Point,
@@ -269,7 +274,9 @@ export function endLabelPositions(
   nameWidths: { a?: number; b?: number } = {},
   details: { a?: NameDetails; b?: NameDetails } = {},
   reversed = false,
+  options: { corner?: boolean; split?: boolean } = {},
 ): { a: Point; b: Point } {
+  const corner = options.corner === true;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy);
@@ -287,32 +294,35 @@ export function endLabelPositions(
   const across = ({ width, height }: Size) =>
     (Math.abs(uy) * width) / 2 + (Math.abs(ux) * height) / 2;
   const halfA = along(sizeA);
-  const halfB = along(sizeB);
+  const halfB = corner ? 0 : along(sizeB);
   const stepA = 2 * halfA + LABEL_GAP;
-  const stepB = 2 * halfB + LABEL_GAP;
+  const stepB = corner ? 0 : 2 * halfB + LABEL_GAP;
+  const gap = slot.gap ?? PARALLEL_GAP;
   const boxesA = avoidBoxes(nameWidths.a, details.a);
   const boxesB = avoidBoxes(nameWidths.b, details.b);
   // 真ん中の線から横に lateral 離れたところから、線に沿ってアイコンと名前を避ける距離
   const clearA = (lateral: number) =>
     clearDistance({ x: nx * lateral, y: ny * lateral }, ux, uy, sizeA, boxesA);
   const clearB = (lateral: number) =>
-    clearDistance({ x: nx * lateral, y: ny * lateral }, -ux, -uy, sizeB, boxesB);
+    corner ? 0 : clearDistance({ x: nx * lateral, y: ny * lateral }, -ux, -uy, sizeB, boxesB);
   const nearA = clearA(0);
   const nearB = clearB(0);
-  const overlaps = slot.count > 1 && Math.max(across(sizeA), across(sizeB)) * 2 > PARALLEL_GAP;
+  const overlaps = slot.count > 1 && Math.max(across(sizeA), corner ? 0 : across(sizeB)) * 2 > gap;
   // 段違いで収まらないなら、線の両側に分ける(いちばん外まで段違いにするリンクで確かめる)
   const last = slot.count - 1;
-  const split = overlaps && nearA + last * stepA + halfA + nearB + last * stepB + halfB > len;
+  const split =
+    overlaps &&
+    (options.split === true || nearA + last * stepA + halfA + nearB + last * stepB + halfB > len);
   // 真ん中の線から何本目か(ずらした向きが正。2 本なら ±0.5、3 本なら -1, 0, 1)
   const order = (index: number) => index - (slot.count - 1) / 2;
   const own = order(slot.index);
-  const onLine = own * PARALLEL_GAP;
+  const onLine = own * gap;
 
   /** 線の両側に分けたときの、アイコンの中心から線に沿った距離と、真ん中の線からの横の位置 */
   const column = (clear: (lateral: number) => number, size: Size, step: number) => {
     // 隣の線のラベルと隙間があくところまで外へ出す(自分の線より内側にはしない)
     const lateralOf = (q: number) =>
-      Math.sign(q) * Math.max(Math.abs(q) * PARALLEL_GAP, LABEL_GAP / 2 + across(size));
+      Math.sign(q) * Math.max(Math.abs(q) * gap, LABEL_GAP / 2 + across(size));
     const orders = Array.from({ length: slot.count }, (_, i) => order(i));
     // 同じ側のラベルは、いちばん遠くまで避けるものにそろえてから段違いにする
     const base = (side: number) =>
@@ -381,6 +391,16 @@ export interface LabeledLine {
   reversed?: boolean;
   /** 曲げる点(a から b の順。ずらす前。SPEC 7.3)。あれば、ラベルは端の区間に沿って置く */
   via?: readonly Point[];
+  /**
+   * 描く線の点(a から b の順)。直角の線(SPEC 7.3)のときに渡す。あれば via・slot から求める代わりに使い、
+   * 角があればラベルは端の区間に沿って置く
+   */
+  points?: readonly Point[];
+  /**
+   * 直角の線の自動の道筋のとき、両端がその辺から出る線のうち何本目か(orthogonalRoutes の ends)。
+   * あれば slot・reversed の代わりに使い、同じ辺から出る線のラベルを段違いにする
+   */
+  ends?: { a: Slot; b: Slot };
 }
 
 /** placeEndLabels で置いたラベル */
@@ -414,7 +434,8 @@ interface Segment {
  */
 function endSegments(line: LabeledLine): { a: Segment; b: Segment; bent: boolean } {
   const { slot = { index: 0, count: 1 }, reversed = false, via = [] } = line;
-  const points = linkPoints(line.a.center, line.b.center, via, slotOffset(slot), reversed);
+  const points =
+    line.points ?? linkPoints(line.a.center, line.b.center, via, slotOffset(slot), reversed);
   const first = points[0];
   const last = points[points.length - 1];
   const same = (p: Point, q: Point) => p.x === q.x && p.y === q.y;
@@ -429,50 +450,126 @@ function endSegments(line: LabeledLine): { a: Segment; b: Segment; bent: boolean
 const segmentLength = ({ from, to }: Segment) => Math.hypot(to.x - from.x, to.y - from.y);
 
 /**
+ * 直角の線の自動の道筋の、両端の IF 名ラベルの中心。端ごとに、その辺から出る線のうち何本目か(ends)で
+ * 段違いにする。ずらす向きは、端から外へ向かう向きを基準にする(orthogonalRoutes の出る位置と同じ)
+ */
+function routeLabelPositions(
+  { a, b }: LabeledLine,
+  ends: { a: Slot; b: Slot },
+  seg: { a: Segment; b: Segment; bent: boolean },
+): { a: Point; b: Point } {
+  if (seg.bent) {
+    return {
+      a: endLabelPositions(
+        seg.a.from,
+        seg.a.to,
+        a.text,
+        [],
+        ends.a,
+        { a: a.nameWidth },
+        { a: a.details },
+        false,
+        { corner: true, split: true },
+      ).a,
+      b: endLabelPositions(
+        seg.b.from,
+        seg.b.to,
+        b.text,
+        [],
+        ends.b,
+        { a: b.nameWidth },
+        { a: b.details },
+        false,
+        { corner: true, split: true },
+      ).a,
+    };
+  }
+  // まっすぐな線は、端ごとに(その辺の何本目かで)置いてから、両端のラベルがぶつかれば比率を保って内側に寄せる
+  const from = seg.a.from;
+  const to = seg.b.from;
+  const len = Math.hypot(to.x - from.x, to.y - from.y);
+  const place = (end: LabelEnd, p: Point, q: Point, slot: Slot) =>
+    endLabelPositions(p, q, end.text, [], slot, { a: end.nameWidth }, { a: end.details }, false, {
+      corner: true,
+      split: true,
+    }).a;
+  const at = { a: place(a, from, to, ends.a), b: place(b, to, from, ends.b) };
+  if (len === 0) return at;
+  const ux = (to.x - from.x) / len;
+  const uy = (to.y - from.y) / len;
+  // 線の向きのラベルの半分の長さ(ラベルの無い端は場所を取らない)
+  const half = (text: string | readonly string[]) => {
+    if (!hasText(text)) return 0;
+    const { width, height } = estimateLabelSize(text);
+    return (Math.abs(ux) * width + Math.abs(uy) * height) / 2;
+  };
+  const halfA = half(a.text);
+  const halfB = half(b.text);
+  const da = hasText(a.text) ? (at.a.x - from.x) * ux + (at.a.y - from.y) * uy : 0;
+  const db = hasText(b.text) ? (to.x - at.b.x) * ux + (to.y - at.b.y) * uy : 0;
+  const room = len - 2 * (halfA + halfB);
+  const used = da - halfA + (db - halfB);
+  if (used <= room || used <= 0) return at;
+  const scale = Math.max(room, 0) / used;
+  const inA = (da - halfA) * (1 - scale);
+  const inB = (db - halfB) * (1 - scale);
+  return {
+    a: { x: at.a.x - ux * inA, y: at.a.y - uy * inA },
+    b: { x: at.b.x + ux * inB, y: at.b.y + uy * inB },
+  };
+}
+
+/**
  * 全部の線の両端のラベルの中心(結果は lines と同じ順。SPEC 7.3)。
  * 線ごとに endLabelPositions で置いたあと、同じノードに付くラベル(別々の線のものも)が重なれば、
  * ノードに近いラベルはそのままにし、遠いほうをその線に沿って外へずらす。
  * 反対の端のラベルの手前までしかずらさないので、線が短いと重なりが残ることがある。
  * 曲げた線は、端の区間(機器から最初の曲げる点まで)に沿って置き、最初の曲げる点までしかずらさない。
+ * 直角の線の自動の道筋(ends)は、同じ辺から出る線を、同じ 2 台の間の線と同じように段違いにする。
  * 手で動かしたラベル(offset)は、その位置に置いてずらさず、ほかのラベルがそれを避ける。
  */
 export function placeEndLabels(lines: readonly LabeledLine[]): { a: Point; b: Point }[] {
   const pairs = lines.map((line) => {
-    const { a, b, slot = { index: 0, count: 1 }, reversed = false } = line;
+    const { a, b, slot = { index: 0, count: 1 }, reversed = false, ends } = line;
     const seg = endSegments(line);
-    const auto = seg.bent
-      ? {
-          a: endLabelPositions(
+    const auto = ends
+      ? routeLabelPositions(line, ends, seg)
+      : seg.bent
+        ? {
+            a: endLabelPositions(
+              seg.a.from,
+              seg.a.to,
+              a.text,
+              [],
+              slot,
+              { a: a.nameWidth },
+              { a: a.details },
+              reversed,
+              { corner: true },
+            ).a,
+            // b の端から角へ向けて置く(向きが逆になるので、ずらす向きを合わせるため reversed も逆にする)
+            b: endLabelPositions(
+              seg.b.from,
+              seg.b.to,
+              b.text,
+              [],
+              slot,
+              { a: b.nameWidth },
+              { a: b.details },
+              !reversed,
+              { corner: true },
+            ).a,
+          }
+        : endLabelPositions(
             seg.a.from,
-            seg.a.to,
-            a.text,
-            [],
-            slot,
-            { a: a.nameWidth },
-            { a: a.details },
-            reversed,
-          ).a,
-          b: endLabelPositions(
-            seg.b.to,
             seg.b.from,
-            [],
+            a.text,
             b.text,
             slot,
-            { b: b.nameWidth },
-            { b: b.details },
+            { a: a.nameWidth, b: b.nameWidth },
+            { a: a.details, b: b.details },
             reversed,
-          ).b,
-        }
-      : endLabelPositions(
-          seg.a.from,
-          seg.b.from,
-          a.text,
-          b.text,
-          slot,
-          { a: a.nameWidth, b: b.nameWidth },
-          { a: a.details, b: b.details },
-          reversed,
-        );
+          );
     const placed = (end: LabelEnd, { from, to }: Segment, at: Point): PlacedLabel => {
       const len = Math.hypot(to.x - from.x, to.y - from.y);
       const dir =

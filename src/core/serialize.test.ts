@@ -723,6 +723,44 @@ layout:
   });
 });
 
+describe("serializeTopology: 線の形(layout._routing。SPEC 4.3)", () => {
+  const text = `constella: 1
+devices:
+  r1: { model: generic-router-4 }
+layout:
+  # 位置
+  r1: { x: 0, y: 0 }
+`;
+
+  it("直角の線にすると layout の先頭に書き、まっすぐに戻すと消す", () => {
+    const { topology, base } = load(text);
+    topology.routing = "orthogonal";
+    const out = serializeTopology(topology, base).text;
+    // 先頭のコメントは layout のものなので、その下に書く
+    expect(out).toContain("layout:\n  # 位置\n  _routing: orthogonal\n  r1: { x: 0, y: 0 }\n");
+    const back = load(out);
+    back.topology.routing = "straight";
+    expect(serializeTopology(back.topology, back.base).text).toBe(text);
+  });
+
+  it("layout が無くても書く", () => {
+    const empty = load("constella: 1\n");
+    empty.topology.routing = "orthogonal";
+    expect(serializeTopology(empty.topology, empty.base).text).toContain(
+      "layout:\n  _routing: orthogonal\n",
+    );
+  });
+
+  it("切り替えなければ、読めない値もコメントもそのまま残す", () => {
+    const odd = text.replace("layout:\n", "layout:\n  _routing: curved # あとで直す\n");
+    const { topology, base } = load(odd);
+    topology.layout.set("r1", { x: 10, y: 0 });
+    expect(serializeTopology(topology, base).text).toContain("  _routing: curved # あとで直す\n");
+    topology.routing = "orthogonal";
+    expect(serializeTopology(topology, base).text).toContain("  _routing: orthogonal");
+  });
+});
+
 describe("serializeTopology: クラスタ(SPEC 4.6)", () => {
   const text = `constella: 1
 devices:

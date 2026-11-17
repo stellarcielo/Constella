@@ -42,6 +42,7 @@ import {
   resetBends,
   resetLabels,
   resolveBridgeKey,
+  type Routing,
   renameDevice,
   SCHEMA_COMMENT,
   serializeTopology,
@@ -172,6 +173,8 @@ export interface TopologyState {
   setBends(key: string, points: Position[]): void;
   /** 線をまっすぐに戻す(keys を省けばすべて) */
   resetBends(keys?: string[]): void;
+  /** 線の形を変える(layout._routing。SPEC 4.3・7.3) */
+  setRouting(routing: Routing): void;
   deleteDevices(ids: string[]): void;
   addLink(a: Endpoint, b: Endpoint): string;
   /** デバイスID を変える。使えない ID ならその理由を返す。選択も新しい ID に付け替える */
@@ -538,6 +541,13 @@ export function createTopologyStore(
 
       resetBends(keys) {
         get().edit((t) => resetBends(t, keys));
+      },
+
+      setRouting(routing) {
+        if (get().topology.routing === routing) return;
+        get().edit((t) => {
+          t.routing = routing;
+        });
       },
 
       deleteDevices(ids) {

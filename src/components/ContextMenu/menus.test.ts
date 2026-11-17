@@ -74,6 +74,18 @@ describe("contextMenuItems", () => {
     ]);
   });
 
+  it("線: 直角の線の図では「直角の線に戻す」", () => {
+    const t = load();
+    const [l1] = linkIds(t);
+    const label = (entries: MenuEntry[]) =>
+      entries.find((e) => !isSeparator(e) && e.action === "straighten");
+    const straight = contextMenuItems({ kind: "links" }, t, { devices: [], links: [l1] });
+    expect(label(straight)).toMatchObject({ label: "まっすぐに戻す" });
+    t.routing = "orthogonal";
+    const orthogonal = contextMenuItems({ kind: "links" }, t, { devices: [], links: [l1] });
+    expect(label(orthogonal)).toMatchObject({ label: "直角の線に戻す" });
+  });
+
   it("グループ: 図にあるメンバーがいなければ、コピーは薄くする", () => {
     const t = load();
     const group = { kind: "group", uid: "g" } as const;
