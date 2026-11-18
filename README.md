@@ -71,3 +71,7 @@ npm run tauri dev
 - リリース: `v0.1.0` のようなタグを push すると、GitHub Actions がビルドして、下書きの Release に DMG を載せます。
 
 仕様は [docs/SPEC.md](docs/SPEC.md)、開発の進め方は [CLAUDE.md](CLAUDE.md) にあります。
+
+## ライセンス
+
+[MIT License](LICENSE) で公開しています。

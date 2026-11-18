@@ -34,6 +34,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "copyright": "Copyright © 2026 Strelitzia",
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "13.3"
