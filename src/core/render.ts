@@ -458,10 +458,25 @@ export function renderSvg(
   const routes: ReadonlyMap<string, OrthogonalRoute> = orthogonal
     ? orthogonalRoutes(
         [
-          ...drawable.flatMap(({ link, na, nb }): RouteLine[] =>
-            na === nb || bentKey(na, nb) ? [] : [{ id: link.id, a: na, b: nb }],
+          // ブリッジの箱の側には IF 名ラベルが付かない(ブリッジとホストの間の線は、ホストの側だけ)
+          ...drawable.flatMap(({ link, a, b, na, nb }): RouteLine[] =>
+            na === nb || bentKey(na, nb)
+              ? []
+              : [
+                  {
+                    id: link.id,
+                    a: na,
+                    b: nb,
+                    labeled: { a: na === a.device, b: nb === b.device },
+                  },
+                ],
           ),
-          ...uplinks.map(({ id, key, target }) => ({ id, a: key, b: target })),
+          ...uplinks.map(({ id, key, target, vnet }) => ({
+            id,
+            a: key,
+            b: target,
+            labeled: { a: false, b: !vnet },
+          })),
         ],
         routeNodes,
       )

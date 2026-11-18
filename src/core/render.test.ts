@@ -481,8 +481,9 @@ layout:
     expect(svg).toContain('<path d="M 48,26 L 48,136 L 248,136 L 248,226" fill="none"');
     // 曲げた線の端は、最初の点の真下(上)からまっすぐ出す
     expect(svg).toContain('<path d="M 60,26 L 60,-100 L 440,-100 L 440,26" fill="none"');
-    // ブリッジとホストの間の点線も直角に引く(箱の中心 (1148, 173) からホストのアイコンの中心へ)
-    expect(svg).toContain('<path d="M 1148,173 L 1148,116 L 1048,116 L 1048,26" fill="none"');
+    // ブリッジとホストの間の点線も直角に引く(箱の中心 (1148, 173) からホストのアイコンの中心へ)。
+    // ラベルはホストの側だけなので、横の線はホストの名前の下(76)から箱の上(156)までの、ホストから 2/3 の所
+    expect(svg).toContain('<path d="M 1148,173 L 1148,129.3 L 1048,129.3 L 1048,26" fill="none"');
     // まっすぐの線の図では、今までどおり
     t.routing = "straight";
     expect(renderSvg(t, testCatalog).svg).toContain('<path d="M 48,26 L 248,226" fill="none"');

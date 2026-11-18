@@ -166,6 +166,34 @@ describe("orthogonalRoutes(SPEC 7.3)", () => {
     expect(levels).toEqual([112, 130, 148]);
   });
 
+  it("IF 名ラベルの付かない端(ブリッジの箱の側)は数えずに寄せる。両端とも付かなければ真ん中", () => {
+    const nodes = devices({
+      a: [0, 0],
+      b: [-200, 200],
+      c: [200, 200],
+      d: [1000, 0],
+      e: [1000, 200],
+    });
+    const routes = orthogonalRoutes(
+      [
+        { id: "ab", a: "a", b: "b", labeled: { a: false, b: true } },
+        { id: "ac", a: "a", b: "c", labeled: { a: false, b: true } },
+        { id: "de", a: "d", b: "e", labeled: { a: false, b: false } },
+      ],
+      nodes,
+    );
+    // 上の端(2 本出る)にはラベルが無いので、上へ寄せる(すき間 50〜170 の 1/3)
+    expect(route(routes, "ab")[1].y).toBe(50 + 120 / 3);
+    expect(route(routes, "ac")[1].y).toBe(50 + 120 / 3);
+    // まっすぐ結べる線は、中ほどの線が無い
+    expect(route(routes, "de")).toHaveLength(2);
+    const plain = orthogonalRoutes(
+      [{ id: "de", a: "d", b: "e", labeled: { a: false, b: false } }],
+      devices({ d: [0, 0], e: [200, 200] }),
+    );
+    expect(route(plain, "de")[1].y).toBe(110);
+  });
+
   it("辺に収まらないほど多いときは、間隔を詰める", () => {
     const children: Record<string, [number, number]> = { a: [0, 0] };
     const lines: RouteLine[] = [];

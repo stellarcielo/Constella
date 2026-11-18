@@ -40,6 +40,16 @@ describe("computeLayout", () => {
     expect(y("pc1")).toBe(y("srv1"));
   });
 
+  it("直角の線の図では、段の間を 130px にする(まっすぐの線の図は 80px)", async () => {
+    const t = load(handWritten);
+    const gap = (pos: Map<string, { y: number }>) =>
+      (pos.get("sw1")?.y ?? NaN) - (pos.get("rt1")?.y ?? NaN);
+    // 段の間に、機器 1 台の高さ(96)を足したもの
+    expect(gap(await computeLayout(t, testCatalog))).toBe(96 + 80);
+    t.routing = "orthogonal";
+    expect(gap(await computeLayout(t, testCatalog))).toBe(96 + 130);
+  });
+
   it("同じ入力なら同じ結果になる", async () => {
     const t = load(handWritten);
     const a = await computeLayout(t, testCatalog);

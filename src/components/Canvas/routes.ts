@@ -77,7 +77,14 @@ function routesOf(s: ReactFlowState<CanvasNode, CanvasEdge>, display: Display): 
     if (edge.source === edge.target) continue;
     if (edge.type === "link" && (edge.data?.bends.length ?? 0) > 0) continue;
     if (!nodeOf(edge.source) || !nodeOf(edge.target)) continue;
-    lines.push({ id: edge.id, a: edge.source, b: edge.target });
+    // ブリッジの箱の側には IF 名ラベルが付かない(ブリッジとホストの間の線は、ホストの側だけ。render.ts と同じ)
+    // (ブリッジとホストの間の線のデータには bridge がある)
+    const data = edge.data;
+    const labeled =
+      data && "bridge" in data
+        ? { a: false, b: !data.vnet }
+        : { a: !data?.aBridge, b: !data?.bBridge };
+    lines.push({ id: edge.id, a: edge.source, b: edge.target, labeled });
   }
   const routes = orthogonalRoutes(lines, nodes);
   cache = { nodes: s.nodes, edges: s.edges, display, routes };

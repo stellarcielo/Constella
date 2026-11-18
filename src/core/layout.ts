@@ -36,6 +36,12 @@ export interface LayoutOptions {
 
 const DEFAULT_NODE_SIZE = { width: 96, height: 96 };
 
+/**
+ * 段と段の間(機器の箱どうしの縦のすき間)。直角の線の図(SPEC 7.3)では、端の区間に IF 名ラベルを
+ * 置く場所が要るので広げる
+ */
+const LAYER_GAP = { straight: 80, orthogonal: 130 } as const;
+
 /** ホストの中の間隔(ゲストどうしの横の間と、ホストからゲストの段までの縦の間) */
 const GUEST_SPACING = { x: 100, y: 100 };
 /**
@@ -202,7 +208,7 @@ export async function computeLayout(
       "elk.separateConnectedComponents": "false",
       // 横に並んだ機器どうしの線(HA・LAG など)の、両端の IF 名と中央のラベルが重ならない間隔
       "elk.spacing.nodeNode": "100",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(LAYER_GAP[t.routing]),
       // 同じ段の中は、YAML に書いた順に左から並べる
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       // 上の段の機器を、下につながる機器の中央寄りに置く

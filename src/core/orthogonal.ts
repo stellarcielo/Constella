@@ -1,7 +1,8 @@
 // 直角の線(SPEC 4.3 の layout._routing・7.3)。全部の線の道筋をまとめて決める(キャンバスと SVG の書き出しで共有)。
 // 上下に離れた 2 台は縦 → 横 → 縦、横に並んだ 2 台は横 → 縦 → 横で結ぶ(縦にすき間があれば縦を優先)。
 // 同じ機器の同じ辺から出る線は、行き先の向きの順に出る位置をずらし、中ほどの線(縦 → 横 → 縦なら横の線)が
-// ほかの線と重なるときは、交わりが少なくなる順に段をずらす。機器は避けない。
+// ほかの線と重なるときは、交わりが少なくなる順に段をずらす。中ほどの線は、IF 名ラベルの多い端から離す。
+// 機器は避けない。
 
 import { BRIDGE_BOX } from "./bridges";
 import {
@@ -28,6 +29,11 @@ export interface RouteLine {
   id: string;
   a: string;
   b: string;
+  /**
+   * その端に IF 名ラベルが付くか(省けば両端とも付く)。ブリッジの箱の側には付かない。
+   * 中ほどの線を、ラベルの多い端から離して、そちらの端の区間を長くするため
+   */
+  labeled?: { a: boolean; b: boolean };
 }
 
 export interface OrthogonalRoute {
@@ -51,7 +57,7 @@ const MIN_GAP = 24;
 const MIN_TRACK_GAP = 4;
 /** 同じ段の候補とみなす、中ほどの線の位置の差 */
 const TRACK_NEAR = 2 * PARALLEL_GAP;
-/** 中ほどの線を、すき間のどこまで片方へ寄せるか(線の多い端の IF 名ラベルの場所を空ける) */
+/** 中ほどの線を、すき間のどこまで片方へ寄せるか(IF 名ラベルの多い端の、ラベルの場所を空ける) */
 const TRACK_BIAS = 1 / 3;
 const EPS = 1e-6;
 
@@ -112,6 +118,9 @@ interface Planned {
   slotB: Slot;
   portA: Point;
   portB: Point;
+  /** 両端の辺から出る線のうち、その辺の側に IF 名ラベルが付くものの数 */
+  labelsA: number;
+  labelsB: number;
 }
 
 /** 辺から出る線の端 */
@@ -163,6 +172,8 @@ export function orthogonalRoutes(
       slotB: single,
       portA: na.center,
       portB: nb.center,
+      labelsA: 0,
+      labelsB: 0,
     });
   });
 
@@ -248,6 +259,7 @@ function assignPorts(planned: Planned[]): void {
       return p.node < p.other ? order : -order;
     });
     const count = group.length;
+    const labels = group.filter((end) => end.planned.line.labeled?.[end.end] ?? true).length;
     const spread = (side === "top" || side === "bottom" ? self.half.x : self.half.y) - CORNER;
     const gap = count > 1 ? Math.min(PARALLEL_GAP, (2 * Math.max(spread, 0)) / (count - 1)) : 0;
     group.forEach((end, index) => {
@@ -257,9 +269,11 @@ function assignPorts(planned: Planned[]): void {
       if (end.end === "a") {
         end.planned.slotA = slot;
         end.planned.portA = port;
+        end.planned.labelsA = labels;
       } else {
         end.planned.slotB = slot;
         end.planned.portB = port;
+        end.planned.labelsB = labels;
       }
     });
   }
@@ -280,9 +294,10 @@ function trackOf(p: Planned): Track | undefined {
   const [enter, leave] = aFirst ? [portA, portB] : [portB, portA];
   const min = main(first.center) + (p.vertical ? first.extent.bottom : first.extent.right);
   const max = main(second.center) - (p.vertical ? second.extent.top : second.extent.left);
-  // 同じ辺から出る線の多い端から離して、そちらの端の区間(IF 名ラベルを置く)を長くする
-  const [many, few] = aFirst ? [p.slotA.count, p.slotB.count] : [p.slotB.count, p.slotA.count];
-  const share = Math.min(Math.max(many / (many + few), TRACK_BIAS), 1 - TRACK_BIAS);
+  // IF 名ラベルの付く線の多い端から離して、そちらの端の区間(ラベルを置く)を長くする
+  const [near, far] = aFirst ? [p.labelsA, p.labelsB] : [p.labelsB, p.labelsA];
+  const share =
+    near + far === 0 ? 0.5 : Math.min(Math.max(near / (near + far), TRACK_BIAS), 1 - TRACK_BIAS);
   return {
     planned: p,
     lo: Math.min(cross(portA), cross(portB)),
