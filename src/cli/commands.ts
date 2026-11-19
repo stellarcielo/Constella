@@ -1,22 +1,13 @@
-// CLI のコマンド(SPEC 11 章)。validate は図を確かめて問題を出し、render は SVG を書き出す。
-// ファイルの読み書きと出力は CliDeps から使う(テストで差し替えられるように)。戻り値は終了コード。
+// CLI のコマンド(SPEC 11 章)。validate は図を確かめて問題を出し、render は SVG を書き出し、
+// mcp は MCP サーバーとして動く。ファイルの読み書きと出力は CliDeps から使う(テストで差し替えられるように)。
+// 戻り値は終了コード。
 
 import { parseArgs } from "node:util";
-import {
-  allBridges,
-  type Issue,
-  LAYER_PRESETS,
-  lineColumn,
-  type ModelCatalog,
-  type ParseResult,
-  parseTopology,
-  placeMissing,
-  renderSvg,
-  VIEW_LAYERS,
-  type ViewLayer,
-  validateTopology,
-} from "../core";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { VIEW_LAYERS, type ViewLayer } from "../core";
 import type { CliCatalog } from "./catalog";
+import { checkDiagram, diagramSvg, isViewLayer, issueLine, type PlacedIssue } from "./diagram";
+import { createMcpServer } from "./mcp";
 
 /** 終了コード: エラーなし、図にエラーがある、使い方の間違い・ファイルが読めない */
 export const EXIT = { ok: 0, problems: 1, usage: 2 } as const;
@@ -38,6 +29,8 @@ export interface CliDeps {
   stderr(text: string): void;
   catalog(source: ModelSource): Promise<CliCatalog>;
   iconImages(source: ModelSource): Promise<ReadonlyMap<string, string>>;
+  /** MCP サーバーを標準入出力につなぐ */
+  serveMcp(server: McpServer): Promise<void>;
 }
 
 /** 使い方の間違い(終了コード 2 で、理由を出す) */
@@ -73,6 +66,7 @@ export function helpText(deps: Pick<CliDeps, "version" | "defaultDirs">): string
   constella validate <ファイル…> [--json] [--strict]
   constella render <ファイル> [-o <出力.svg>] [--layer all|l1|l2|l3] [--long-names]
                    [--no-if-labels] [--no-guests] [--no-groups]
+  constella mcp
 
 validate  図を確かめ、問題を「ファイル:行:桁: error / warning: メッセージ」の形で出す
   --json             問題を JSON で出す
@@ -84,6 +78,7 @@ render    図を SVG にする(-o を省くと標準出力に出す)
   --no-if-labels     IF 名ラベルを出さない
   --no-guests        ゲスト(VM・コンテナ)とブリッジを出さない
   --no-groups        グループの枠を出さない
+mcp       MCP サーバーとして動く(標準入出力でやり取りする。AI アシスタントに登録して使う)
 
 共通のオプション:
   --models <フォルダ>  ユーザーモデルのフォルダ(既定: ${deps.defaultDirs.models})
@@ -132,10 +127,21 @@ export async function runCli(args: readonly string[], deps: CliDeps): Promise<nu
         if (positionals.length !== 1)
           throw new UsageError("SVG にするファイルを 1 つ指定してください");
         const layer = values.layer ?? "all";
-        if (!isLayer(layer)) {
+        if (!isViewLayer(layer)) {
           throw new UsageError(`--layer は ${VIEW_LAYERS.join("・")} のどれかにしてください`);
         }
         return await render(positionals[0], { ...values, layer }, sourceOf(values), deps);
+      }
+      case "mcp": {
+        const { values, positionals } = parse(rest, COMMON_OPTIONS);
+        if (values.help) {
+          deps.stdout(helpText(deps));
+          return EXIT.ok;
+        }
+        if (positionals.length > 0) throw new UsageError("mcp にはファイルを指定できません");
+        // 標準出力は MCP のやり取りに使うので、ここからは何も出さない
+        await deps.serveMcp(createMcpServer(deps, sourceOf(values)));
+        return EXIT.ok;
       }
       default:
         throw new UsageError(`知らないコマンドです: ${command}`);
@@ -148,7 +154,7 @@ export async function runCli(args: readonly string[], deps: CliDeps): Promise<nu
 }
 
 /** 引数を読む。知らないオプション・値の無いオプションは UsageError にする */
-function parse<T extends typeof VALIDATE_OPTIONS | typeof RENDER_OPTIONS>(
+function parse<T extends typeof COMMON_OPTIONS | typeof VALIDATE_OPTIONS | typeof RENDER_OPTIONS>(
   args: readonly string[],
   options: T,
 ) {
@@ -177,37 +183,6 @@ function sourceOf(values: {
   return { models: values.models, icons: values.icons, userModels: !values["no-user-models"] };
 }
 
-const isLayer = (value: string): value is ViewLayer =>
-  (VIEW_LAYERS as readonly string[]).includes(value);
-
-/** 位置(行と桁)を付けた問題 */
-interface PlacedIssue extends Issue {
-  line?: number;
-  column?: number;
-}
-
-/** 図の問題(アプリの問題パネルと同じ)。位置の順に並べ、位置の無い問題は最後 */
-function issuesOf(text: string, parsed: ParseResult, catalog: ModelCatalog): PlacedIssue[] {
-  const issues = parsed.ok
-    ? [...parsed.issues, ...validateTopology(parsed.topology, catalog, parsed.base)]
-    : parsed.issues;
-  return issues
-    .map((issue, i) => ({ issue, i }))
-    .sort(
-      (p, q) =>
-        (p.issue.range?.start ?? Infinity) - (q.issue.range?.start ?? Infinity) || p.i - q.i,
-    )
-    .map(({ issue }) =>
-      issue.range ? { ...issue, ...lineColumn(text, issue.range.start) } : issue,
-    );
-}
-
-/** 問題の 1 行(ファイル:行:桁: error: メッセージ。位置が無ければ ファイル: error: メッセージ) */
-function issueLine(file: string, issue: PlacedIssue): string {
-  const at = issue.line === undefined ? file : `${file}:${issue.line}:${issue.column}`;
-  return `${at}: ${issue.severity}: ${issue.message}\n`;
-}
-
 /** 読めなかったユーザーモデルを知らせる(図は組み込みのモデルとほかのユーザーモデルで確かめる) */
 function reportModelProblems({ problems }: CliCatalog, deps: CliDeps): void {
   for (const problem of problems) {
@@ -229,8 +204,7 @@ async function validate(
   for (const file of files) {
     try {
       const text = await deps.readText(file);
-      const parsed = parseTopology(text, { catalog: models.catalog });
-      results.push({ file, issues: issuesOf(text, parsed, models.catalog) });
+      results.push({ file, issues: checkDiagram(text, models.catalog).issues });
     } catch (e) {
       results.push({ file, error: `ファイルを読めません: ${reason(e)}` });
     }
@@ -261,7 +235,7 @@ async function validate(
   } else {
     for (const { file, issues, error } of results) {
       if (error !== undefined) deps.stderr(`constella: ${file}: ${error}\n`);
-      for (const issue of issues ?? []) deps.stdout(issueLine(file, issue));
+      for (const issue of issues ?? []) deps.stdout(`${issueLine(file, issue)}\n`);
     }
     deps.stdout(`${files.length} ファイル: エラー ${errors} 件、警告 ${warnings} 件\n`);
   }
@@ -292,38 +266,24 @@ async function render(
   const models = await deps.catalog(source);
   reportModelProblems(models, deps);
   const { catalog } = models;
-  const parsed = parseTopology(text, { catalog });
-  const issues = issuesOf(text, parsed, catalog);
+  const { parsed, issues, errors } = checkDiagram(text, catalog);
   if (!parsed.ok) {
-    for (const issue of issues) deps.stderr(issueLine(file, issue));
+    for (const issue of issues) deps.stderr(`${issueLine(file, issue)}\n`);
     deps.stderr(`constella: ${file} は YAML として読めないので、SVG にできません\n`);
     return EXIT.problems;
   }
   // 図にエラーがあっても描く(アプリと同じ)。知らせるだけ
-  const errors = issues.filter((i) => i.severity === "error").length;
   if (errors > 0) {
     deps.stderr(
       `constella: ${file} にはエラーが ${errors} 件あります(constella validate で確かめられます)\n`,
     );
   }
-
-  // 座標の無いデバイスとブリッジは、アプリで開いたときと同じく自動で並べる(SPEC 9 章)
-  const t = parsed.topology;
-  const missing = [...t.devices.keys(), ...allBridges(t).map((b) => b.key)].filter(
-    (id) => !t.layout.has(id),
-  );
-  const fallbackPositions =
-    missing.length > 0
-      ? await placeMissing(t, catalog, missing, (id) => t.layout.get(id))
-      : undefined;
-  const layer = LAYER_PRESETS[options.layer];
-  const { svg } = renderSvg(t, catalog, {
-    ...layer,
-    showIfLabels: layer.showIfLabels && !options["no-if-labels"],
-    showGuests: layer.showGuests && !options["no-guests"],
-    showGroups: layer.showGroups && !options["no-groups"],
+  const { svg } = await diagramSvg(parsed.topology, catalog, {
+    layer: options.layer,
     longIfNames: options["long-names"] ?? false,
-    fallbackPositions,
+    showIfLabels: !options["no-if-labels"],
+    showGuests: !options["no-guests"],
+    showGroups: !options["no-groups"],
     iconImages: await deps.iconImages(source),
   });
   if (options.output === undefined) {

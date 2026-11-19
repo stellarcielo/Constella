@@ -763,7 +763,7 @@ icons:
   - 公開 URL: `https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json`
   - ファイルの先頭に `# yaml-language-server: $schema=<公開 URL>` を書くと、対応エディタ(VS Code の YAML 拡張機能など)で補完と検証が効く。
 - `examples/` にサンプルトポロジを数個置く(小規模ラボ、2層スイッチ網、冗長構成+LAG、Proxmox VE)。
-- CLI(コマンドライン)で、図を確かめて SVG にできる(下記)。将来は MCP サーバーも提供し、AI から直接検証・描画できるようにする。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
+- CLI(コマンドライン)で、図を確かめて SVG にできる。MCP サーバーとしても動き、AI から直接、検証・描画できる(下記)。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
 
 ### CLI
 - Node.js(20 以降)で動く 1 ファイル `constella.mjs`(依存する部品と組み込みのモデルを含む)。リポジトリでは `npm run build:cli` で `dist-cli/constella.mjs` を作る。`npm run cli -- <引数>` でも動かせる。
@@ -779,6 +779,21 @@ icons:
 - 共通: アプリと同じフォルダ(5.2。macOS は `~/Library/Application Support/Constella`、Windows は `%APPDATA%\Constella`、そのほかは `$XDG_DATA_HOME/Constella`)のユーザーモデルとアイコンの画像を読む。`--models <フォルダ>`・`--icons <フォルダ>` で変え、`--no-user-models` で組み込みのモデルだけにする。読めないユーザーモデルは、標準エラー出力で知らせて使わない。
 - `--help`・`--version`。
 - 終了コード: 0 = エラーなし(警告はあってよい)、1 = 図にエラーがある(`--strict` では警告も)・YAML として読めない(render)、2 = 使い方の間違い・ファイルが読めない・書き出せない。
+
+### MCP サーバー
+- `constella mcp` で、MCP(AI アシスタントに道具を渡すための決まり)のサーバーとして動く。標準入出力でやり取りし、相手が標準入力を閉じると終わる。
+  - 登録の例(Claude Code): `claude mcp add constella -- node <フォルダ>/constella.mjs mcp`
+  - CLI の共通のオプション(`--models`・`--icons`・`--no-user-models`)が使える。ユーザーモデルとアイコンの画像は、ツールを使うたびに読み直す(サーバーを動かしたまま、アプリでモデルを足せる)。読めないユーザーモデルは、ツールの結果の中で知らせる。
+  - 使い方の説明(図を書く前にモデルと書き方を調べる → validate で確かめる → render で描く)を、AI に渡す。
+- ツール:
+  - `validate`: 図を確かめる。問題を位置の順に `名前:行:桁: error|warning: メッセージ` の形で返し、最後に件数を返す(名前はファイルのパス。文字列で渡されたら `yaml`)。
+  - `render`: 図を SVG にする。`output` を渡すとその `.svg` のファイルに書き(ほかの拡張子は断る)、省くと SVG の文字列を返す。表示は `layer`・`longIfNames`・`showIfLabels`・`showGuests`・`showGroups`(CLI の render と同じ)。図にエラーがあっても描いて知らせ、YAML として読めないときは描かない。
+  - `list_models`: 使えるモデル(組み込みとユーザーモデル)の一覧(ID・メーカー・名前・役割・ポートの数・フレキシブルか・ゲストか)。
+  - `get_model`: モデルの役割とポート(IF 名・種別・速度)。
+  - `get_schema`: JSON Schema。`get_example`: examples の図(名前を省くと、名前と説明の一覧)。
+- 図は `yaml`(YAML の文字列)か `path`(ファイルのパス。相対パスはサーバーの作業フォルダから)の、どちらか一方で渡す。
+- リソース: `constella://schema`(JSON Schema)、`constella://examples/<名前>`(examples の図)。
+- 図の YAML は書き換えない。ファイルに書くのは `render` の `.svg` だけ。
 
 ---
 
@@ -842,7 +857,7 @@ icons:
 - [x] 直角に折れる線(7.3)
 - Windows / Linux ビルドとインストーラ
 - [x] CLI(11 章)
-- MCP サーバー
+- [x] MCP サーバー(11 章)
 - LLDP / SNMP からの取り込み、containerlab / NetBox との連携
 - シミュレーション機能
 
@@ -880,7 +895,7 @@ constella/
     │   ├── ProblemsPanel/
     │   └── Toolbar/
     ├── icons/                 # ロール別アイコン(オリジナル SVG)
-    ├── cli/                   # CLI(Node.js。11 章)
+    ├── cli/                   # CLI と MCP サーバー(Node.js。11 章)
     └── platform/              # Tauri API の薄いラッパ(OS 差分をここに閉じ込める)
 ```
 

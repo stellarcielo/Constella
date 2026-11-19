@@ -1,3 +1,4 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it } from "vitest";
 import { cliCatalog } from "./catalog";
 import { type CliDeps, EXIT, helpText, type ModelSource, runCli } from "./commands";
@@ -45,6 +46,7 @@ function setup(files: Record<string, string>, userModels: Record<string, string>
   const err: string[] = [];
   const written = new Map<string, string>();
   const sources: ModelSource[] = [];
+  const served: McpServer[] = [];
   const deps: CliDeps = {
     version: "9.9.9",
     defaultDirs: { models: "/data/Constella/models", icons: "/data/Constella/icons" },
@@ -62,6 +64,7 @@ function setup(files: Record<string, string>, userModels: Record<string, string>
       return cliCatalog(user.map(([file, text]) => ({ file, text })));
     },
     iconImages: async () => new Map(),
+    serveMcp: async (server) => void served.push(server),
   };
   return {
     deps,
@@ -70,6 +73,7 @@ function setup(files: Record<string, string>, userModels: Record<string, string>
     err: () => err.join(""),
     written,
     sources,
+    served,
   };
 }
 
@@ -202,6 +206,23 @@ describe("constella render(SPEC 11 章)", () => {
     expect(await cli.run("render", "x.yaml", "-o", "x.svg")).toBe(EXIT.problems);
     expect(cli.err()).toContain("x.yaml は YAML として読めないので、SVG にできません");
     expect(cli.written.has("x.svg")).toBe(false);
+  });
+});
+
+describe("constella mcp(SPEC 11 章)", () => {
+  it("MCP サーバーを標準入出力につなぎ、標準出力には何も出さない", async () => {
+    const cli = setup({});
+    expect(await cli.run("mcp", "--no-user-models")).toBe(EXIT.ok);
+    expect(cli.served).toHaveLength(1);
+    expect(cli.out()).toBe("");
+  });
+
+  it("ファイルや知らないオプションを渡すと 2", async () => {
+    const cli = setup({ "a.yaml": good });
+    expect(await cli.run("mcp", "a.yaml")).toBe(EXIT.usage);
+    expect(cli.err()).toContain("mcp にはファイルを指定できません");
+    expect(await cli.run("mcp", "--json")).toBe(EXIT.usage);
+    expect(cli.served).toHaveLength(0);
   });
 });
 

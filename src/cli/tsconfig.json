@@ -1,6 +1,8 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    // Node.js 20 で動かすので、Error の cause(元のエラー)も使える
+    "lib": ["ES2020", "ES2022.Error", "DOM"],
     "types": ["node", "vite/client"]
   },
   "include": ["."],

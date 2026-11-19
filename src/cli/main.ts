@@ -1,10 +1,11 @@
-// constella コマンドの入口(SPEC 11 章)。Node.js のファイル・標準出力をコマンドにつなぐ。
+// constella コマンドの入口(SPEC 11 章)。Node.js のファイル・標準入出力をコマンドにつなぐ。
 // `npm run build:cli` で、依存する部品ごと dist-cli/constella.mjs の 1 ファイルにまとめる(vite.cli.config.ts)。
 
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { version } from "../../package.json";
 import { isIconImageName } from "../core";
 import { constellaDataDir } from "../platform/dataDir";
@@ -35,6 +36,8 @@ const deps: CliDeps = {
     if (!source.userModels) return new Map();
     return iconDataUrls(await readFolder(source.icons ?? defaultDirs.icons, isIconImageName));
   },
+  // 相手(AI アシスタント)が標準入力を閉じるまで動き続ける
+  serveMcp: (server) => server.connect(new StdioServerTransport()),
 };
 
 process.exitCode = await runCli(process.argv.slice(2), deps);

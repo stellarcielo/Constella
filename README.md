@@ -72,6 +72,28 @@ node dist-cli/constella.mjs render examples/two-tier.constella.yaml -o two-tier.
 - `render` は、アプリの書き出しと同じ SVG を作ります(`-o` を省くと標準出力に出します)。座標の無い機器は、自動で並べます。
 - アプリと同じユーザーモデルとアイコンを使います。オプションの一覧は `--help` で出ます。
 
+### AI から使う(MCP サーバー)
+
+`constella mcp` で MCP サーバーとして動きます。Claude などの AI アシスタントに登録すると、AI が図を確かめたり、SVG にしたり、使えるモデルやポートを調べたりできます。図の YAML は書き換えません。
+
+Claude Code に登録するには(パスは `constella.mjs` を置いた場所に合わせてください):
+
+```bash
+claude mcp add constella -- node /path/to/constella.mjs mcp
+```
+
+Claude Desktop では、設定ファイル `claude_desktop_config.json` に次のように書きます:
+
+```json
+{
+  "mcpServers": {
+    "constella": { "command": "node", "args": ["/path/to/constella.mjs", "mcp"] }
+  }
+}
+```
+
+ツール: `validate`(確かめる)、`render`(SVG にする)、`list_models`・`get_model`(モデルとポートを調べる)、`get_schema`・`get_example`(書き方と例)。
+
 ## 開発
 
 必要なもの: Node.js、Rust、Xcode の Command Line Tools
