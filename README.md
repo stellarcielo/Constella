@@ -57,6 +57,21 @@ Proxmox VE のクラスタ(ノード 1 台だけでも)の構成から、図を�
 2. できた `constella-proxmox.json` を Mac にコピーし、ツールバーの「取り込む」(ファイル > Proxmox VE から取り込む…)で選びます。
 3. ノード・bond・ブリッジ・VLAN インターフェース・VM・コンテナと、そのつながりが、新しい図になります。クラスタ(corosync・移行・Ceph のネットワーク)と、SDN のゾーン・VNet も取り込みます。スイッチと物理的な配線は取り込めないので、図に足してつなぎます。
 
+### コマンドライン(CLI)
+
+図の YAML を確かめたり、SVG にしたりできます。CI や AI のツールからも使えます。Node.js 20 以降が要ります。
+
+```bash
+npm install
+npm run build:cli    # dist-cli/constella.mjs ができます
+node dist-cli/constella.mjs validate examples/*.yaml
+node dist-cli/constella.mjs render examples/two-tier.constella.yaml -o two-tier.svg --layer l2
+```
+
+- `validate` は、問題を `ファイル:行:桁: error: メッセージ` の形で出し、エラーがあると終了コード 1 で終わります。`--json` を付けると JSON で出します。
+- `render` は、アプリの書き出しと同じ SVG を作ります(`-o` を省くと標準出力に出します)。座標の無い機器は、自動で並べます。
+- アプリと同じユーザーモデルとアイコンを使います。オプションの一覧は `--help` で出ます。
+
 ## 開発
 
 必要なもの: Node.js、Rust、Xcode の Command Line Tools

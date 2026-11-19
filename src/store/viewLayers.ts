@@ -1,69 +1,17 @@
 // 表示レイヤー(すべて / L1 / L2 / L3。SPEC 7.3・フェーズ3-3)。
 // レイヤーは表示オプションのプリセット(まとめて設定する組み合わせ)で、選んだあとも個々に調整できる。
-// 機器・リンクの配置や形は変えない(フェーズ3-3 Q1)。
+// プリセットの中身は core(CLI でも使う)にあり、ここではボタンの文字と、今のレイヤーの判定を受け持つ。
 
-import type { GroupKind } from "../core";
+import { LAYER_PRESETS, VIEW_LAYERS, type ViewLayer } from "../core";
 import type { ViewOptions } from "./uiStore";
 
-export const VIEW_LAYERS = ["all", "l1", "l2", "l3"] as const;
-export type ViewLayer = (typeof VIEW_LAYERS)[number];
-
-/** レイヤーで決まる表示オプション(長い名前・YAML エディタの表示は含めない) */
-export type LayerOptions = Pick<
-  ViewOptions,
-  | "showIfLabels"
-  | "showTransceiver"
-  | "showIp"
-  | "showVlan"
-  | "showGroups"
-  | "groupKinds"
-  | "showGuests"
->;
-
-/** レイヤーで出し分ける枠の種類(種類なし・custom・cluster はどのレイヤーでも出す) */
-export const LAYER_GROUP_KINDS: readonly GroupKind[] = ["site", "rack", "vlan", "subnet", "as"];
-
-export const LAYER_PRESETS: Record<ViewLayer, LayerOptions> = {
-  all: {
-    showIfLabels: true,
-    showTransceiver: true,
-    showIp: true,
-    showVlan: true,
-    showGroups: true,
-    groupKinds: [...LAYER_GROUP_KINDS],
-    showGuests: true,
-  },
-  // 物理: IF 名とトランシーバ、拠点・ラックの枠。ゲスト(VM・コンテナ)は隠す(フェーズ4-1)
-  l1: {
-    showIfLabels: true,
-    showTransceiver: true,
-    showIp: false,
-    showVlan: false,
-    showGroups: true,
-    groupKinds: ["site", "rack"],
-    showGuests: false,
-  },
-  // データリンク: IF 名と VLAN、VLAN の枠
-  l2: {
-    showIfLabels: true,
-    showTransceiver: false,
-    showIp: false,
-    showVlan: true,
-    showGroups: true,
-    groupKinds: ["vlan"],
-    showGuests: true,
-  },
-  // ネットワーク: IF 名と IP、サブネット・AS の枠
-  l3: {
-    showIfLabels: true,
-    showTransceiver: false,
-    showIp: true,
-    showVlan: false,
-    showGroups: true,
-    groupKinds: ["subnet", "as"],
-    showGuests: true,
-  },
-};
+export {
+  LAYER_GROUP_KINDS,
+  LAYER_PRESETS,
+  type LayerOptions,
+  VIEW_LAYERS,
+  type ViewLayer,
+} from "../core";
 
 export const LAYER_LABELS: Record<ViewLayer, { short: string; title: string }> = {
   all: {

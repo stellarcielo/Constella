@@ -763,7 +763,22 @@ icons:
   - 公開 URL: `https://raw.githubusercontent.com/stellarcielo/Constella/main/schema/constella.schema.json`
   - ファイルの先頭に `# yaml-language-server: $schema=<公開 URL>` を書くと、対応エディタ(VS Code の YAML 拡張機能など)で補完と検証が効く。
 - `examples/` にサンプルトポロジを数個置く(小規模ラボ、2層スイッチ網、冗長構成+LAG、Proxmox VE)。
-- 将来: CLI(`constella validate <file>` / `constella render <file> -o out.svg`)と MCP サーバーを提供し、AI から直接検証・描画できるようにする。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
+- CLI(コマンドライン)で、図を確かめて SVG にできる(下記)。将来は MCP サーバーも提供し、AI から直接検証・描画できるようにする。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
+
+### CLI
+- Node.js(20 以降)で動く 1 ファイル `constella.mjs`(依存する部品と組み込みのモデルを含む)。リポジトリでは `npm run build:cli` で `dist-cli/constella.mjs` を作る。`npm run cli -- <引数>` でも動かせる。
+- `constella validate <ファイル…> [--json] [--strict]`: アプリの問題パネルと同じ検証をする。
+  - 問題を位置の順に `ファイル:行:桁: error|warning: メッセージ` の形で標準出力に出し(位置の無い問題は `ファイル: error: …`)、最後に「N ファイル: エラー X 件、警告 Y 件」を出す。
+  - `--json` なら、`{ files: [{ file, issues: [{ severity, code, message, line, column }] }], errors, warnings }` を出す(読めないファイルは `{ file, error }`)。
+  - `--strict` なら、警告も終了コード 1 にする。
+- `constella render <ファイル> [-o <出力.svg>]`: アプリの書き出しと同じ SVG を作る。`-o` を省くと標準出力に出す。
+  - 座標の無い機器は、アプリで開いたときと同じく自動で並べる(9 章)。線の形(`layout._routing`)にも従う。
+  - 表示: `--layer all|l1|l2|l3`(既定は all。7.3 の表示レイヤーと同じ)、`--long-names`、`--no-if-labels`、`--no-guests`、`--no-groups`。
+  - 図にエラーがあっても描き、エラーの件数を標準エラー出力で知らせる。YAML として読めないときは描かない。
+  - PNG は、まだ作れない。
+- 共通: アプリと同じフォルダ(5.2。macOS は `~/Library/Application Support/Constella`、Windows は `%APPDATA%\Constella`、そのほかは `$XDG_DATA_HOME/Constella`)のユーザーモデルとアイコンの画像を読む。`--models <フォルダ>`・`--icons <フォルダ>` で変え、`--no-user-models` で組み込みのモデルだけにする。読めないユーザーモデルは、標準エラー出力で知らせて使わない。
+- `--help`・`--version`。
+- 終了コード: 0 = エラーなし(警告はあってよい)、1 = 図にエラーがある(`--strict` では警告も)・YAML として読めない(render)、2 = 使い方の間違い・ファイルが読めない・書き出せない。
 
 ---
 
@@ -826,7 +841,8 @@ icons:
 - [x] モデルとアイコンをまとめて書き出す・読み込む(5.5)
 - [x] 直角に折れる線(7.3)
 - Windows / Linux ビルドとインストーラ
-- CLI / MCP サーバー
+- [x] CLI(11 章)
+- MCP サーバー
 - LLDP / SNMP からの取り込み、containerlab / NetBox との連携
 - シミュレーション機能
 
@@ -864,6 +880,7 @@ constella/
     │   ├── ProblemsPanel/
     │   └── Toolbar/
     ├── icons/                 # ロール別アイコン(オリジナル SVG)
+    ├── cli/                   # CLI(Node.js。11 章)
     └── platform/              # Tauri API の薄いラッパ(OS 差分をここに閉じ込める)
 ```
 

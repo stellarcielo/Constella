@@ -21,5 +21,7 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  // CLI(Node.js で動く)は src/cli/tsconfig.json で、Node.js の型を入れて確かめる
+  "exclude": ["src/cli"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

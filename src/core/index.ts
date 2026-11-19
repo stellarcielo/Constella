@@ -27,6 +27,7 @@ export * from "./fragment";
 export * from "./layout";
 export * from "./linkGeometry";
 export * from "./orthogonal";
+export * from "./viewLayers";
 export * from "./labelLayout";
 export * from "./bendKeys";
 export * from "./bends";
