@@ -46,6 +46,7 @@
 - Rust 側は最小限にする(ファイル入出力・ダイアログは Tauri 公式プラグイン `fs` / `dialog` を利用)。ロジックは基本的に TypeScript 側に置く。
 - OS 固有の処理を書く場合は必ず抽象化し、Windows / Linux 対応を妨げないこと。
 - macOS 版は、Apple Silicon・Intel の両方で動くユニバーサル版を、DMG で GitHub Releases に配布する。対応は macOS 13.3 以降。署名は簡易署名(ad-hoc。Apple の Developer ID による署名・公証はしない)。
+- CLI と MCP サーバーの `constella.mjs`(11 章)も、同じ Release に載せる。
 
 ---
 
@@ -766,7 +767,7 @@ icons:
 - CLI(コマンドライン)で、図を確かめて SVG にできる。MCP サーバーとしても動き、AI から直接、検証・描画できる(下記)。そのため、**モデル・パース・検証・レイアウトのロジックは React に依存しない純粋な TypeScript モジュールとして分離**しておくこと。
 
 ### CLI
-- Node.js(20 以降)で動く 1 ファイル `constella.mjs`(依存する部品と組み込みのモデルを含む)。リポジトリでは `npm run build:cli` で `dist-cli/constella.mjs` を作る。`npm run cli -- <引数>` でも動かせる。
+- Node.js(20 以降)で動く 1 ファイル `constella.mjs`(依存する部品と組み込みのモデルを含む)。GitHub Releases に、アプリと一緒に載せる(ファイル名に版は付けない)。リポジトリでは `npm run build:cli` で `dist-cli/constella.mjs` を作る。`npm run cli -- <引数>` でも動かせる。
 - `constella validate <ファイル…> [--json] [--strict]`: アプリの問題パネルと同じ検証をする。
   - 問題を位置の順に `ファイル:行:桁: error|warning: メッセージ` の形で標準出力に出し(位置の無い問題は `ファイル: error: …`)、最後に「N ファイル: エラー X 件、警告 Y 件」を出す。
   - `--json` なら、`{ files: [{ file, issues: [{ severity, code, message, line, column }] }], errors, warnings }` を出す(読めないファイルは `{ file, error }`)。

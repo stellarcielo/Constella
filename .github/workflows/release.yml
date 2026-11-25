@@ -1,7 +1,8 @@
-# macOS 版をビルドする(配布の準備。SPEC 2章)。
-# - v で始まるタグ(v0.1.0 など)を push すると、ユニバーサル版の DMG を「下書き」の Release に載せる。
-#   中身を確かめてから、GitHub の画面で公開する
-# - 手動実行(Actions の画面の「Run workflow」)では Release は作らず、DMG を zip にまとめずに成果物(Artifacts)として残す
+# macOS 版と CLI をビルドする(配布の準備。SPEC 2章・11章)。
+# - v で始まるタグ(v0.1.0 など)を push すると、ユニバーサル版の DMG と、CLI・MCP サーバーの constella.mjs を
+#   「下書き」の Release に載せる。中身を確かめてから、GitHub の画面で公開する
+# - 手動実行(Actions の画面の「Run workflow」)では Release は作らず、DMG と constella.mjs を zip にまとめずに
+#   成果物(Artifacts)として残す
 name: Release
 
 on:
@@ -36,6 +37,9 @@ jobs:
       # 配る前に、いつもの確認を通す
       - run: npm run typecheck && npm run lint && npm test && npm run format:check
 
+      # CLI・MCP サーバー(SPEC 11章)。dist-cli/constella.mjs ができる
+      - run: npm run build:cli
+
       - name: Build and upload to a draft release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: tauri-apps/tauri-action@v0
@@ -51,8 +55,17 @@ jobs:
             2. 初めて開くと「開発元を確認できない」という表示が出ます(Apple の Developer ID での署名・公証をしていないため)。システム設定 > プライバシーとセキュリティ の下にある「このまま開く」を押してください。
 
             詳しくは README のインストールの手順を見てください。
+
+            `constella.mjs` は、図を確かめて SVG にする CLI と、AI から使う MCP サーバーです(Node.js 20 以降。`node constella.mjs --help` で使い方を出します)。
           releaseDraft: true
           args: --target universal-apple-darwin
+
+      # tauri-action が作った下書きに、CLI も載せる
+      - name: Upload the CLI to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-cli/constella.mjs --clobber
 
       - name: Build (manual run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -64,4 +77,11 @@ jobs:
         with:
           # zip にしないときは、ファイル名(Constella_<バージョン>_universal.dmg)が成果物の名前になる
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          archive: false
+
+      - name: Upload the CLI
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist-cli/constella.mjs
           archive: false

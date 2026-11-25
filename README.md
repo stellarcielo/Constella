@@ -61,22 +61,23 @@ Proxmox VE のクラスタ(ノード 1 台だけでも)の構成から、図を�
 
 図の YAML を確かめたり、SVG にしたりできます。CI や AI のツールからも使えます。Node.js 20 以降が要ります。
 
+[Releases](https://github.com/stellarcielo/Constella/releases) から `constella.mjs` をダウンロードします(このファイル 1 つで動きます)。最新版は https://github.com/stellarcielo/Constella/releases/latest/download/constella.mjs から直接ダウンロードできます。
+
 ```bash
-npm install
-npm run build:cli    # dist-cli/constella.mjs ができます
-node dist-cli/constella.mjs validate examples/*.yaml
-node dist-cli/constella.mjs render examples/two-tier.constella.yaml -o two-tier.svg --layer l2
+node constella.mjs validate network.constella.yaml
+node constella.mjs render network.constella.yaml -o network.svg --layer l2
 ```
 
 - `validate` は、問題を `ファイル:行:桁: error: メッセージ` の形で出し、エラーがあると終了コード 1 で終わります。`--json` を付けると JSON で出します。
 - `render` は、アプリの書き出しと同じ SVG を作ります(`-o` を省くと標準出力に出します)。座標の無い機器は、自動で並べます。
 - アプリと同じユーザーモデルとアイコンを使います。オプションの一覧は `--help` で出ます。
+- ソースから作るときは、`npm install` のあと `npm run build:cli` で `dist-cli/constella.mjs` ができます。
 
 ### AI から使う(MCP サーバー)
 
 `constella mcp` で MCP サーバーとして動きます。Claude などの AI アシスタントに登録すると、AI が図を確かめたり、SVG にしたり、使えるモデルやポートを調べたりできます。図の YAML は書き換えません。
 
-Claude Code に登録するには(パスは `constella.mjs` を置いた場所に合わせてください):
+Claude Code に登録するには(パスは、ダウンロードした `constella.mjs` を置いた場所に合わせてください):
 
 ```bash
 claude mcp add constella -- node /path/to/constella.mjs mcp
